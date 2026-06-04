@@ -1,145 +1,181 @@
 import React from 'react';
 import { COLORS } from '../../constants';
 import { triggerHaptic } from '../../utils/haptics';
+import { Home, Film, Tv, Flame, User } from 'lucide-react';
 
-export type View = 'home' | 'movies' | 'tvshows' | 'newandhot' | 'mylist' | 'settings' | 'schedules';
+export type View = 'home' | 'movies' | 'tvshows' | 'newandhot' | 'mylist' | 'settings' | 'schedules' | 'downloads';
 
 interface BottomNavProps {
   currentView: View;
   onNavClick: (view: View) => void;
 }
 
-const BottomNav = React.memo(function BottomNav({ currentView, onNavClick }: BottomNavProps) {
-  const navItems = [
-    { 
-      id: 'home' as View, 
-      label: 'Home',
-      icon: (active: boolean) => (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? "2.5" : "2"} strokeLinecap="round" strokeLinejoin="round">
-          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-          {active && <polyline points="9 22 9 12 15 12 15 22" />}
-        </svg>
-      )
-    },
-    { 
-      id: 'movies' as View, 
-      label: 'Movies',
-      icon: (active: boolean) => (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? "2.5" : "2"} strokeLinecap="round" strokeLinejoin="round">
-          <rect x="2" y="7" width="20" height="15" rx="2" ry="2" />
-          <polyline points="17 2 12 7 7 2" />
-        </svg>
-      )
-    },
-    { 
-      id: 'tvshows' as View, 
-      label: 'TV Shows',
-      icon: (active: boolean) => (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? "2.5" : "2"} strokeLinecap="round" strokeLinejoin="round">
-          <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-          <line x1="8" y1="21" x2="16" y2="21" />
-          <line x1="12" y1="17" x2="12" y2="21" />
-        </svg>
-      )
-    },
-    { 
-      id: 'newandhot' as View, 
-      label: 'News', 
-      icon: (active: boolean) => (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? "2.5" : "2"} strokeLinecap="round" strokeLinejoin="round">
-          <path d="M4 11a9 9 0 0 1 9 9" /><path d="M4 4a16 16 0 0 1 16 16" /><circle cx="5" cy="19" r="1" />
-        </svg>
-      )
-    },
-    { 
-      id: 'settings' as View, 
-      label: 'Settings',
-      icon: (active: boolean) => (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? "2.5" : "2"} strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="3"></circle>
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2 2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-        </svg>
-      )
-    }
-  ];
+const navItems = [
+  { 
+    id: 'home' as View, 
+    label: 'Home',
+    icon: (active: boolean) => (
+      <Home 
+        size={24} 
+        strokeWidth={active ? 2.8 : 2} 
+        fill="none"
+      />
+    )
+  },
+  { 
+    id: 'movies' as View, 
+    label: 'Movies',
+    icon: (active: boolean) => (
+      <Film 
+        size={24} 
+        strokeWidth={active ? 2.8 : 2} 
+        fill="none"
+      />
+    )
+  },
+  { 
+    id: 'tvshows' as View, 
+    label: 'Series',
+    icon: (active: boolean) => (
+      <Tv 
+        size={24} 
+        strokeWidth={active ? 2.8 : 2} 
+        fill="none"
+      />
+    )
+  },
+  { 
+    id: 'newandhot' as View, 
+    label: 'New', 
+    icon: (active: boolean) => (
+      <Flame 
+        size={24} 
+        strokeWidth={active ? 2.8 : 2} 
+        fill="none"
+      />
+    )
+  },
+  { 
+    id: 'settings' as View, 
+    label: 'Profile',
+    icon: (active: boolean) => (
+      <User 
+        size={24} 
+        strokeWidth={active ? 2.8 : 2} 
+        fill="none"
+      />
+    )
+  }
+];
 
+const BottomNav = React.memo(function BottomNav({ currentView, onNavClick }: BottomNavProps) {
   const handleNavClick = (view: View) => {
-    triggerHaptic('light');
+    setTimeout(() => triggerHaptic('light'), 0);
     onNavClick(view);
   };
 
   return (
-    <nav 
-      role="navigation"
-      aria-label="Main navigation"
-      style={{
-        position: 'fixed',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        zIndex: 1000,
-        // Apple-style "Liquid Glass" - Optimized blur for performance
-        background: 'rgba(15, 15, 15, 0.75)',
-        backdropFilter: 'blur(20px) saturate(180%) brightness(1.2) contrast(0.9)',
-        WebkitBackdropFilter: 'blur(20px) saturate(180%) brightness(1.2) contrast(0.9)',
-        borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-        display: 'flex',
-        justifyContent: 'space-around',
-        alignItems: 'center',
-        padding: '6px 10px calc(8px + env(safe-area-inset-bottom, 0px))',
-        boxShadow: '0 -10px 30px rgba(0,0,0,0.5), inset 0 1px 1.5px rgba(255, 255, 255, 0.1)',
-      }}
-    >
-      {navItems.map((item) => {
-        const isActive = currentView === item.id || (item.id === 'settings' && currentView === 'mylist');
-        
-        return (
-          <button
-            key={item.id}
-            onClick={() => handleNavClick(item.id)}
-            aria-label={item.label}
-            aria-current={isActive ? 'page' : undefined}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0px',
-              padding: '4px 4px',
-              minWidth: '50px',
-              width: '20%',
-              userSelect: 'none',
-              WebkitTapHighlightColor: 'transparent',
-            }}
-          >
-            <div style={{
-              color: isActive ? '#FFFFFF' : 'rgba(255, 255, 255, 0.5)', 
-              transition: 'all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)',
-              transform: isActive ? 'scale(1.05)' : 'scale(1)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-              {item.icon(isActive)}
-            </div>
-            
-            <span style={{
-              fontSize: '8.5px',
-              fontWeight: isActive ? 600 : 500,
-              color: isActive ? '#FFFFFF' : 'rgba(255, 255, 255, 0.5)', 
-              letterSpacing: '0.1px',
-              transition: 'all 0.25s ease',
-              marginTop: '1px',
-            }}>
-              {item.label}
-            </span>
-          </button>
-        );
-      })}
-    </nav>
+    <>
+      <style>{`
+        @media (min-width: 769px) {
+          .cinemovie-bottom-nav {
+            display: none !important;
+          }
+        }
+        @media (max-width: 380px) {
+          .cinemovie-bottom-nav {
+            left: 10px !important;
+            right: 10px !important;
+            padding: 4px 6px !important;
+            border-radius: 16px !important;
+          }
+          .cinemovie-bottom-nav button {
+            min-width: auto !important;
+            padding: 6px 2px !important;
+          }
+          .cinemovie-bottom-nav svg {
+            width: 20px !important;
+            height: 20px !important;
+          }
+          .cinemovie-bottom-nav span {
+            font-size: 8.5px !important;
+          }
+        }
+      `}</style>
+      <nav 
+        role="navigation"
+        aria-label="Main navigation"
+        className="cinemovie-bottom-nav"
+        style={{
+          position: 'fixed',
+          bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))',
+          left: '16px',
+          right: '16px',
+          zIndex: 1000,
+          background: 'rgba(15, 15, 15, 0.7)',
+          backdropFilter: 'blur(25px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(25px) saturate(180%)',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          borderRadius: '20px',
+          display: 'flex',
+          justifyContent: 'space-around',
+          alignItems: 'center',
+          padding: '8px 10px',
+          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
+        }}
+      >
+        {navItems.map((item) => {
+          const isActive = currentView === item.id;
+          
+          return (
+            <button
+              key={item.id}
+              onClick={() => handleNavClick(item.id)}
+              aria-label={item.label}
+              aria-current={isActive ? 'page' : undefined}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '4px',
+                padding: '8px 4px',
+                minWidth: '64px',
+                width: '20%',
+                userSelect: 'none',
+                WebkitTapHighlightColor: 'transparent',
+                outline: 'none'
+              }}
+            >
+              <div style={{
+                color: isActive ? '#FFFFFF' : 'rgba(255, 255, 255, 0.6)', 
+                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                transform: isActive ? 'scale(1.15)' : 'scale(1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                {item.icon(isActive)}
+              </div>
+              
+              <span style={{
+                fontSize: '10px',
+                fontWeight: isActive ? 700 : 550,
+                color: isActive ? '#FFFFFF' : 'rgba(255, 255, 255, 0.5)', 
+                letterSpacing: '0.2px',
+                transition: 'all 0.2s ease',
+                marginTop: '3px',
+              }}>
+                {item.label}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
+    </>
   );
 });
 

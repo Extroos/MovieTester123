@@ -6,20 +6,18 @@ export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
       server: {
-        port: 3000,
+        port: 5173,
         host: '0.0.0.0',
         proxy: {
           '/vidsrc': {
-            target: 'https://v2.vidsrc.me',
+            target: 'https://cinemovie-proxy.abderrahmanchakkouri.workers.dev',
             changeOrigin: true,
             followRedirects: true,
-            rewrite: (path) => path.replace(/^\/vidsrc/, ''),
           },
-          '/vidsrc-cc': {
-            target: 'https://vidsrc.cc',
+          '/vidsrc-pm': {
+            target: 'https://cinemovie-proxy.abderrahmanchakkouri.workers.dev',
             changeOrigin: true,
             followRedirects: true,
-            rewrite: (path) => path.replace(/^\/vidsrc-cc/, ''),
           },
           '/consumet': {
              target: 'https://api.consumet.org',
@@ -33,6 +31,19 @@ export default defineConfig(({ mode }) => {
         }
       },
       plugins: [react()],
+      build: {
+        rollupOptions: {
+          output: {
+            manualChunks: {
+              'vendor-react': ['react', 'react-dom'],
+              'vendor-motion': ['framer-motion'],
+              'vendor-supabase': ['@supabase/supabase-js'],
+              'vendor-hls': ['hls.js'],
+              'vendor-query': ['react-query'],
+            }
+          }
+        }
+      },
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
@@ -45,3 +56,4 @@ export default defineConfig(({ mode }) => {
       }
     };
 });
+

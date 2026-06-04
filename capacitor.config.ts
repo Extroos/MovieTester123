@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.cinemovie.app',
-  appName: 'CineMovie',
+  appName: 'Cinemovie',
   webDir: 'dist',
   plugins: {
     CapacitorHttp: {

@@ -26,23 +26,26 @@ export default function SearchResults({ query, results, loading, onMovieClick, o
       WebkitBackdropFilter: 'blur(20px) saturate(220%)',
       overflowY: 'auto',
       WebkitOverflowScrolling: 'touch',
+      overscrollBehavior: 'contain',
       animation: 'resultsIn 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
     }}>
-      {/* Sticky Header with Glassmorphism */}
+      {/* Sticky Floating Header Capsule */}
       <div style={{
         position: 'sticky',
-        top: 0,
+        top: 'calc(12px + env(safe-area-inset-top, 0px))',
+        margin: '12px 12px 0',
+        height: '52px',
+        background: 'rgba(15, 15, 15, 0.65)',
+        backdropFilter: 'blur(20px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+        border: '1px solid rgba(255, 255, 255, 0.08)',
+        borderRadius: '14px',
+        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
         zIndex: 2001,
-        // Premium high-vibrancy wet glass
-        background: 'rgba(15, 15, 15, 0.4)',
-        backdropFilter: 'blur(15px) saturate(220%) brightness(1.2)',
-        WebkitBackdropFilter: 'blur(15px) saturate(220%) brightness(1.2)',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.12)',
-        // Fix: Apply safe area to TOP padding
-        padding: 'calc(16px + env(safe-area-inset-top, 0px)) 16px 12px',
         display: 'flex',
         alignItems: 'center',
-        gap: '12px',
+        padding: '0 16px',
+        animation: 'fadeInDown 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards'
       }}>
         <button
           onClick={() => { triggerHaptic('light'); onClose(); }}
@@ -52,39 +55,47 @@ export default function SearchResults({ query, results, loading, onMovieClick, o
             border: 'none',
             color: '#FFFFFF',
             cursor: 'pointer',
-            padding: '6px', /* Reduced from 8px */
-            borderRadius: '50%',
+            padding: '6px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            marginLeft: '-6px',
+            opacity: 0.9,
+            outline: 'none',
+            transition: 'opacity 0.2s ease, transform 0.2s ease'
           }}
+          onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'scale(1.05)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.9'; e.currentTarget.style.transform = 'scale(1)'; }}
         >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
         
+        {/* Divider */}
+        <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.15)', margin: '0 12px' }} />
+
         <div style={{ flex: 1, minWidth: 0 }}>
           <h2 style={{
-            fontSize: '15px', /* Reduced from 16px */
-            fontWeight: 600,
+            fontSize: '14px',
+            fontWeight: 700,
             color: '#FFFFFF',
             margin: 0,
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             letterSpacing: '-0.2px',
+            lineHeight: 1.2
           }}>
             {query ? `"${query}"` : 'Results'}
           </h2>
           <p style={{
-            fontSize: '11px', /* Reduced from 12px */
-            color: '#8E8E93',
-            margin: '1px 0 0',
-            fontWeight: 500,
+            fontSize: '10px',
+            color: 'rgba(255, 255, 255, 0.5)',
+            margin: '0',
+            fontWeight: 600,
+            letterSpacing: '0.2px'
           }}>
-            {results.length} results found
+            {results.length} {results.length === 1 ? 'result' : 'results'} found
           </p>
         </div>
       </div>
@@ -137,10 +148,11 @@ export default function SearchResults({ query, results, loading, onMovieClick, o
               <div
                 key={`${movie.id}-${index}`}
                 onClick={() => { triggerHaptic('medium'); onMovieClick(movie); }}
+                className="search-grid-card"
                 style={{
                   cursor: 'pointer',
                   WebkitTapHighlightColor: 'transparent',
-                  animation: `resultMapIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) ${Math.min(index * 0.04, 0.5)}s both`,
+                  animation: `fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) ${Math.min(index * 0.04, 0.5)}s both`
                 }}
               >
                 {/* Poster Container */}
@@ -149,15 +161,16 @@ export default function SearchResults({ query, results, loading, onMovieClick, o
                   paddingBottom: '150%',
                   borderRadius: '12px',
                   overflow: 'hidden',
-                  backgroundColor: '#1a1a1a',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                  background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 100%)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.1), 0 4px 12px rgba(0,0,0,0.3)',
                   marginBottom: '8px',
                 }}>
                   {/* Skeleton / Shimmer Overlay */}
                   <div style={{
                     position: 'absolute',
                     inset: 0,
-                    background: 'linear-gradient(90deg, #1a1a1a 25%, #2a2a2a 50%, #1a1a1a 75%)',
+                    background: 'linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%)',
                     backgroundSize: '200% 100%',
                     animation: 'shimmer 1.5s infinite linear',
                     zIndex: 1,
@@ -208,27 +221,6 @@ export default function SearchResults({ query, results, loading, onMovieClick, o
         )}
       </div>
 
-      <style>{`
-        @keyframes resultsIn {
-          from { opacity: 0; transform: scale(1.02); filter: blur(10px); }
-          to { opacity: 1; transform: scale(1); filter: blur(0); }
-        }
-        @keyframes resultMapIn {
-          from { opacity: 0; transform: translateY(20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-        @keyframes shimmer {
-          from { background-position: 200% 0; }
-          to { background-position: -200% 0; }
-        }
-        .search-result-card:active {
-          transform: scale(0.96) !important;
-          opacity: 0.8;
-        }
-      `}</style>
     </div>
   );
 }

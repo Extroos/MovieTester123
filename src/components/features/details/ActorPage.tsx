@@ -16,13 +16,38 @@ function ActorPage({ personId, onClose, onMovieClick, onTVShowClick }: ActorPage
   const [loading, setLoading] = useState(true);
   const [bioExpanded, setBioExpanded] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [displayLimit, setDisplayLimit] = useState(24);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+  const observerTargetRef = useRef<HTMLDivElement | null>(null);
 
+  useEffect(() => {
+    if (loading || credits.length <= displayLimit) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setDisplayLimit((prev) => prev + 24);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    const currentTarget = observerTargetRef.current;
+    if (currentTarget) {
+      observer.observe(currentTarget);
+    }
+
+    return () => {
+      if (currentTarget) {
+        observer.unobserve(currentTarget);
+      }
+    };
+  }, [credits.length, displayLimit, loading]);
   useEffect(() => {
     const abortController = new AbortController();
 
@@ -33,8 +58,20 @@ function ActorPage({ personId, onClose, onMovieClick, onTVShowClick }: ActorPage
           getPersonDetails(personId, abortController.signal),
           getPersonCombinedCredits(personId, abortController.signal)
         ]);
+
+        // 1. De-duplicate combined credits by ID to prevent duplication of entries
+        const uniqueCredits = Array.from(
+          new Map(creditsData.map((item: any) => [item.id, item])).values()
+        );
+
+        // 2. Sort combined credits by popularity (high to low) so actor's biggest works appear first
+        const sortedCredits = uniqueCredits.sort((a: any, b: any) => {
+          return (b.popularity || 0) - (a.popularity || 0);
+        });
+
         setDetails(personData);
-        setCredits(creditsData);
+        setCredits(sortedCredits);
+        setDisplayLimit(24); // Reset pagination on actor change
       } catch (error: any) {
         if (error.name !== 'AbortError') {
           console.error("Failed to load actor data", error);
@@ -61,7 +98,7 @@ function ActorPage({ personId, onClose, onMovieClick, onTVShowClick }: ActorPage
   if (loading) {
     return (
       <div style={{
-        position: 'fixed', inset: 0, zIndex: 3000,
+        position: 'fixed', inset: 0, zIndex: 4000,
         background: 'rgba(10,10,10,0.9)',
         backdropFilter: 'blur(15px) saturate(180%)',
         WebkitBackdropFilter: 'blur(15px) saturate(180%)',
@@ -90,7 +127,7 @@ function ActorPage({ personId, onClose, onMovieClick, onTVShowClick }: ActorPage
     <div 
       onClick={onClose}
       style={{
-        position: 'fixed', inset: 0, zIndex: 3000,
+        position: 'fixed', inset: 0, zIndex: 4000,
         background: 'rgba(10,10,10,0.6)', // Lighter overlay to show the blur better
         overflowY: 'auto', overflowX: 'hidden',
         WebkitOverflowScrolling: 'touch',
@@ -116,21 +153,26 @@ function ActorPage({ personId, onClose, onMovieClick, onTVShowClick }: ActorPage
           onClick={onClose}
           style={{
             position: 'fixed',
-            top: 'calc(12px + env(safe-area-inset-top))',
-            left: '12px',
-            zIndex: 3001,
-            background: 'rgba(0,0,0,0.5)',
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)',
-            border: 'none',
+            top: 'calc(1rem + env(safe-area-inset-top))',
+            left: '1.2rem',
+            zIndex: 4001,
+            background: 'rgba(15, 15, 15, 0.6)',
+            backdropFilter: 'blur(20px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(200%)',
+            border: '1px solid rgba(255, 255, 255, 0.15)',
             color: '#fff',
-            width: '36px', height: '36px',
+            width: '48px',
+            height: '48px',
             borderRadius: '50%',
             cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
+            transition: 'all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)',
           }}
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
             <polyline points="15 18 9 12 15 6"/>
           </svg>
         </button>
@@ -168,10 +210,11 @@ function ActorPage({ personId, onClose, onMovieClick, onTVShowClick }: ActorPage
             <div style={{
               width: isMobile ? '80px' : '120px',
               height: isMobile ? '120px' : '180px',
-              borderRadius: '8px',
+              borderRadius: '16px',
               overflow: 'hidden',
               flexShrink: 0,
-              boxShadow: '0 8px 30px rgba(0,0,0,0.6)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.1), 0 8px 30px rgba(0,0,0,0.6)',
             }}>
               <img 
                 src={getProfileUrl(details.profile_path)} 
@@ -203,10 +246,12 @@ function ActorPage({ personId, onClose, onMovieClick, onTVShowClick }: ActorPage
           {biography && (
             <div style={{ marginBottom: '24px' }}>
               <p style={{
-                fontSize: 'clamp(0.78rem, 2vw, 0.88rem)',
-                color: 'rgba(255,255,255,0.7)',
+                fontSize: '1rem',
+                color: 'rgba(255,255,255,0.95)',
                 lineHeight: 1.6,
                 margin: 0,
+                textAlign: 'justify',
+                letterSpacing: '0.1px',
               }}>
                 {displayBio}
               </p>
@@ -244,45 +289,63 @@ function ActorPage({ personId, onClose, onMovieClick, onTVShowClick }: ActorPage
               gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))',
               gap: isMobile ? '10px' : '14px',
             }}>
-              {credits.map((item: any, index: number) => (
+              {credits.slice(0, displayLimit).map((item: any, index: number) => (
                 <div 
                   key={`${item.id}-${item.title || item.name}-${index}`}
                   onClick={() => item.title ? onMovieClick(item) : onTVShowClick(item)}
                   style={{
                     cursor: 'pointer',
                     WebkitTapHighlightColor: 'transparent',
-                    animation: `creditItemIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) ${Math.min(index * 0.03, 0.6)}s both`,
-                    willChange: 'transform, opacity',
+                    animation: index < 12 
+                      ? `suggestionFadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) ${index * 0.03}s both`
+                      : 'none',
+                    willChange: index < 12 ? 'transform, opacity' : 'auto',
                   }}
                 >
                   <div style={{
                     position: 'relative',
                     aspectRatio: '2/3',
-                    borderRadius: '6px',
+                    borderRadius: '12px',
                     overflow: 'hidden',
-                    marginBottom: '5px',
-                    backgroundColor: '#151515',
-                  }}>
-                    <img 
-                      src={getPosterUrl(item.posterPath, 'medium')} 
-                      alt={item.title || item.name}
-                      loading="lazy"
-                      style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
-                      onError={(e) => {
-                        e.currentTarget.onerror = null;
-                        e.currentTarget.src = 'https://via.placeholder.com/200x300/111/333?text=';
-                      }}
-                    />
+                    background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 100%)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.1), 0 4px 12px rgba(0, 0, 0, 0.3)',
+                    marginBottom: '8px',
+                    transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'scale(1.04)';
+                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.18)';
+                    e.currentTarget.style.boxShadow = 'inset 0 1px 1px rgba(255, 255, 255, 0.15), 0 8px 20px rgba(0, 0, 0, 0.5)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+                    e.currentTarget.style.boxShadow = 'inset 0 1px 1px rgba(255, 255, 255, 0.1), 0 4px 12px rgba(0, 0, 0, 0.3)';
+                  }}
+                  >
+                    {item.posterPath ? (
+                      <img 
+                        src={getPosterUrl(item.posterPath, 'medium')} 
+                        alt={item.title || item.name}
+                        loading="lazy"
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
+                      />
+                    ) : (
+                      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#444', fontSize: '0.8rem', fontWeight: 600 }}>
+                        No Image
+                      </div>
+                    )}
                     {item.voteAverage > 0 && (
                       <div style={{
-                        position: 'absolute', top: '4px', right: '4px',
-                        background: 'rgba(0,0,0,0.7)',
+                        position: 'absolute', top: '6px', right: '6px',
+                        background: 'rgba(0,0,0,0.6)',
                         backdropFilter: 'blur(8px)',
                         WebkitBackdropFilter: 'blur(8px)',
-                        padding: '2px 5px',
-                        borderRadius: '4px',
-                        fontSize: '0.6rem',
-                        fontWeight: 700,
+                        padding: '3px 6px',
+                        borderRadius: '6px',
+                        fontSize: '0.65rem',
+                        fontWeight: 800,
                         color: '#46d369',
                       }}>
                         {item.voteAverage.toFixed(1)}
@@ -310,27 +373,34 @@ function ActorPage({ personId, onClose, onMovieClick, onTVShowClick }: ActorPage
                 </div>
               ))}
             </div>
+
+            {credits.length > displayLimit && (
+              <div 
+                ref={observerTargetRef} 
+                style={{ 
+                  height: '40px', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  marginTop: '24px' 
+                }}
+              >
+                <div style={{
+                  width: '24px',
+                  height: '24px',
+                  border: '2px solid rgba(255, 255, 255, 0.1)',
+                  borderTopColor: COLORS.primary,
+                  borderRadius: '50%',
+                  animation: 'spin 0.6s linear infinite'
+                }} />
+              </div>
+            )}
           </div>
         </div>
 
         <div style={{ height: 'env(safe-area-inset-bottom, 16px)' }} />
       </div>
 
-      <style>{`
-        @keyframes detailsIn { 
-          from { opacity: 0; transform: scale(1.02); } 
-          to { opacity: 1; transform: scale(1); } 
-        }
-        @keyframes backdropFade {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes creditItemIn {
-          from { opacity: 0; transform: translateY(15px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-      `}</style>
     </div>
   );
 }

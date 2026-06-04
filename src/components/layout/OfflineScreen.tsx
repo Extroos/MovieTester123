@@ -69,15 +69,15 @@ export default function OfflineScreen({ onRetry }: OfflineScreenProps) {
           style={{
             width: '100%',
             padding: '1rem 2rem',
-            backgroundColor: '#E50914',
-            color: '#fff',
+            backgroundColor: '#ffffff',
+            color: '#000000',
             border: 'none',
             borderRadius: '14px',
             fontSize: '1rem',
             fontWeight: 700,
             cursor: 'pointer',
             transition: 'all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)',
-            boxShadow: '0 8px 24px rgba(229, 9, 20, 0.4)',
+            boxShadow: '0 8px 24px rgba(255, 255, 255, 0.15)',
           }}
           onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02) translateY(-2px)'}
           onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1) translateY(0)'}
@@ -86,16 +86,6 @@ export default function OfflineScreen({ onRetry }: OfflineScreenProps) {
         </button>
       </div>
 
-      <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes slideUpGlass {
-          from { opacity: 0; transform: translateY(40px) scale(0.95); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
-        }
-      `}</style>
     </div>
   );
 }

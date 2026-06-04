@@ -32,16 +32,17 @@ export default function LoadingScreen() {
         }}
       >
         {/* Minimal Classic Logo */}
-        <h1 style={{
-          fontSize: '3rem',
-          fontWeight: 800,
-          color: COLORS.primary, // The signature Red
-          margin: 0,
-          letterSpacing: '-1px',
-          fontFamily: 'system-ui, -apple-system, sans-serif'
-        }}>
-          CINE<span style={{ color: '#fff' }}>MOVIE</span>
-        </h1>
+        <img
+          src="/cinemovie-logo.png"
+          alt="Cinemovie"
+          style={{
+            height: '240px',
+            width: '100%',
+            maxWidth: '280px',
+            objectFit: 'contain',
+            filter: 'drop-shadow(0 4px 20px rgba(0,0,0,0.8))'
+          }}
+        />
 
         {/* Elegant Minimal Spinner */}
         <motion.div

@@ -16,6 +16,7 @@ export interface Movie {
   tagline?: string;
   adult?: boolean;
   popularity?: number;
+  imdbId?: string;
   // Screenscape source tracking
   _source?: 'tmdb' | 'vidsrc';
   _sourceUrl?: string;
@@ -38,6 +39,7 @@ export interface TVShow {
   popularity?: number;
   episodeRunTime?: number[];
   originCountry?: string[];
+  imdbId?: string;
   // Screenscape source tracking
   _source?: 'tmdb' | 'vidsrc';
   _sourceUrl?: string;
@@ -133,4 +135,14 @@ export interface FriendActivity {
   type: 'movie' | 'tv' | 'anime';
   season?: number;
   episode?: number;
+  reactions?: Reaction[];
+}
+
+export interface Reaction {
+  id: string;
+  item_id: string;
+  user_id: string;
+  target_user_id: string;
+  emoji: string;
+  created_at: string;
 }

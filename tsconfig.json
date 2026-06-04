@@ -42,5 +42,14 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "exclude": [
+    "node_modules",
+    "**/*.backup.ts",
+    "**/*.backup.tsx",
+    "**/*.backup_latest.tsx",
+    "**/*.backup.latest.tsx",
+    "**/*.ts.disabled",
+    "dist"
+  ]
 }

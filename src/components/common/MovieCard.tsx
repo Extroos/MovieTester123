@@ -14,9 +14,8 @@ const MovieCard = React.memo(function MovieCard({ movie, onClick }: MovieCardPro
   return (
     <div
       onClick={() => onClick?.(movie)}
+      className="responsive-movie-card"
       style={{
-        minWidth: window.innerWidth < 768 ? '110px' : '140px',
-        width: window.innerWidth < 768 ? '110px' : '140px',
         cursor: 'pointer',
         WebkitTapHighlightColor: 'transparent',
         userSelect: 'none',
@@ -36,7 +35,6 @@ const MovieCard = React.memo(function MovieCard({ movie, onClick }: MovieCardPro
         borderRadius: '12px',
         overflow: 'hidden',
         backgroundColor: COLORS.bgCard,
-        boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
         border: '1px solid rgba(255, 255, 255, 0.08)',
         transition: 'all 0.3s ease',
       }}>
@@ -69,7 +67,7 @@ const MovieCard = React.memo(function MovieCard({ movie, onClick }: MovieCardPro
           onError={(e) => {
              // Fallback to placeholder on error
              e.currentTarget.onerror = null; // Prevent loop
-             e.currentTarget.src = 'https://via.placeholder.com/300x450/111/444?text=CineMovie';
+             e.currentTarget.src = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="450" viewBox="0 0 300 450"><rect width="100%" height="100%" fill="%2318181b"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="800" font-size="16" fill="%2371717a">NO POSTER</text></svg>`;
           }}
           loading="lazy"
           style={{
@@ -97,7 +95,6 @@ const MovieCard = React.memo(function MovieCard({ movie, onClick }: MovieCardPro
             padding: '5px 9px',
             borderRadius: '10px',
             border: '1px solid rgba(255, 255, 255, 0.15)',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
             display: 'flex',
             alignItems: 'center',
             gap: '4px',
@@ -132,13 +129,6 @@ const MovieCard = React.memo(function MovieCard({ movie, onClick }: MovieCardPro
       }}>
         {movie.title}
       </h3>
-      
-      <style>{`
-        @keyframes revealCard {
-          from { opacity: 0; transform: translateY(10px) scale(0.98); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
-        }
-      `}</style>
     </div>
   );
 });

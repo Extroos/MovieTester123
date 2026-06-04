@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { FriendService } from '../services/friends';
 import { ProfileService } from '../services/profiles';
 import type { Friend, FriendActivity } from '../types';
@@ -10,6 +10,7 @@ export function useFriends() {
   const [activity, setActivity] = useState<FriendActivity[]>([]);
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -43,6 +44,12 @@ export function useFriends() {
     }
   }, []);
 
+  // Debounced refresh — collapses rapid-fire realtime events into a single refetch
+  const debouncedRefresh = useCallback(() => {
+    clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = setTimeout(refresh, 2000);
+  }, [refresh]);
+
   // Initial Load
   useEffect(() => {
     refresh();
@@ -53,24 +60,25 @@ export function useFriends() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'friend_requests' },
-        () => refresh()
+        () => debouncedRefresh()
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'friends' },
-        () => refresh()
+        () => debouncedRefresh()
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'watch_progress' },
-        () => refresh()
+        () => debouncedRefresh()
       )
       .subscribe();
 
     return () => {
+      clearTimeout(refreshTimerRef.current);
       supabase.removeChannel(channel);
     };
-  }, [refresh]);
+  }, [refresh, debouncedRefresh]);
 
   const addFriend = async (friendId: string) => {
     const result = await FriendService.sendFriendRequest(friendId);
@@ -95,3 +103,4 @@ export function useFriends() {
     refresh
   };
 }
+

@@ -46,9 +46,9 @@ export const GENRES = {
 // App Theme Colors (Netflix-inspired professional palette)
 export const COLORS = {
   // Main brand colors
-  primary: '#E50914',      // Netflix red
-  primaryHover: '#F40612', // Brighter red on hover
-  primaryDark: '#B20710',  // Darker red for active states
+  primary: '#FFFFFF',      // White brand color
+  primaryHover: '#F3F4F6', // Brighter off-white/grey on hover
+  primaryDark: '#E5E7EB',  // Darker silver/grey for active states
   
   // Background colors
   bgPrimary: '#0a0a0a',    // Premium dark background (OLED styled)

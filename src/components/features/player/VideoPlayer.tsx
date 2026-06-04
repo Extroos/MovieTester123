@@ -1,11 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
-import Hls from 'hls.js';
-import { WatchProgressService } from '../../../services/progress';
+import { createPortal } from 'react-dom';
 import { StatusBar } from '@capacitor/status-bar';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import type { Movie, TVShow } from '../../../types';
-import { SettingsService } from '../../../services/settings';
 import { StreamService } from '../../../services/StreamService';
+import LocalVideoPlayer from './LocalVideoPlayer/index';
+import EmbedVideoPlayer from './EmbedVideoPlayer';
+import { motion, AnimatePresence } from 'framer-motion';
+import { AlertCircle } from 'lucide-react';
+
+const SystemCast = registerPlugin<any>('SystemCast');
 
 const isNative = Capacitor.isNativePlatform();
 
@@ -18,113 +22,133 @@ interface VideoPlayerProps {
   season?: number;
   episode?: number;
   tracks?: { file: string; label: string; kind: string; default?: boolean }[];
+  startTime?: number;
+  /** Force offline mode — disables server switching in LocalVideoPlayer */
+  isOfflineMode?: boolean;
+  isPartyMode?: boolean;
+  partySessionId?: string | null;
+  isPartyHost?: boolean;
 }
 
-export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, season, episode, tracks }: VideoPlayerProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, season, episode, tracks, startTime, isOfflineMode: isOfflineProp = false, isPartyMode = false, partySessionId = null, isPartyHost = false }: VideoPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [showControls, setShowControls] = useState(true);
-  const controlsTimeout = useRef<NodeJS.Timeout | null>(null);
-  const progressRef = useRef<{time: number, duration: number}>({time: 0, duration: 0});
-  const hlsRef = useRef<Hls | null>(null);
   
-  // --- Custom Player State (Enhanced Mobile UI) ---
+  // Shared playback states (used for UI controls and sync with Google Cast)
   const [playing, setPlaying] = useState(true);
   const [buffering, setBuffering] = useState(true);
-  const [currentTime, setCurrentTime] = useState(0);
+  const [currentTime, setCurrentTime] = useState(startTime || 0);
   const [duration, setDuration] = useState(0);
-  const [qualities, setQualities] = useState<{height: number, index: number}[]>([]);
-  const [currentQuality, setCurrentQuality] = useState(-1); // -1 = Auto
-  const [seekJump, setSeekJump] = useState<'forward' | 'rewind' | null>(null); // For animation
+  const [errorToast, setErrorToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (errorToast) {
+      const timer = setTimeout(() => setErrorToast(null), 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [errorToast]);
+
+  // --- Google Cast Integration States & Refs ---
+  const [isCastAvailable, setIsCastAvailable] = useState(true);
+  const [castConnected, setCastConnected] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [castSource, setCastSource] = useState<string | null>(null);
   const [resolvedTracks, setResolvedTracks] = useState<VideoPlayerProps['tracks']>([]);
   
-  const formatTime = (seconds: number) => {
-    if (!seconds || isNaN(seconds)) return "0:00";
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = Math.floor(seconds % 60);
-    if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    return `${m}:${s.toString().padStart(2, '0')}`;
-  };
-
-  const togglePlay = async (e?: any) => {
-      e?.stopPropagation();
-      
-      // If casting, toggle remote player
-      if (castConnected && remotePlayerController.current) {
-          remotePlayerController.current.playPause();
-          setPlaying(!remotePlayer.current.isPaused);
-          return;
-      }
-
-      if (!videoRef.current) return;
-      
-      // Fullscreen on Play (Gesture safe)
-      if (videoRef.current.paused && containerRef.current && !document.fullscreenElement) {
-          try {
-              if (containerRef.current.requestFullscreen) {
-                  await containerRef.current.requestFullscreen();
-              } else if ((containerRef.current as any).webkitRequestFullscreen) {
-                  await (containerRef.current as any).webkitRequestFullscreen();
-              }
-          } catch (err) {
-              console.log('Fullscreen request failed (expected on some browsers):', err);
-          }
-      }
-
-      if (videoRef.current.paused) {
-          videoRef.current.play().catch(() => {});
-          setPlaying(true);
-      } else {
-          videoRef.current.pause();
-          setPlaying(false);
-      }
-      resetControlsTimeout();
-  };
-
-  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const time = parseFloat(e.target.value);
-      
-      if (castConnected && remotePlayerController.current) {
-          remotePlayer.current.currentTime = time;
-          remotePlayerController.current.seek();
-          setCurrentTime(time);
-          return;
-      }
-
-      if (videoRef.current) {
-          videoRef.current.currentTime = time;
-          setCurrentTime(time);
-      }
-      resetControlsTimeout();
-  };
-  
-  const handleDoubleTap = (e: React.MouseEvent) => {
-      const width = document.body.clientWidth;
-      const x = e.clientX;
-      const isRight = x > width / 2;
-      
-      if (videoRef.current) {
-          videoRef.current.currentTime += isRight ? 10 : -10;
-          setSeekJump(isRight ? 'forward' : 'rewind');
-          setTimeout(() => setSeekJump(null), 500); // Reset animation
-      }
-  };
-  // ------------------------------------------------
-  
-  // --- Google Cast Integration ---
-  const [isCastAvailable, setIsCastAvailable] = useState(false);
-  const [castConnected, setCastConnected] = useState(false);
   const remotePlayer = useRef<any>(null);
   const remotePlayerController = useRef<any>(null);
 
+  const [activeSrc, setActiveSrc] = useState(src);
+  const [showCastPairing, setShowCastPairing] = useState(false);
+  
+  useEffect(() => {
+    setActiveSrc(src);
+  }, [src]);
+
+  // Determine if source is direct HLS or MP4 file proxied locally
+  const isLocalProxy = activeSrc.includes('/local-proxy');
+  const isHls = activeSrc.includes('.m3u8');
+  // Support both direct ends and embedded query parameters for direct file formats
+  const isDirectFile = activeSrc.match(/\.(mp4|webm|ogg|m3u8|ts)(\?|&|$)/i) || activeSrc.includes('.mp4');
+  // Local offline storage URLs: blob: (IndexedDB), capacitor:// (Filesystem), idb:// (sentinel)
+  const isLocalOfflineUrl = activeSrc.startsWith('blob:') || activeSrc.startsWith('capacitor://') || activeSrc.startsWith('idb://');
+  const useNativePlayer = isLocalProxy || isHls || !!isDirectFile || isLocalOfflineUrl;
+  // Offline mode = playing from device storage (no server switching allowed)
+  const isOfflineMode = isOfflineProp || isLocalOfflineUrl;
+  
+  // Switch to native player rendering if casting is connected (to show control dashboard)
+  const shouldShowNative = useNativePlayer || castConnected;
+  // Mock remote player objects for Capacitor native environment
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      if (!remotePlayer.current) {
+        remotePlayer.current = {
+          get isPaused() { return !playing; },
+          get currentTime() { return currentTime; },
+          set currentTime(val) { 
+             (this as any)._seekTime = val; 
+          },
+          get duration() { return duration; },
+          get isConnected() { return castConnected; }
+        };
+      }
+      if (!remotePlayerController.current) {
+        remotePlayerController.current = {
+          playPause: () => {
+            if (playing) {
+              SystemCast.pause();
+            } else {
+              SystemCast.play();
+            }
+          },
+          seek: () => {
+            const target = remotePlayer.current._seekTime !== undefined ? remotePlayer.current._seekTime : currentTime;
+            SystemCast.seek({ time: target });
+          }
+        };
+      }
+    }
+  }, [playing, currentTime, duration, castConnected]);
+
+  // Listen for native cast events on mobile
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      let statusListener: any = null;
+      let progressListener: any = null;
+
+      const setupListeners = async () => {
+        statusListener = await SystemCast.addListener('onCastStatusChanged', (data: { connected: boolean, deviceName: string }) => {
+          setCastConnected(data.connected);
+          if (data.connected) {
+            setPlaying(true);
+          }
+        });
+
+        progressListener = await SystemCast.addListener('onCastProgressChanged', (data: { currentTime: number, duration: number, paused: boolean, buffering: boolean }) => {
+          setCurrentTime(data.currentTime);
+          if (data.duration > 0) {
+            setDuration(data.duration);
+          }
+          setPlaying(!data.paused);
+          setBuffering(data.buffering);
+        });
+      };
+
+      setupListeners();
+
+      return () => {
+        if (statusListener) statusListener.remove();
+        if (progressListener) progressListener.remove();
+      };
+    }
+  }, []);
+
+  // Initialize Chromecast SDK
   useEffect(() => {
     const initCast = () => {
-       if (window.chrome && window.chrome.cast && window.cast) {
+       if ((window.chrome && window.chrome.cast && window.cast) || Capacitor.isNativePlatform()) {
           setIsCastAvailable(true);
+       }
+       if (window.chrome && window.chrome.cast && window.cast) {
           const context = window.cast.framework.CastContext.getInstance();
           
           context.setOptions({
@@ -175,7 +199,7 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
     };
     
     // Check if API is already available or wait for it
-    if (window['__onGCastApiAvailable']) {
+    if (window['__onGCastApiAvailable'] || Capacitor.isNativePlatform()) {
         initCast();
     } else {
         window['__onGCastApiAvailable'] = (isAvailable: boolean) => {
@@ -237,25 +261,32 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
             session.loadMedia(request)
                 .then(() => console.log('[VideoPlayer] Cast Media Load Success'))
                 .catch((e: any) => console.error('Cast Load Error:', e));
-
-            // Sync phone state while casting
-            if (videoRef.current && !videoRef.current.paused) {
-                videoRef.current.pause();
-            }
         }
     }
   }, [castConnected, src, castSource, title, item, resolvedTracks]);
 
   const handleCastClick = async () => {
-      if (!window.cast) return;
+      // 1. On mobile native platform, ALWAYS show our custom TV pairing remote modal
+      if (Capacitor.isNativePlatform()) {
+          import('../../../utils/haptics').then(m => m.triggerHaptic('medium'));
+          setShowCastPairing(true);
+          return;
+      }
 
+      // 2. On PC/Web:
+      // If native Cast is not available (Safari/Firefox/extension still loading), show custom pairing remote modal
+      if (!window.cast) {
+          import('../../../utils/haptics').then(m => m.triggerHaptic('medium'));
+          setShowCastPairing(true);
+          return;
+      }
+      
       const context = window.cast.framework.CastContext.getInstance();
       
       // If not a direct file, we MUST resolve it first
       if (!useNativePlayer && !castSource) {
           if (resolving) return;
           setResolving(true);
-          resetControlsTimeout();
 
           const result = await StreamService.resolve(
               item?.id || '', 
@@ -275,38 +306,16 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
               context.requestSession();
           } else {
               console.warn('[VideoPlayer] Resolution failed');
-              alert("Sorry, this provider doesn't support casting yet. Try another one if available!");
+              setErrorToast("Sorry, this provider doesn't support casting yet. Try another one if available!");
           }
       } else {
           context.requestSession();
       }
   };
 
-  // Determine if source is direct HLS
-  const isHls = src.includes('.m3u8');
-  // If not HLS and not a direct file, assume it's an embed or standard URL meant for iframe
-  const isDirectFile = src.match(/\.(mp4|webm|ogg|m3u8)(\?|$)/i);
-  const useNativePlayer = isHls || isDirectFile;
-
-  // Auto-hide controls after 3 seconds
-  const resetControlsTimeout = () => {
-    if (controlsTimeout.current) clearTimeout(controlsTimeout.current);
-    setShowControls(true);
-    controlsTimeout.current = setTimeout(() => {
-      setShowControls(false);
-    }, 3000);
-  };
-
-  useEffect(() => {
-    resetControlsTimeout();
-    return () => {
-      if (controlsTimeout.current) clearTimeout(controlsTimeout.current);
-    };
-  }, []);
-
   const didInitRef = useRef(false);
 
-  // --- Immersive UI Setup ---
+  // --- Immersive UI Setup (Orientation locks, Keeping Awake, Fullscreen overlays) ---
   useEffect(() => {
     if (didInitRef.current) return;
     didInitRef.current = true;
@@ -324,15 +333,15 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
             }
             
             // 2. Lock Orientation
-            if (isMobile) {
+            if (isMobile || isNative) {
                 if (isNative) {
                     try {
                         const { ScreenOrientation } = await import('@capacitor/screen-orientation');
                         await (ScreenOrientation as any).lock({ orientation: 'landscape' }).catch(() => {});
                     } catch (e) {
-                         if (screen.orientation?.lock) await (screen.orientation as any).lock('landscape').catch(() => {});
+                         if ((screen.orientation as any)?.lock) await (screen.orientation as any).lock('landscape').catch(() => {});
                     }
-                } else if (screen.orientation?.lock) {
+                } else if ((screen.orientation as any)?.lock) {
                     await (screen.orientation as any).lock('landscape').catch(() => {});
                 }
             }
@@ -370,7 +379,7 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
            document.exitFullscreen().catch(() => {});
         }
 
-        if (isMobile) {
+        if (isMobile || isNative) {
             if (isNative) {
                 const disableKeepAwake = async () => {
                     try {
@@ -382,23 +391,23 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
             }
             
             if (isNative) {
-                const unlockOrientation = async () => {
+                const lockToPortrait = async () => {
                     try {
                         const { ScreenOrientation } = await import('@capacitor/screen-orientation');
-                        await ScreenOrientation.unlock();
+                        await (ScreenOrientation as any).lock({ orientation: 'portrait' }).catch(() => {});
                     } catch (e) {
                         try {
-                            if (screen.orientation && screen.orientation.unlock) {
-                                screen.orientation.unlock();
+                            if (screen.orientation && (screen.orientation as any).lock) {
+                                await (screen.orientation as any).lock('portrait').catch(() => {});
                             }
                         } catch (webErr) {}
                     }
                 };
-                unlockOrientation();
+                lockToPortrait();
             } else {
                 try {
-                    if (screen.orientation && screen.orientation.unlock) {
-                        screen.orientation.unlock();
+                    if (screen.orientation && (screen.orientation as any).lock) {
+                        (screen.orientation as any).lock('portrait').catch(() => {});
                     }
                 } catch (webErr) {}
             }
@@ -406,112 +415,10 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
     };
   }, []);
 
-  // Handle HLS Playback
-  useEffect(() => {
-      if (useNativePlayer && videoRef.current && isHls) {
-          if (Hls.isSupported()) {
-              const hls = new Hls();
-              hlsRef.current = hls;
-              hls.loadSource(src);
-              hls.attachMedia(videoRef.current);
-              hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                  setBuffering(false);
-                  const levels = hls.levels.map((l, i) => ({ height: l.height, index: i }));
-                  setQualities(levels);
-                  if (playing) videoRef.current?.play().catch(() => {});
-              });
-              return () => {
-                  hls.destroy();
-                  hlsRef.current = null;
-              };
-          } else if (videoRef.current.canPlayType('application/vnd.apple.mpegurl')) {
-              videoRef.current.src = src;
-              videoRef.current.addEventListener('loadedmetadata', () => {
-                  videoRef.current?.play().catch(e => console.error("Auto-play blocked", e));
-              });
-          }
-      } else if (useNativePlayer && videoRef.current) {
-          videoRef.current.src = src;
-          videoRef.current.play().catch(e => console.error("Auto-play blocked", e));
-      }
-  }, [src, useNativePlayer, isHls]);
-
-  // Track progress...
-  useEffect(() => {
-    if (!item) return;
-
-    if (useNativePlayer) {
-      const handleTimeUpdate = () => {
-          if (videoRef.current) {
-               const cTime = videoRef.current.currentTime;
-               const dur = videoRef.current.duration || 0;
-               setCurrentTime(cTime);
-               if (dur > 0) setDuration(dur);
-               progressRef.current = { time: cTime, duration: dur };
-          }
-      };
-
-      const handlePause = () => {
-          setPlaying(false);
-          if (progressRef.current.time > 0 && progressRef.current.duration > 0) {
-             WatchProgressService.saveProgress(item, progressRef.current.time, progressRef.current.duration, season, episode);
-          }
-      };
-      
-      const setupListeners = () => {
-         if (videoRef.current) {
-             videoRef.current.addEventListener('timeupdate', handleTimeUpdate);
-             videoRef.current.addEventListener('pause', handlePause);
-             videoRef.current.addEventListener('play', () => { setPlaying(true); setBuffering(false); resetControlsTimeout(); });
-             videoRef.current.addEventListener('waiting', () => setBuffering(true));
-             videoRef.current.addEventListener('playing', () => setBuffering(false));
-             videoRef.current.addEventListener('ended', handlePause);
-             if (videoRef.current.duration) setDuration(videoRef.current.duration);
-         }
-      };
-
-      setupListeners();
-      
-      const interval = setInterval(() => {
-        if (videoRef.current) {
-             const currentTime = videoRef.current.currentTime;
-             const duration = videoRef.current.duration;
-             progressRef.current = { time: currentTime, duration };
-             if (currentTime > 0 && duration > 0) {
-                 WatchProgressService.saveProgress(item, currentTime, duration, season, episode);
-             }
-        }
-      }, 15000); 
-
-      return () => {
-          clearInterval(interval);
-          if (videoRef.current) {
-             videoRef.current.removeEventListener('timeupdate', handleTimeUpdate);
-             videoRef.current.removeEventListener('pause', handlePause);
-             videoRef.current.removeEventListener('ended', handlePause);
-          }
-          if (progressRef.current.time > 0 && progressRef.current.duration > 0) {
-                WatchProgressService.saveProgress(item, progressRef.current.time, progressRef.current.duration, season, episode);
-          }
-      };
-
-    } else {
-      const doSave = async (msg: string) => {
-          console.log(`External Player: ${msg}`);
-          await WatchProgressService.saveProgress(item, 1, 0, season, episode);
-      };
-
-      doSave('Saving initial progress');
-      const interval = setInterval(() => {
-           doSave('Saving heartbeat');
-      }, 30000);
-      return () => clearInterval(interval);
-    }
-  }, [item, season, episode, useNativePlayer]);
-
+  // Handle Fullscreen Change events
   useEffect(() => {
     const handleFullscreenChange = () => {
-      const isFullscreen = !!(document.fullscreenElement || (document as any).webkitFullscreenElement);
+      // Intentionally kept as parity placeholder from previous version
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
@@ -521,42 +428,11 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
     };
   }, [onClose]);
 
-  // Handle Keyboard / TV Remote Inputs
+  // Handle exit shortcuts (Escape/Backspace keys) and Android native Back button
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' || e.key === 'Backspace') {
           onClose();
-          return;
-      }
-
-      if (useNativePlayer && videoRef.current) {
-          switch(e.key) {
-              case ' ':
-              case 'Enter': 
-                  e.preventDefault();
-                  togglePlay();
-                  break;
-              case 'ArrowLeft': 
-                  e.preventDefault();
-                  videoRef.current.currentTime -= 10;
-                  setSeekJump('rewind');
-                  setTimeout(() => setSeekJump(null), 500);
-                  resetControlsTimeout();
-                  break;
-              case 'ArrowRight': 
-                  e.preventDefault();
-                  videoRef.current.currentTime += 10;
-                  setSeekJump('forward');
-                  setTimeout(() => setSeekJump(null), 500);
-                  resetControlsTimeout();
-                  break;
-              case 'ArrowUp': 
-              case 'ArrowDown':
-                  e.preventDefault();
-                  setShowControls(true);
-                  resetControlsTimeout();
-                  break;
-          }
       }
     };
     
@@ -577,58 +453,16 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
       window.removeEventListener('keydown', handleKeyDown);
       if (backListener) backListener.remove();
     };
-  }, [onClose, useNativePlayer]);
-
-  // Determine the correct embed URL for iframe
-  const getEmbedUrl = () => {
-    // If src is already a proxy URL, use it directly
-    if (src && src.startsWith('/vidsrc')) return src;
-    
-    // If src is a full URL but not the proxy, we might need to handle it or block it
-    if (src && src.includes('http')) return src;
-
-    if (item) {
-      const isTV = 'name' in item || !!season || !!episode;
-      if (isTV && season && episode) {
-        return `/vidsrc-cc/v2/embed/tv/${item.id}/${season}/${episode}`;
-      } else {
-        return `/vidsrc-cc/v2/embed/movie/${item.id}`;
-      }
-    }
-    return src;
-  };
-
-  const [showSettings, setShowSettings] = useState(false);
-  
-  const handleTrackSelect = (index: number) => {
-     if (videoRef.current && videoRef.current.textTracks) {
-         for (let i = 0; i < videoRef.current.textTracks.length; i++) {
-             videoRef.current.textTracks[i].mode = 'hidden';
-         }
-         if (index >= 0 && videoRef.current.textTracks[index]) {
-            videoRef.current.textTracks[index].mode = 'showing';
-         }
-     }
-     setShowSettings(false);
-     resetControlsTimeout();
-  };
-
-  const handleQualitySelect = (index: number) => {
-      if (hlsRef.current) {
-          hlsRef.current.currentLevel = index;
-          setCurrentQuality(index);
-          setShowSettings(false);
-          resetControlsTimeout();
-      }
-  };
+  }, [onClose]);
 
   const handleContextMenu = (e: React.MouseEvent) => e.preventDefault();
 
-  return (
+  return createPortal(
     <div
       ref={containerRef}
       className="video-player-overlay"
       onContextMenu={handleContextMenu}
+      onClick={e => e.stopPropagation()}
       style={{
         position: 'fixed',
         inset: 0,
@@ -639,359 +473,285 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
         paddingBottom: 'env(safe-area-inset-bottom, 0px)',
       }}
     >
-      {/* Settings Modal */}
-      {showSettings && (
-          <div style={{ position: 'absolute', inset: 0, zIndex: 10020, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowSettings(false)}>
-              <div style={{ background: '#1a1a1a', borderRadius: '12px', padding: '20px', width: '300px', maxWidth: '90%', maxHeight: '80vh', overflowY: 'auto', border: '1px solid rgba(255,255,255,0.1)' }} onClick={e => e.stopPropagation()}>
-                  <h3 style={{ margin: '0 0 16px', color: '#fff', fontSize: '1.2rem', fontWeight: 600 }}>Settings</h3>
-                  
-                  {qualities.length > 0 && (
-                      <div style={{ marginBottom: '20px' }}>
-                          <h4 style={{ margin: '0 0 8px', color: '#aaa', fontSize: '0.9rem', textTransform: 'uppercase' }}>Quality</h4>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                              <button 
-                                onClick={() => handleQualitySelect(-1)}
-                                style={{ 
-                                    padding: '12px', borderRadius: '8px', 
-                                    background: currentQuality === -1 ? 'rgba(229, 9, 20, 0.2)' : 'rgba(255,255,255,0.05)', 
-                                    border: currentQuality === -1 ? '1px solid #E50914' : 'none', 
-                                    color: currentQuality === -1 ? '#E50914' : '#fff', 
-                                    textAlign: 'left', cursor: 'pointer', fontWeight: 500
-                                }}
-                              >
-                                Auto
-                              </button>
-                              {qualities.map((q) => (
-                                  <button 
-                                    key={q.index}
-                                    onClick={() => handleQualitySelect(q.index)}
-                                    style={{ 
-                                        padding: '12px', borderRadius: '8px', 
-                                        background: currentQuality === q.index ? 'rgba(229, 9, 20, 0.2)' : 'rgba(255,255,255,0.05)', 
-                                        border: currentQuality === q.index ? '1px solid #E50914' : 'none', 
-                                        color: currentQuality === q.index ? '#E50914' : '#fff', 
-                                        textAlign: 'left', cursor: 'pointer', fontWeight: 500 
-                                    }}
-                                  >
-                                    {q.height}p
-                                  </button>
-                              ))}
-                          </div>
-                      </div>
-                  )}
-
-                  {tracks && tracks.length > 0 && (
-                      <div>
-                          <h4 style={{ margin: '0 0 8px', color: '#aaa', fontSize: '0.9rem', textTransform: 'uppercase' }}>Subtitles</h4>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                              <button 
-                                onClick={() => handleTrackSelect(-1)}
-                                style={{ padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', border: 'none', color: '#fff', textAlign: 'left', cursor: 'pointer' }}
-                              >
-                                Off
-                              </button>
-                              {tracks.map((track, i) => (
-                                  <button 
-                                    key={i}
-                                    onClick={() => handleTrackSelect(i)}
-                                    style={{ padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', border: 'none', color: '#fff', textAlign: 'left', cursor: 'pointer' }}
-                                  >
-                                    {track.label || `Track ${i+1}`}
-                                  </button>
-                              ))}
-                          </div>
-                      </div>
-                  )}
-
-                  <button onClick={() => setShowSettings(false)} style={{ marginTop: '20px', width: '100%', padding: '12px', background: 'transparent', border: '1px solid rgba(255,255,255,0.3)', color: '#fff', borderRadius: '8px', cursor: 'pointer' }}>Close</button>
-              </div>
-          </div>
-      )}
-
-      {useNativePlayer ? (
-        <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-          {castConnected ? (
-              <div style={{ 
-                position: 'absolute', inset: 0, zIndex: 10, 
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                background: 'linear-gradient(to bottom, #111, #000)',
-                gap: '24px',
-                textAlign: 'center',
-                padding: '20px'
-              }}>
-                <div style={{ position: 'relative' }}>
-                   <img 
-                    src={item && (item as any).posterPath ? `https://image.tmdb.org/t/p/w500${(item as any).posterPath}` : ''} 
-                    alt={title}
-                    style={{ width: '160px', borderRadius: '12px', boxShadow: '0 20px 40px rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.1)' }}
-                   />
-                   <div style={{ 
-                     position: 'absolute', bottom: '-15px', right: '-15px', 
-                     background: '#E50914', borderRadius: '50%', width: '40px', height: '40px',
-                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                     boxShadow: '0 4px 10px rgba(229, 9, 20, 0.4)'
-                   }}>
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M21,3H3C1.9,3,1,3.9,1,5v3h2V5h18v14h-7v2h7c1.1,0,2-0.9,2-2V5C23,3.9,22.1,3,21,3z M1,18v3h3C4,19.34,2.66,18,1,18z M1,14v2c2.76,0,5,2.24,5,5h2C8,17.13,4.87,14,1,14z M1,10v2c4.97,0,9,4.03,9,9h2C12,14.92,7.07,10,1,10z"/></svg>
-                   </div>
-                </div>
-                <div>
-                    <h3 style={{ margin: '0 0 8px', color: '#fff', fontSize: '1.4rem', fontWeight: 700 }}>Playing on TV</h3>
-                    <p style={{ margin: 0, color: 'rgba(255,255,255,0.6)', fontSize: '0.9rem' }}>{title}</p>
-                </div>
-              </div>
-          ) : (
-            <video 
-                ref={videoRef}
-                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                playsInline
-                crossOrigin="anonymous"
-            >
-                {tracks && tracks.map((track, i) => (
-                    <track 
-                        key={i}
-                        kind={track.kind || 'subtitles'}
-                        label={track.label || `Track ${i+1}`}
-                        srcLang={track.label ? track.label.substring(0, 2).toLowerCase() : 'en'}
-                        src={track.file}
-                        default={track.default}
-                    />
-                ))}
-            </video>
-          )}
-        </div>
+      {shouldShowNative ? (
+        <LocalVideoPlayer
+          src={castSource || activeSrc}
+          onSourceChange={setActiveSrc}
+          title={title}
+          onClose={onClose}
+          onNextEpisode={onNextEpisode}
+          item={item}
+          season={season}
+          episode={episode}
+          tracks={resolvedTracks.length > 0 ? resolvedTracks : tracks}
+          isOfflineMode={isOfflineMode}
+          isCastAvailable={isCastAvailable}
+          castConnected={castConnected}
+          resolving={resolving}
+          handleCastClick={handleCastClick}
+          playing={playing}
+          setPlaying={setPlaying}
+          currentTime={currentTime}
+          setCurrentTime={setCurrentTime}
+          duration={duration}
+          setDuration={setDuration}
+          buffering={buffering}
+          setBuffering={setBuffering}
+          remotePlayerRef={remotePlayer}
+          remotePlayerControllerRef={remotePlayerController}
+          startTime={startTime}
+          isPartyMode={isPartyMode}
+          partySessionId={partySessionId}
+          isPartyHost={isPartyHost}
+        />
       ) : (
-        <iframe
-            ref={iframeRef}
-            src={getEmbedUrl()}
-            title={title}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-            // Professional Sandbox: strictly block top-level navigation and popups to prevent ads from hijacking the app window.
-            sandbox="allow-forms allow-pointer-lock allow-same-origin allow-scripts allow-presentation"
-            allowFullScreen
-            referrerPolicy="origin"
-            style={{ width: '100%', height: '100%', border: 'none' }}
+        <EmbedVideoPlayer
+          src={activeSrc}
+          onSourceChange={setActiveSrc}
+          title={title}
+          onClose={onClose}
+          item={item}
+          season={season}
+          episode={episode}
+          isCastAvailable={isCastAvailable}
+          castConnected={castConnected}
+          resolving={resolving}
+          handleCastClick={handleCastClick}
+          startTime={startTime}
         />
       )}
 
-      {useNativePlayer && (
-        <>
-            <div style={{ position: 'absolute', inset: 0, display: 'flex', zIndex: 10000 }}>
-                 <div 
-                    style={{ flex: 1, height: '100%', cursor: showControls ? 'default' : 'none' }}
-                    onClick={(e) => { e.stopPropagation(); setShowControls(prev => !prev); resetControlsTimeout(); }}
-                    onDoubleClick={(e) => { e.stopPropagation(); videoRef.current!.currentTime -= 10; setSeekJump('rewind'); setTimeout(() => setSeekJump(null), 600); resetControlsTimeout(); }}
-                 />
-                 <div 
-                    style={{ flex: 1, height: '100%', cursor: showControls ? 'default' : 'none' }}
-                    onClick={(e) => { e.stopPropagation(); setShowControls(prev => !prev); resetControlsTimeout(); }}
-                    onDoubleClick={(e) => { e.stopPropagation(); videoRef.current!.currentTime += 10; setSeekJump('forward'); setTimeout(() => setSeekJump(null), 600); resetControlsTimeout(); }}
-                 />
-            </div>
+      {/* CineMovie Custom Smart TV Casting & Remote Pairing Modal */}
+      <AnimatePresence>
+        {showCastPairing && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 10090,
+              background: 'rgba(0,0,0,0.6)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+              display: 'flex',
+              alignItems: 'flex-end',
+              justifyContent: 'center',
+              overflowY: 'auto',
+            }}
+            onClick={() => setShowCastPairing(false)}
+          >
+            <style>{`
+              @media (orientation: landscape) and (max-height: 500px) {
+                .cinemovie-cast-sheet {
+                  border-radius: 20px 0 0 20px !important;
+                  border-top-right-radius: 0 !important;
+                  border-bottom-right-radius: 0 !important;
+                  max-height: 100% !important;
+                  max-width: 360px !important;
+                  width: 360px !important;
+                  position: fixed !important;
+                  top: 0 !important;
+                  right: 0 !important;
+                  bottom: 0 !important;
+                  border-bottom: 1px solid rgba(255,255,255,0.08) !important;
+                  border-right: none !important;
+                  animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+                }
+              }
+            `}</style>
 
-            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', zIndex: 10005 }}>
-                {(buffering || resolving) && (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
-                        <div style={{ 
-                            width: '50px', height: '50px', 
-                            border: '4px solid rgba(255,255,255,0.2)', borderTopColor: '#E50914', 
-                            borderRadius: '50%', animation: 'spin 0.8s linear infinite' 
-                        }} />
-                        {resolving && <div style={{ color: '#fff', fontSize: '0.9rem', fontWeight: 600, textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>Resolving for TV...</div>}
-                    </div>
-                )}
-                
-                {seekJump && (
-                    <div style={{ 
-                        background: 'rgba(0,0,0,0.7)', 
-                        backdropFilter: 'blur(10px)',
-                        padding: '16px 24px', 
-                        borderRadius: '30px', 
-                        color: '#fff', 
-                        fontWeight: 700,
-                        fontSize: '1.2rem',
-                        display: 'flex', 
-                        alignItems: 'center',
-                        gap: '10px',
-                        animation: 'fadeIn 0.2s ease-out'
-                    }}>
-                       {seekJump === 'rewind' ? (
-                           <><svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg> <span>10s</span></>
-                       ) : (
-                           <><span>10s</span> <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg></>
-                       )}
-                    </div>
-                )}
-            </div>
+            <div
+              className="cinemovie-cast-sheet"
+              style={{
+                background: 'rgba(12, 12, 14, 0.98)',
+                borderTopLeftRadius: '20px',
+                borderTopRightRadius: '20px',
+                border: '1px solid rgba(255,255,255,0.09)',
+                borderBottom: 'none',
+                padding: '14px 14px calc(14px + env(safe-area-inset-bottom, 0px))',
+                width: '100%',
+                maxWidth: '520px',
+                maxHeight: '82vh',
+                overflowY: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+                scrollbarWidth: 'none',
+                msOverflowStyle: 'none'
+              }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div style={{ width: '36px', height: '4px', background: 'rgba(255,255,255,0.18)', borderRadius: '2px', alignSelf: 'center', marginBottom: '-4px' }} />
 
-            <div style={{
-                position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 10010,
-                opacity: showControls ? 1 : 0, transition: 'opacity 0.25s ease-out',
-                background: showControls ? 'radial-gradient(circle at center, transparent 0%, rgba(0,0,0,0.6) 80%)' : 'transparent',
-                display: 'flex', flexDirection: 'column', justifyContent: 'space-between'
-            }}>
-                <div style={{ 
-                    padding: '24px 24px 60px', 
-                    background: 'linear-gradient(to bottom, rgba(0,0,0,0.8) 0%, transparent 100%)',
-                    display: 'flex', alignItems: 'center', gap: '20px', pointerEvents: 'auto',
-                    transform: showControls ? 'translateY(0)' : 'translateY(-20px)',
-                    transition: 'transform 0.25s ease-out'
-                }}>
-                     <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', width: 44, height: 44, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
-                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-                     </button>
-                     <div style={{ flex: 1, minWidth: 0 }}>
-                        <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600, color: '#fff', textShadow: '0 2px 4px rgba(0,0,0,0.5)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</h2>
-                        <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)', marginTop: '2px', fontWeight: 500 }}>High Quality • Native Player</div>
-                     </div>
-                     
-                     {(qualities.length > 0 || (tracks && tracks.length > 0)) && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setShowSettings(true); }}
-                          style={{
-                            background: 'rgba(255, 255, 255, 0.1)',
-                            border: 'none',
-                            color: showSettings ? '#E50914' : '#fff',
-                            width: '44px',
-                            height: '44px',
-                            borderRadius: '50%',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            backdropFilter: 'blur(4px)'
-                          }}
-                        >
-                           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-                        </button>
-                     )}
-                     
-                     {isCastAvailable && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleCastClick(); }}
-                          style={{
-                            background: castConnected ? '#E50914' : 'rgba(255, 255, 255, 0.1)',
-                            border: 'none',
-                            color: '#fff',
-                            width: '44px',
-                            height: '44px',
-                            borderRadius: '50%',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            backdropFilter: 'blur(4px)'
-                          }}
-                        >
-                           <svg style={{ width: '22px', height: '22px' }} viewBox="0 0 24 24"><path fill="currentColor" d="M21,3H3C1.9,3,1,3.9,1,5v3h2V5h18v14h-7v2h7c1.1,0,2-0.9,2-2V5C23,3.9,22.1,3,21,3z M1,18v3h3C4,19.34,2.66,18,1,18z M1,14v2c2.76,0,5,2.24,5,5h2C8,17.13,4.87,14,1,14z M1,10v2c4.97,0,9,4.03,9,9h2C12,14.92,7.07,10,1,10z"/></svg>
-                        </button>
-                     )}
-                </div>
-
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                     {!playing && !buffering && (
-                         <button 
-                             onClick={(e) => { e.stopPropagation(); togglePlay(e); }}
-                             style={{ 
-                                 width: '80px', height: '80px', 
-                                 borderRadius: '50%', 
-                                 background: 'rgba(0,0,0,0.5)', 
-                                 border: '2px solid rgba(255,255,255,0.8)',
-                                 backdropFilter: 'blur(4px)',
-                                 color: '#fff',
-                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                 pointerEvents: 'auto',
-                                 transform: 'scale(1)',
-                                 transition: 'transform 0.1s'
-                             }}
-                         >
-                             <svg width="40" height="40" fill="currentColor" viewBox="0 0 24 24" style={{ marginLeft: '4px' }}><path d="M8 5v14l11-7z"/></svg>
-                         </button>
-                     )}
-                </div>
-
-                <div style={{ 
-                    padding: '60px 24px 40px', 
-                    background: 'linear-gradient(to top, rgba(0,0,0,0.95) 0%, transparent 100%)',
-                    pointerEvents: 'auto',
-                    transform: showControls ? 'translateY(0)' : 'translateY(20px)',
-                    transition: 'transform 0.25s ease-out'
-                }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
-                        <button onClick={(e) => { e.stopPropagation(); togglePlay(e); }} style={{ background: 'transparent', border: 'none', color: '#fff', padding: 0 }}>
-                            {playing ? (
-                                <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
-                            ) : (
-                                <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                            )}
-                        </button>
-
-                        <div style={{ flex: 1 }}>
-                           <input 
-                              type="range" 
-                              min="0" max={duration || 100} 
-                              value={currentTime} 
-                              onChange={handleSeek}
-                              onMouseDown={resetControlsTimeout}
-                              onTouchStart={resetControlsTimeout}
-                              style={{
-                                  width: '100%',
-                                  height: '4px',
-                                  borderRadius: '2px',
-                                  accentColor: '#E50914',
-                                  cursor: 'pointer',
-                                  outline: 'none',
-                                  background: `linear-gradient(to right, #E50914 ${(currentTime / (duration || 1)) * 100}%, rgba(255,255,255,0.3) ${(currentTime / (duration || 1)) * 100}%)`
-                              }}
-                           />
-                        </div>
-                        
-                        <div style={{ fontSize: '0.85rem', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: 'rgba(255,255,255,0.9)' }}>
-                            {formatTime(currentTime)} / {formatTime(duration)}
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-        </>
-      )}
-
-      {!useNativePlayer && (
-          <div style={{
-            position: 'absolute', top: 0, left: 0, right: 0, height: '100px',
-            background: 'linear-gradient(to bottom, rgba(0,0,0,0.9), transparent)',
-            padding: 'calc(10px + env(safe-area-inset-top, 0px)) 20px', 
-            display: 'flex', alignItems: 'center', gap: '20px',
-            opacity: showControls ? 1 : 0, transition: 'opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1)', 
-            pointerEvents: showControls ? 'auto' : 'none',
-            zIndex: 100
-          }}>
-             <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', width: 44, height: 44, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(10px)' }}>
-                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-             </button>
-             <div style={{ flex: 1 }} />
-             
-             {isCastAvailable && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleCastClick(); }}
-                  style={{
-                    background: castConnected ? '#E50914' : 'rgba(255, 255, 255, 0.2)',
-                    border: 'none',
-                    color: '#fff',
-                    width: '44px',
-                    height: '44px',
-                    borderRadius: '50%',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    backdropFilter: 'blur(10px)'
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <h3 style={{ margin: 0, color: '#fff', fontSize: '1.1rem', fontWeight: 800, letterSpacing: '-0.02em' }}>CineMovie TV Cast</h3>
+                <button 
+                  onClick={() => setShowCastPairing(false)} 
+                  style={{ 
+                    background: 'rgba(255,255,255,0.08)', 
+                    border: '1px solid rgba(255,255,255,0.1)', 
+                    color: '#fff', 
+                    padding: '5px 12px', 
+                    borderRadius: '10px', 
+                    fontSize: '0.75rem', 
+                    fontWeight: 700, 
+                    cursor: 'pointer' 
                   }}
                 >
-                   {resolving ? (
-                       <div style={{ width: '20px', height: '20px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                   ) : (
-                       <svg style={{ width: '22px', height: '22px' }} viewBox="0 0 24 24"><path fill="currentColor" d="M21,3H3C1.9,3,1,3.9,1,5v3h2V5h18v14h-7v2h7c1.1,0,2-0.9,2-2V5C23,3.9,22.1,3,21,3z M1,18v3h3C4,19.34,2.66,18,1,18z M1,14v2c2.76,0,5,2.24,5,5h2C8,17.13,4.87,14,1,14z M1,10v2c4.97,0,9,4.03,9,9h2C12,14.92,7.07,10,1,10z"/></svg>
-                   )}
+                  Close
                 </button>
-             )}
-          </div>
-      )}
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '6px 2px' }}>
+                <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem', margin: 0, fontWeight: 550, lineHeight: 1.4 }}>
+                  Cast and stream directly to your Smart TV, Chromecast, or Mirror screen on Wi-Fi (make sure devices are on the same network).
+                </p>
+
+                {Capacitor.isNativePlatform() && (
+                  <button
+                    onClick={async () => {
+                      import('../../../utils/haptics').then(m => m.triggerSuccessHaptic());
+                      try {
+                        if (castConnected) {
+                          await SystemCast.disconnectCast();
+                        } else {
+                          const posterUrl = item && (item as any).posterPath 
+                            ? `https://image.tmdb.org/t/p/w500${(item as any).posterPath}` 
+                            : '';
+                          const subtitleText = (item as any)?.name 
+                            ? `Season ${season} • Episode ${episode}` 
+                            : '';
+                          await SystemCast.launchCastSettings({
+                            videoUrl: castSource || src,
+                            title: title,
+                            subtitle: subtitleText,
+                            posterUrl: posterUrl,
+                            currentTime: currentTime
+                          });
+                        }
+                      } catch (err: any) {
+                        setErrorToast("Could not manage cast connection.");
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '14px',
+                      background: castConnected ? '#ef4444' : '#ffffff',
+                      border: 'none',
+                      borderRadius: '14px',
+                      color: castConnected ? '#ffffff' : '#000000',
+                      fontSize: '0.88rem',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      boxShadow: castConnected ? '0 6px 20px rgba(239, 68, 68, 0.2)' : '0 6px 20px rgba(255, 255, 255, 0.1)',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M2 17a5 5 0 0 1 5 5" />
+                      <path d="M2 12a10 10 0 0 1 10 10" />
+                      <rect x="2" y="2" width="20" height="20" rx="2" strokeWidth="2" />
+                    </svg>
+                    {castConnected ? "Disconnect TV / Stop Casting" : "Connect TV (Smart View / Google Home)"}
+                  </button>
+                )}
+
+                <div style={{ width: '100%', height: '1px', background: 'rgba(255,255,255,0.08)', margin: '4px 0' }} />
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <span style={{ fontSize: '0.74rem', fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Alternative Option: Network Stream URL
+                  </span>
+                  <p style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.5)', margin: 0, lineHeight: 1.35 }}>
+                    Copy raw streaming link to play directly in TV player apps (like VLC, Kodi, or IPTV smart players):
+                  </p>
+                  <div style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    background: 'rgba(0,0,0,0.3)',
+                    border: '1px solid rgba(255,255,255,0.05)',
+                    borderRadius: '12px',
+                    fontSize: '0.78rem',
+                    color: '#a5b4fc',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    fontFamily: 'monospace',
+                  }}>
+                    {activeSrc}
+                  </div>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(activeSrc);
+                      import('../../../utils/haptics').then(m => m.triggerSuccessHaptic());
+                      setErrorToast("Streaming link copied successfully!");
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      background: 'rgba(255,255,255,0.06)',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      borderRadius: '12px',
+                      color: '#ffffff',
+                      fontSize: '0.8rem',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    Copy Link
+                  </button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Immersive Cast Toast Overlay */}
+      <AnimatePresence>
+        {errorToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -30, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -30, scale: 0.95 }}
+            transition={{ type: 'spring', damping: 25, stiffness: 250 }}
+            style={{
+              position: 'absolute',
+              top: '40px',
+              left: '20px',
+              right: '20px',
+              margin: '0 auto',
+              maxWidth: '480px',
+              background: 'rgba(15, 15, 20, 0.98)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              borderRadius: '20px',
+              padding: '16px 20px',
+              zIndex: 9999,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px'
+            }}
+          >
+            <AlertCircle size={20} color="#ef4444" style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#fff', lineHeight: 1.4, textAlign: 'left' }}>
+              {errorToast}
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
       `}</style>
-    </div>
+    </div>,
+    document.body
   );
 }

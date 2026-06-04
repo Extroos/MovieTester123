@@ -56,7 +56,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
           alignItems: 'center',
           justifyContent: 'center',
           padding: '2rem',
-          animation: 'fadeIn 0.6s ease-out',
+          animation: 'backdropFade 0.6s ease-out',
         }}>
           <div style={{
             textAlign: 'center',
@@ -74,15 +74,15 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
               width: '80px',
               height: '80px',
               margin: '0 auto 1.5rem',
-              background: 'rgba(229, 9, 20, 0.15)',
+              background: 'rgba(255, 255, 255, 0.1)',
               borderRadius: '50%',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              border: '1px solid rgba(229, 9, 20, 0.2)',
-              boxShadow: '0 0 30px rgba(229, 9, 20, 0.2)',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              boxShadow: '0 0 30px rgba(255, 255, 255, 0.1)',
             }}>
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke={COLORS.primary} strokeWidth="2.5">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5">
                 <circle cx="12" cy="12" r="10"/>
                 <line x1="12" y1="8" x2="12" y2="12"/>
                 <line x1="12" y1="16" x2="12.01" y2="16"/>
@@ -115,13 +115,13 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
                   width: '100%',
                   padding: '1rem 1.5rem',
                   background: COLORS.primary,
-                  color: '#FFFFFF',
+                  color: '#000000',
                   border: 'none',
                   borderRadius: '14px',
                   fontSize: '1rem',
                   fontWeight: '700',
                   cursor: 'pointer',
-                  boxShadow: '0 8px 24px rgba(229, 9, 20, 0.4)',
+                  boxShadow: '0 8px 24px rgba(255, 255, 255, 0.15)',
                   transition: 'all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)',
                 }}
               >
@@ -150,17 +150,6 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
               </button>
             </div>
           </div>
-          
-          <style>{`
-            @keyframes fadeIn {
-              from { opacity: 0; }
-              to { opacity: 1; }
-            }
-            @keyframes slideUpGlass {
-              from { opacity: 0; transform: translateY(40px) scale(0.95); }
-              to { opacity: 1; transform: translateY(0) scale(1); }
-            }
-          `}</style>
         </div>
       );
     }
