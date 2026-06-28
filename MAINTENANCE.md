@@ -65,9 +65,32 @@ The OTA JSON file hosted on GitHub defines all domains, URLs, scraping regexes, 
 
 ## 3. Maintenance and Hotfixing Steps
 
-When a streaming provider changes their domain name, header requirements, or encryption key ciphers:
+### When a Streaming Domain or Header Changes
+If a streaming gateway changes its domain name or headers, you do **NOT** need to update the Kotlin source code or compile a new APK. Simply:
+1. Open the [config.json](file:///c:/Users/user/Desktop/CineMovie/config.json) file in your repository.
+2. Edit the gateway domain or header credentials (e.g. change `"vidlink": "https://vidlink.pro"` to the new URL).
+3. Commit and push the changes to GitHub:
+   ```bash
+   git add config.json
+   git commit -m "update vidlink domain gateway"
+   git push origin main
+   ```
+4. All active user devices will automatically download the updated [config.json](https://raw.githubusercontent.com/Extroos/MovieTester123/main/config.json) during the next app startup.
 
-1. **Update the JSON file** in your public GitHub repository.
-2. Ensure you use the **raw link** format (e.g., `https://raw.githubusercontent.com/username/repository/main/config.json`).
-3. The app fetches and updates this JSON instantly at startup.
-4. Users can manually override or refresh the OTA configuration path inside **Player Settings → Servers → OTA Engine Configuration**.
+---
+
+## 4. How to Add a New Server (Guide for Future AI Agents)
+
+If you are a future AI agent tasked with adding a new server (e.g., `"vidsrc-xyz"`):
+1. **Define it in the Configuration:** Add the new server's default configuration parameters under the `headers` or `gateways` sections inside [config.json](file:///c:/Users/user/Desktop/CineMovie/config.json) (e.g. `"vidsrc_xyz_referer"`).
+2. **Add to the UI:** Add a new server selection card button inside the grid in [PlayerSettings.tsx](file:///c:/Users/user/Desktop/CineMovie/src/components/features/player/LocalVideoPlayer/PlayerSettings.tsx) (inside the server grid component) using the server's unique ID.
+3. **Register Resolution Handler:** Open [LocalStreamService.ts](file:///c:/Users/user/Desktop/CineMovie/src/services/streaming/LocalStreamService.ts) and add the server's switch statement case inside `resolveMovieStream` and `resolveTVStream` to call the appropriate resolver function.
+4. **Implement Scraper/Resolver:** 
+   * If it is a native scraper, implement the scraper method (like `resolveVidsrcTo`) inside [NativeStreamingEnginePlugin.kt](file:///c:/Users/user/Desktop/CineMovie/android/app/src/main/java/com/cinemovie/app/NativeStreamingEnginePlugin.kt).
+   * If it uses a JS-Plugin engine, place the JavaScript decryption script inside the assets directory: `android/app/src/main/assets/plugins/vidsrc_xyz.js`.
+5. **Stage and Push:** Commit your code changes and push to GitHub so that the updates are synchronized. Use:
+   ```bash
+   git add .
+   git commit -m "feat: integrate vidsrc-xyz server"
+   git push origin main
+   ```
