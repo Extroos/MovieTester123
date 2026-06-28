@@ -1551,7 +1551,15 @@ export default function App() {
                       onBackNewsGenre={() => setSelectedNewsGenre(null)}
                     />
                     <BrowseNewsPage 
-                      trending={trending} 
+                      trending={React.useMemo(() => {
+                        const list = [];
+                        const maxLen = Math.max(trending.length, trendingTV.length);
+                        for (let i = 0; i < maxLen; i++) {
+                          if (i < trending.length) list.push({ ...trending[i], mediaType: 'movie' });
+                          if (i < trendingTV.length) list.push({ ...trendingTV[i], mediaType: 'tv' });
+                        }
+                        return list;
+                      }, [trending, trendingTV])} 
                       upcoming={upcoming} 
                       onItemClick={(item: any) => { if (item.firstAirDate) { handleTVShowClick(item); } else { handleMovieClick(item); } }} 
                       selectedGenre={selectedNewsGenre}
