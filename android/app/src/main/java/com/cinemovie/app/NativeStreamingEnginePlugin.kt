@@ -381,13 +381,11 @@ class NativeStreamingEnginePlugin : Plugin() {
             conn.useCaches = false
             conn.instanceFollowRedirects = true
 
-            if (!isVidsrcPmCdn) {
-                if (refToUse.isNotEmpty()) {
-                    conn.setRequestProperty("Referer", refToUse)
-                }
-                if (origToUse.isNotEmpty()) {
-                    conn.setRequestProperty("Origin", origToUse)
-                }
+            if (refToUse.isNotEmpty()) {
+                conn.setRequestProperty("Referer", refToUse)
+            }
+            if (origToUse.isNotEmpty()) {
+                conn.setRequestProperty("Origin", origToUse)
             }
 
             conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13; SM-S901B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36")

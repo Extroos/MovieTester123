@@ -87,14 +87,14 @@ class BackgroundRequestObserver(private val context: Context) {
         // Navigate to the target page
         observerWebView.loadUrl(targetUrl)
 
-        // Set up 5-second fallback timeout
+        // Set up 12-second fallback timeout
         timeoutRunnable = Runnable {
             if (isTargetFound.compareAndSet(false, true)) {
                 cleanup()
                 listener.onTimeout()
             }
         }
-        handler.postDelayed(timeoutRunnable!!, 5000)
+        handler.postDelayed(timeoutRunnable!!, 12000)
     }
 
     fun cleanup() {
