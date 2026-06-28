@@ -418,7 +418,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                   <div className="server-cards-grid" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {[
                       { id: 'vidlink-pro', name: 'Vidlink Pro', description: 'Primary gateway — native ad-free stream', badge: 'Recommended' },
-                      { id: 'test-server', name: 'Test Server', description: 'Local hybrid parallel extraction engine', badge: 'New Native Scraper' },
+                      { id: 'test-server', name: 'VidSrc.to', description: 'Local native stream extraction', badge: 'Ad-Free Native' },
                       { id: 'vidsrc-wtf-2', name: 'VidSrc WTF (Multi Lang)', description: 'Multi-language native stream player', badge: 'Ad-Free Native' },
                       { id: 'vidsrc-sbs', name: 'VidSrc SBS', description: 'Clean resolved native stream player', badge: 'Ad-Free Native' },
                       { id: 'vidsrc-pk', name: 'VidSrc PK', description: 'Fast resolved native stream player', badge: 'Ad-Free Native' },
@@ -430,42 +430,31 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                           onClick={() => handleServerChange(srv.id as any)}
                           style={{
                             display: 'flex',
-                            flexDirection: 'column',
-                            gap: '4px',
-                            padding: '12px 16px',
-                            borderRadius: '12px',
-                            background: selectedServer === srv.id ? '#ffffff' : 'rgba(255,255,255,0.05)',
-                            border: selectedServer === srv.id ? 'none' : '1px solid rgba(255,255,255,0.06)',
-                            color: selectedServer === srv.id ? '#000000' : '#ffffff',
-                            textAlign: 'left',
-                            width: '100%',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '12px 14px',
+                            background: selectedServer === srv.id ? 'rgba(255,255,255,0.06)' : 'transparent',
+                            border: selectedServer === srv.id ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(255,255,255,0.05)',
+                            borderRadius: '10px',
                             cursor: 'pointer',
-                            transition: 'all 0.2s'
+                            color: '#fff',
+                            width: '100%',
+                            transition: 'all 0.2s',
+                            textAlign: 'left'
                           }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>{srv.name}</span>
-                            {srv.badge && (
-                              <span style={{
-                                fontSize: '0.62rem',
-                                fontWeight: 800,
-                                padding: '2px 7px',
-                                borderRadius: '6px',
-                                background: selectedServer === srv.id
-                                  ? 'rgba(0,0,0,0.12)'
-                                  : srv.badge === 'Recommended' ? 'rgba(74, 222, 128, 0.15)' : 'rgba(255,255,255,0.08)',
-                                color: selectedServer === srv.id
-                                  ? '#333'
-                                  : srv.badge === 'Recommended' ? '#4ade80' : 'rgba(255,255,255,0.5)',
-                                letterSpacing: '0.02em',
-                                textTransform: 'uppercase'
-                              }}>{srv.badge}</span>
-                            )}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '0.86rem', fontWeight: 800 }}>{srv.name}</span>
+                              <span style={{ fontSize: '0.62rem', fontWeight: 900, background: 'rgba(255,255,255,0.08)', padding: '2px 6px', borderRadius: '4px', color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase' }}>{srv.badge}</span>
+                            </div>
+                            <span style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.45)', fontWeight: 600 }}>{srv.description}</span>
                           </div>
-                          <span className="server-card-desc" style={{ fontSize: '0.74rem', opacity: 0.6, color: selectedServer === srv.id ? '#444' : 'rgba(255,255,255,0.5)' }}>
-                            {srv.description}
-                          </span>
+                          {selectedServer === srv.id && (
+                            <span style={{ color: '#4ade80', fontSize: '1rem', display: 'block' }}>✓</span>
+                          )}
                         </button>
+                        
                         {srv.id === 'test-server' && testServerDiagnostics && (
                           <div style={{
                             background: 'rgba(0, 0, 0, 0.4)',
@@ -480,7 +469,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                             marginTop: '2px',
                             lineHeight: 1.4
                           }}>
-                            <strong>Test Server Diagnostics:</strong>
+                            <strong>VidSrc.to Diagnostics:</strong>
                             <div style={{ marginTop: '4px', opacity: 0.9 }}>{testServerDiagnostics}</div>
                           </div>
                         )}

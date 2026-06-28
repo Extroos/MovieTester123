@@ -423,7 +423,7 @@ export default function LocalVideoPlayer({
 
   const SERVER_DISPLAY_NAMES: Record<string, string> = {
     'vidlink-pro': 'Vidlink Pro',
-    'test-server': 'Test Server',
+    'test-server': 'VidSrc.to',
     'vidsrc-pm': 'VidSrc PM (.m3u8)',
     'universal': 'Universal Player (.m3u8)',
     'vidsrc-sbs': 'VidSrc SBS',
