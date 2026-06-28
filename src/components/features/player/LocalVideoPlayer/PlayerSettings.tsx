@@ -346,8 +346,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
             { id: 'servers', label: 'Servers', show: !!item && !isOfflineMode },
             { id: 'quality', label: selectedServer === 'vidsrc-wtf-2' ? 'Languages' : 'Quality', show: qualities.length > 0 },
             { id: 'subtitles', label: 'Subtitles', show: true },
-            { id: 'speed', label: 'Speed', show: true },
-            {id: 'download', label: 'Downloads', show: !isOfflineMode }
+            { id: 'speed', label: 'Speed', show: true }
           ].filter(t => t.show).map(tab => (
             <button
               key={tab.id}
