@@ -100,7 +100,7 @@ class NativeStreamingEnginePlugin : Plugin() {
 
     private fun getOtaConfigUrl(): String {
         val prefs = context.getSharedPreferences("CineMovieOTA", android.content.Context.MODE_PRIVATE)
-        return prefs.getString("ota_config_url", "https://raw.githubusercontent.com/Extroos/CineMovie/main/config.json") ?: "https://raw.githubusercontent.com/Extroos/CineMovie/main/config.json"
+        return prefs.getString("ota_config_url", "https://raw.githubusercontent.com/Extroos/MovieTester123/main/config.json") ?: "https://raw.githubusercontent.com/Extroos/MovieTester123/main/config.json"
     }
 
     private fun setOtaConfigUrl(url: String) {
