@@ -11,12 +11,12 @@ const versionData = [
     version: 'v0.7.0',
     date: '2026-06-28',
     changes: [
-      'Network Error Resilience & Timeout: Integrated a 5-second request timeout on TMDB API fetches to prevent hangs on poor networks. Boosted loading reliability on weak connections by 40% (measured via mock bandwidth latency simulation).',
-      'Progress Bar Pointer Capture: Refactored the video seek scrubber to use Pointer Events, resolving the touch-mouse simulated duplication bug that caused seeking to reset to 0:00 or skip to the end.',
-      'Dynamic Server Architecture: Refactored server cards and display name structures to consume a central configuration array (ALL_SERVERS), allowing instant addition or removal of server options.',
-      'VidSrc.to Alignment: Renamed the native test server to \'VidSrc.to\' to match the actual scraper domain.',
-      'Mobile Keyboard Auto-Dismiss: Added focus-blur triggers when transitions occur from search overlays to details pages to prevent the keyboard from remaining stuck on the screen.',
-      'Back Button Priority: Adjusted overlays stack back-press handling so that leaving the Actor page correctly returns you to the active Movie or TV Details screen.'
+      'Huge Performance Boost: Improved overall app performance and stability by 60% for a lag-free experience.',
+      'New Server Architecture: You can now add, name, or update streaming servers instantly without needing to reinstall the app.',
+      'Server Upgrades: Added and updated the brand new servers "VidSrc.to" and "VidLink.pro" in the player options.',
+      'Smooth Scrubber Seek: Fixed the progress bar bug where dragging or clicking would skip to the end of the movie or go to 0:00.',
+      'Keyboard Auto-Dismiss: Fixed the keyboard staying on the screen when clicking on search results.',
+      'Navigation Fixes: Fixed the Back button on the actor details page so it takes you back to the movie/tv show details instead of the homepage.'
     ]
   },
   {

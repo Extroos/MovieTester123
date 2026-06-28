@@ -52,12 +52,18 @@ async function fetchFromApi<T>(path: string, params: Record<string, string | num
   const performFetch = async (): Promise<T> => {
     try {
       const response = await withRetry(async () => {
-        const res = await fetch(fullUrl, { signal });
-        if (!res.ok && (res.status >= 500 || res.status === 429)) {
-          throw new Error(`Server error: ${res.status}`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        try {
+          const res = await fetch(fullUrl, { signal: controller.signal });
+          if (!res.ok && (res.status >= 500 || res.status === 429)) {
+            throw new Error(`Server error: ${res.status}`);
+          }
+          return res;
+        } finally {
+          clearTimeout(timeoutId);
         }
-        return res;
-      }, { retries: 3, initialDelay: 500 });
+      }, { retries: 2, initialDelay: 300 });
       
       if (response.status === 404) return null as any; 
       if (!response.ok) throw new Error(`TMDB error: ${response.status}`);
