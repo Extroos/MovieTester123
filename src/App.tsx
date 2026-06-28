@@ -862,9 +862,9 @@ export default function App() {
           if (document.querySelector('.video-player-overlay')) return;
 
           // Priority 1: Overlays & Modals
+          if (selectedActor) { setSelectedActor(null); return; }
           if (selectedMovie) { setSelectedMovie(null); return; }
           if (selectedTVShow) { setSelectedTVShow(null); return; }
-          if (selectedActor) { setSelectedActor(null); return; }
           if (selectedCategory) { setSelectedCategory(null); return; }
           if (searchResultsOpen) { setSearchResultsOpen(false); setSearchOpen(true); return; }
           if (searchOpen) { setSearchOpen(false); return; }
@@ -953,11 +953,17 @@ export default function App() {
   }, [content]);
 
   const handleTVShowClick = useCallback((show: TVShow) => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     setSelectedTVShow(show);
     // REMOVED: setSearchResultsOpen(false) - Preserve context for back navigation
   }, []);
 
   const handleMovieClick = useCallback((movie: Movie | TVShow | any) => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     const isTv = movie.mediaType === 'tv' || movie.type === 'tv' || movie.media_type === 'tv' || 'firstAirDate' in movie || 'name' in movie;
     if (isTv) {
         handleTVShowClick(movie as any);
