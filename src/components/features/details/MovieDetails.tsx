@@ -133,17 +133,21 @@ function MovieDetails({ movie, onClose, onListUpdate, onActorClick }: MovieDetai
   const [showStreamSelector, setShowStreamSelector] = useState(false);
   const [isOverviewExpanded, setIsOverviewExpanded] = useState(false);
   const [forcePlayUpcoming, setForcePlayUpcoming] = useState(false);
+  const [isHolding, setIsHolding] = useState(false);
   const holdTimeoutRef = React.useRef<any>(null);
 
   const handleHoldStart = (e: React.MouseEvent | React.TouchEvent) => {
     if (holdTimeoutRef.current) return;
+    setIsHolding(true);
     holdTimeoutRef.current = setTimeout(() => {
       triggerHaptic('medium');
       setForcePlayUpcoming(true);
+      setIsHolding(false);
     }, 3000);
   };
 
   const handleHoldEnd = () => {
+    setIsHolding(false);
     if (holdTimeoutRef.current) {
       clearTimeout(holdTimeoutRef.current);
       holdTimeoutRef.current = null;
@@ -1055,7 +1059,9 @@ function MovieDetails({ movie, onClose, onListUpdate, onActorClick }: MovieDetai
             <span style={{ fontWeight: 600 }}>
               {forcePlayUpcoming 
                 ? "Leaked movie overwrite watch" 
-                : `Upcoming Release • Releasing on ${new Date(fullMovie.releaseDate).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}`}
+                : isHolding 
+                  ? "Hold to unlock play (leaked movies only)..." 
+                  : `Upcoming Release • Releasing on ${new Date(fullMovie.releaseDate).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}`}
             </span>
           </div>
         )}
