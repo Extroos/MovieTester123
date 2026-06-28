@@ -1065,8 +1065,9 @@ class NativeStreamingEnginePlugin : Plugin() {
                     val sourcesArr = JSArray()
                     for (i in 0 until streamUrls.length()) {
                         val stream = streamUrls.getString(i)
+                        val proxiedStreamUrl = "http://localhost:$proxyPort/local-proxy?url=${java.net.URLEncoder.encode(stream, "UTF-8")}&referer=${java.net.URLEncoder.encode("https://brightpathsignals.com/", "UTF-8")}&origin=${java.net.URLEncoder.encode("https://brightpathsignals.com", "UTF-8")}"
                         sourcesArr.put(JSObject().apply {
-                            put("url", stream)
+                            put("url", proxiedStreamUrl)
                             put("quality", if (i == 0) "auto" else "backup $i")
                             put("isM3U8", true)
                             put("headers", JSObject().apply {
