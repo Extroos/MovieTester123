@@ -2,69 +2,42 @@ import React from 'react';
 import { COLORS } from '../../constants';
 import { triggerHaptic } from '../../utils/haptics';
 import { Home, Film, Tv, Flame, User } from 'lucide-react';
+import { t } from '../../utils/i18n';
 
 export type View = 'home' | 'movies' | 'tvshows' | 'newandhot' | 'mylist' | 'settings' | 'schedules' | 'downloads';
 
 interface BottomNavProps {
   currentView: View;
   onNavClick: (view: View) => void;
+  onSearchOpen?: () => void;
+  activeProfile?: any;
 }
 
 const navItems = [
-  { 
-    id: 'home' as View, 
+  {
+    id: 'home' as View,
     label: 'Home',
-    icon: (active: boolean) => (
-      <Home 
-        size={24} 
-        strokeWidth={active ? 2.8 : 2} 
-        fill="none"
-      />
-    )
+    icon: (active: boolean) => <Home size={24} strokeWidth={active ? 2.8 : 2} fill="none" />
   },
-  { 
-    id: 'movies' as View, 
+  {
+    id: 'movies' as View,
     label: 'Movies',
-    icon: (active: boolean) => (
-      <Film 
-        size={24} 
-        strokeWidth={active ? 2.8 : 2} 
-        fill="none"
-      />
-    )
+    icon: (active: boolean) => <Film size={24} strokeWidth={active ? 2.8 : 2} fill="none" />
   },
-  { 
-    id: 'tvshows' as View, 
+  {
+    id: 'tvshows' as View,
     label: 'Series',
-    icon: (active: boolean) => (
-      <Tv 
-        size={24} 
-        strokeWidth={active ? 2.8 : 2} 
-        fill="none"
-      />
-    )
+    icon: (active: boolean) => <Tv size={24} strokeWidth={active ? 2.8 : 2} fill="none" />
   },
-  { 
-    id: 'newandhot' as View, 
-    label: 'New', 
-    icon: (active: boolean) => (
-      <Flame 
-        size={24} 
-        strokeWidth={active ? 2.8 : 2} 
-        fill="none"
-      />
-    )
+  {
+    id: 'newandhot' as View,
+    label: 'New',
+    icon: (active: boolean) => <Flame size={24} strokeWidth={active ? 2.8 : 2} fill="none" />
   },
-  { 
-    id: 'settings' as View, 
+  {
+    id: 'settings' as View,
     label: 'Profile',
-    icon: (active: boolean) => (
-      <User 
-        size={24} 
-        strokeWidth={active ? 2.8 : 2} 
-        fill="none"
-      />
-    )
+    icon: (active: boolean) => <User size={24} strokeWidth={active ? 2.8 : 2} fill="none" />
   }
 ];
 
@@ -78,31 +51,16 @@ const BottomNav = React.memo(function BottomNav({ currentView, onNavClick }: Bot
     <>
       <style>{`
         @media (min-width: 769px) {
-          .cinemovie-bottom-nav {
-            display: none !important;
-          }
+          .cinemovie-bottom-nav { display: none !important; }
         }
         @media (max-width: 380px) {
-          .cinemovie-bottom-nav {
-            left: 10px !important;
-            right: 10px !important;
-            padding: 4px 6px !important;
-            border-radius: 16px !important;
-          }
-          .cinemovie-bottom-nav button {
-            min-width: auto !important;
-            padding: 6px 2px !important;
-          }
-          .cinemovie-bottom-nav svg {
-            width: 20px !important;
-            height: 20px !important;
-          }
-          .cinemovie-bottom-nav span {
-            font-size: 8.5px !important;
-          }
+          .cinemovie-bottom-nav { left: 10px !important; right: 10px !important; padding: 4px 6px !important; border-radius: 16px !important; }
+          .cinemovie-bottom-nav button { min-width: auto !important; padding: 6px 2px !important; }
+          .cinemovie-bottom-nav svg { width: 20px !important; height: 20px !important; }
+          .cinemovie-bottom-nav span { font-size: 8.5px !important; }
         }
       `}</style>
-      <nav 
+      <nav
         role="navigation"
         aria-label="Main navigation"
         className="cinemovie-bottom-nav"
@@ -112,26 +70,29 @@ const BottomNav = React.memo(function BottomNav({ currentView, onNavClick }: Bot
           left: '16px',
           right: '16px',
           zIndex: 1000,
-          background: 'rgba(15, 15, 15, 0.7)',
-          backdropFilter: 'blur(25px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(25px) saturate(180%)',
+          background: 'rgba(12, 12, 12, 0.97)',
           border: '1px solid rgba(255, 255, 255, 0.08)',
           borderRadius: '20px',
           display: 'flex',
           justifyContent: 'space-around',
           alignItems: 'center',
           padding: '8px 10px',
-          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
+          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.6)',
         }}
       >
         {navItems.map((item) => {
           const isActive = currentView === item.id;
-          
+          const translatedLabel = t(
+            item.id === 'tvshows' ? 'series' : 
+            item.id === 'newandhot' ? 'new' : 
+            item.id === 'settings' ? 'profile' : 
+            item.id
+          );
           return (
             <button
               key={item.id}
               onClick={() => handleNavClick(item.id)}
-              aria-label={item.label}
+              aria-label={translatedLabel}
               aria-current={isActive ? 'page' : undefined}
               style={{
                 background: 'transparent',
@@ -151,25 +112,22 @@ const BottomNav = React.memo(function BottomNav({ currentView, onNavClick }: Bot
               }}
             >
               <div style={{
-                color: isActive ? '#FFFFFF' : 'rgba(255, 255, 255, 0.6)', 
+                color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
                 transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                 transform: isActive ? 'scale(1.15)' : 'scale(1)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
                 {item.icon(isActive)}
               </div>
-              
               <span style={{
                 fontSize: '10px',
                 fontWeight: isActive ? 700 : 550,
-                color: isActive ? '#FFFFFF' : 'rgba(255, 255, 255, 0.5)', 
+                color: isActive ? 'var(--text-primary)' : 'var(--text-muted)',
                 letterSpacing: '0.2px',
                 transition: 'all 0.2s ease',
                 marginTop: '3px',
               }}>
-                {item.label}
+                {translatedLabel}
               </span>
             </button>
           );

@@ -1,6 +1,7 @@
 import type { Movie, TVShow } from '../../types';
 import { ProfileService } from './profiles';
 import { supabase } from '../../lib/supabase';
+import { StatsService } from './stats';
 
 // Guard verbose logging behind DEV mode — console.log on Android WebView
 // triggers a synchronous native bridge call that stalls the main thread.
@@ -22,6 +23,39 @@ interface OfflineProgressEntry {
   lastWatched: string;
   data: any;
   queuedAt: number;
+}
+
+const isGuest = () => localStorage.getItem('cinemovie_is_guest') === 'true';
+
+interface GuestProgressItem {
+  profile_id: string;
+  item_id: string;
+  type: 'movie' | 'tv' | 'anime';
+  progress: number;
+  duration: number;
+  season_number?: number;
+  episode_number?: number;
+  last_watched: string;
+  data: any;
+}
+
+function getLocalProgress(profileId: string): GuestProgressItem[] {
+  try {
+    const raw = localStorage.getItem(`cinemovie_guest_progress_${profileId}`);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveLocalProgress(profileId: string, progressList: GuestProgressItem[]) {
+  try {
+    localStorage.setItem(`cinemovie_guest_progress_${profileId}`, JSON.stringify(progressList));
+  } catch (e) {
+    // quota exceeded or similar
+  }
 }
 
 const readOfflineQueue = (): OfflineProgressEntry[] => {
@@ -72,6 +106,7 @@ export interface WatchProgress {
 export const WatchProgressService = {
   // In-flight dedup: prevents parallel Supabase upserts for the same (itemId, type)
   _inflight: new Set<string>(),
+  _lastSaved: new Map<string, number>(),
 
   saveProgress: async (item: Movie | TVShow | any, progress: number, duration: number, season?: number, episode?: number) => {
     if (!item || !item.id) {
@@ -86,7 +121,20 @@ export const WatchProgressService = {
         return; 
     }
     
-    const type = item.mediaType === 'anime' ? 'anime' : ((item as any).name ? 'tv' : 'movie'); 
+    const isAnimeShow = item.mediaType === 'anime' || 
+                        (item.genres?.some((g: any) => g.name.toLowerCase() === 'animation') && 
+                         (item.origin_country?.includes('JP') || item.originCountry?.includes('JP')));
+    const type = isAnimeShow ? 'anime' : ((item as any).name ? 'tv' : 'movie'); 
+
+    // Throttle progress saves to at most once every 5 seconds per item, unless it's completion
+    const throttleKey = `${item.id}::${type}`;
+    const now = Date.now();
+    const lastSaved = WatchProgressService._lastSaved.get(throttleKey) || 0;
+    const isComplete = duration > 0 && progress / duration > 0.90;
+    if (now - lastSaved < 5000 && progress > 0 && !isComplete) {
+      return;
+    }
+    WatchProgressService._lastSaved.set(throttleKey, now);
 
     // In-flight deduplication: skip if a save for this exact item is already in progress
     const flightKey = `${item.id}::${type}`;
@@ -94,17 +142,16 @@ export const WatchProgressService = {
     WatchProgressService._inflight.add(flightKey);
 
     try {
-
-    // If watched > 90%, remove from continue watching
-    if (duration > 0 && progress / duration > 0.90) {
-      if (type === 'tv' && season !== undefined && episode !== undefined && episode < 99) {
-      if (DEBUG) console.log(`[Progress] TV Episode S${season}:E${episode} completed (>90%). Advancing to E${episode + 1}`);
-        try {
+      // If watched > 90%, remove from continue watching
+      if (duration > 0 && progress / duration > 0.90) {
+        if (type === 'tv' && season !== undefined && episode !== undefined && episode < 99) {
+          if (DEBUG) console.log(`[Progress] TV Episode S${season}:E${episode} completed (>90%). Advancing to E${episode + 1}`);
           const profile = ProfileService.getActiveProfile();
           if (profile) {
-            await supabase
-              .from('watch_progress')
-              .upsert({
+            if (isGuest()) {
+              const list = getLocalProgress(profile.id);
+              const filtered = list.filter(i => !(i.item_id === item.id.toString() && i.type === type));
+              filtered.push({
                 profile_id: profile.id,
                 item_id: item.id.toString(),
                 type,
@@ -114,18 +161,35 @@ export const WatchProgressService = {
                 episode_number: episode + 1,
                 last_watched: new Date().toISOString(),
                 data: item
-              }, { onConflict: 'profile_id,item_id,type' });
+              });
+              saveLocalProgress(profile.id, filtered);
+            } else {
+              try {
+                await supabase
+                  .from('watch_progress')
+                  .upsert({
+                    profile_id: profile.id,
+                    item_id: item.id.toString(),
+                    type,
+                    progress: 0,
+                    duration: 0,
+                    season_number: season,
+                    episode_number: episode + 1,
+                    last_watched: new Date().toISOString(),
+                    data: item
+                  }, { onConflict: 'profile_id,item_id,type' });
+              } catch (e) {
+                console.error('[Progress] Exception advancing TV show:', e);
+              }
+            }
           }
-        } catch (e) {
-          console.error('[Progress] Exception advancing TV show:', e);
+          return;
+        } else {
+          console.log('[Progress] Removing finished item:', item.id);
+          await WatchProgressService.removeProgress(item.id, type);
+          return;
         }
-        return;
-      } else {
-        console.log('[Progress] Removing finished item:', item.id);
-        await WatchProgressService.removeProgress(item.id, type);
-        return;
       }
-    }
     } catch (e) {
       console.error('[Progress] Exception in saveProgress:', e);
     } finally {
@@ -138,7 +202,9 @@ export const WatchProgressService = {
       return;
     }
 
-    const itemType = item.mediaType === 'anime' ? 'anime' : ((item as any).name ? 'tv' : 'movie') as 'movie' | 'tv' | 'anime';
+    await StatsService.trackProgressUpdate(profile.id, item, progress, duration, season, episode);
+
+    const itemType = type as 'movie' | 'tv' | 'anime';
     const payload = {
       profile_id: profile.id,
       item_id: item.id.toString(),
@@ -150,6 +216,14 @@ export const WatchProgressService = {
       last_watched: new Date().toISOString(),
       data: item
     };
+
+    if (isGuest()) {
+      const list = getLocalProgress(profile.id);
+      const filtered = list.filter(i => !(i.item_id === item.id.toString() && i.type === itemType));
+      filtered.push(payload);
+      saveLocalProgress(profile.id, filtered);
+      return;
+    }
 
     // If device is offline, queue immediately without attempting Supabase
     if (!navigator.onLine) {
@@ -169,7 +243,7 @@ export const WatchProgressService = {
     }
 
     try {
-      console.log(`[Progress] Saving ${itemType} ${item.id} (${progress}/${duration})`);
+      if (DEBUG) console.log(`[Progress] Saving ${itemType} ${item.id} (${progress}/${duration})`);
       const { error } = await supabase
         .from('watch_progress')
         .upsert(payload, { onConflict: 'profile_id,item_id,type' });
@@ -211,13 +285,16 @@ export const WatchProgressService = {
    * Call this when the device regains internet connectivity.
    */
   syncOfflineQueue: async (): Promise<void> => {
-    const queue = readOfflineQueue();
+    if (isGuest()) return; // Guests do not sync with Supabase
+    let queue = readOfflineQueue();
     if (queue.length === 0) return;
 
     if (DEBUG) console.log(`[Progress] Syncing ${queue.length} offline progress entries...`);
     const failed: OfflineProgressEntry[] = [];
 
-    for (const entry of queue) {
+    while (queue.length > 0) {
+      const entry = queue.shift()!;
+      let success = false;
       try {
         const { error } = await supabase
           .from('watch_progress')
@@ -235,32 +312,53 @@ export const WatchProgressService = {
 
         if (error) {
           console.warn(`[Progress] Sync failed for ${entry.itemId}, will retry later:`, error.message);
-          failed.push(entry);
         } else {
           if (DEBUG) console.log(`[Progress] Synced offline entry: ${entry.itemId}`);
+          success = true;
         }
       } catch (e) {
-        // Still offline or error — keep in queue for next attempt
+        console.warn(`[Progress] Exception syncing ${entry.itemId}:`, e);
+      }
+
+      if (!success) {
         failed.push(entry);
       }
+      writeOfflineQueue([...failed, ...queue]);
     }
 
     if (failed.length === 0) {
       localStorage.removeItem(OFFLINE_QUEUE_KEY);
       if (DEBUG) console.log('[Progress] All offline entries synced successfully.');
     } else {
-      writeOfflineQueue(failed);
-      console.warn(`[Progress] ${failed.length} entries could not be synced and remain queued.`);
+      if (DEBUG) console.log(`[Progress] Done syncing. ${failed.length} entries remain queued.`);
     }
   },
 
   /** Returns the number of progress entries currently queued for offline sync. */
-  getOfflineQueueLength: (): number => readOfflineQueue().length,
+  getOfflineQueueLength: (): number => isGuest() ? 0 : readOfflineQueue().length,
 
   getProgress: async (id: number | string, type: 'movie' | 'tv' | 'anime'): Promise<WatchProgress | null> => {
     try {
       const profile = ProfileService.getActiveProfile();
       if (!profile) return null;
+
+      if (isGuest()) {
+        const list = getLocalProgress(profile.id);
+        const data = list.find(i => i.item_id === id.toString() && i.type === type);
+        if (!data) return null;
+        if (data.progress < 1 && data.duration > 0) return null;
+        return {
+          id: data.item_id,
+          type: data.type,
+          itemId: data.item_id,
+          progress: data.progress,
+          duration: data.duration,
+          timestamp: new Date(data.last_watched).getTime(),
+          data: data.data,
+          season: data.season_number,
+          episode: data.episode_number
+        };
+      }
 
       const { data, error } = await supabase
         .from('watch_progress')
@@ -301,11 +399,52 @@ export const WatchProgressService = {
           return [];
       }
 
+      if (isGuest()) {
+        const list = getLocalProgress(profile.id);
+        const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+        const filtered = list
+          .filter(i => new Date(i.last_watched).getTime() > thirtyDaysAgo)
+          .sort((a, b) => new Date(b.last_watched).getTime() - new Date(a.last_watched).getTime());
+
+        const result = filtered.map((item: any) => {
+          if (!item.data) return null;
+          const raw = item.data;
+          if (raw.title && typeof raw.title === 'object') {
+            return {
+              ...raw,
+              original_title: raw.title,
+              title: raw.title.userPreferred || raw.title.english || raw.title.romaji || 'Anime',
+              poster_path: raw.coverImage?.large || raw.coverImage?.extraLarge || raw.image || raw.poster_path || raw.bannerImage || raw.img || raw.thumbnail || raw.picture,
+              posterPath: raw.coverImage?.large || raw.coverImage?.extraLarge || raw.image || raw.poster_path || raw.bannerImage || raw.img || raw.thumbnail || raw.picture,
+              image: raw.coverImage?.large || raw.coverImage?.extraLarge || raw.image || raw.poster_path || raw.bannerImage || raw.img || raw.thumbnail || raw.picture,
+              mediaType: 'anime',
+              id: item.item_id || raw.id,
+              watchedAt: new Date(item.last_watched).getTime(),
+              progress: item.progress,
+              duration: item.duration,
+              season: item.season_number,
+              episode: item.episode_number
+            };
+          }
+          return {
+            ...raw,
+            id: item.item_id || raw.id,
+            watchedAt: new Date(item.last_watched).getTime(),
+            progress: item.progress,
+            duration: item.duration,
+            season: item.season_number,
+            episode: item.episode_number
+          } as (Movie | TVShow);
+        }).filter(item => item !== null);
+        return result as (Movie | TVShow)[];
+      }
+
       if (DEBUG) console.log('[Progress] Fetching continue watching...');
       const { data, error } = await supabase
         .from('watch_progress')
         .select('*')
         .eq('profile_id', profile.id)
+        .neq('type', 'stats')
         .gt('last_watched', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()) // Last 30 days only
         .order('last_watched', { ascending: false });
 
@@ -368,10 +507,28 @@ export const WatchProgressService = {
       const profile = ProfileService.getActiveProfile();
       if (!profile) return [];
 
+      if (isGuest()) {
+        const list = getLocalProgress(profile.id);
+        const sorted = list.sort((a, b) => new Date(b.last_watched).getTime() - new Date(a.last_watched).getTime());
+        const sliced = sorted.slice(page * limit, (page + 1) * limit);
+        return sliced.map((item: any) => ({
+          id: item.item_id,
+          type: item.type,
+          itemId: item.item_id,
+          progress: item.progress,
+          duration: item.duration,
+          timestamp: new Date(item.last_watched).getTime(),
+          data: item.data,
+          season: item.season_number,
+          episode: item.episode_number
+        }));
+      }
+
       const { data, error } = await supabase
         .from('watch_progress')
         .select('*')
         .eq('profile_id', profile.id)
+        .neq('type', 'stats')
         .order('last_watched', { ascending: false })
         .range(page * limit, (page + 1) * limit - 1);
 
@@ -403,10 +560,30 @@ export const WatchProgressService = {
         const profile = ProfileService.getActiveProfile();
         if (!profile) return {};
   
+        if (isGuest()) {
+          const list = getLocalProgress(profile.id);
+          const map: Record<string, WatchProgress> = {};
+          list.forEach((item: any) => {
+             map[item.item_id] = {
+                id: item.item_id,
+                type: item.type,
+                itemId: item.item_id,
+                progress: item.progress,
+                duration: item.duration,
+                timestamp: new Date(item.last_watched).getTime(),
+                data: item.data,
+                season: item.season_number,
+                episode: item.episode_number
+             };
+          });
+          return map;
+        }
+
         const { data } = await supabase
           .from('watch_progress')
           .select('*')
-          .eq('profile_id', profile.id);
+          .eq('profile_id', profile.id)
+          .neq('type', 'stats');
           
         if (!data) return {};
         
@@ -430,10 +607,17 @@ export const WatchProgressService = {
       }
   },
 
-  removeProgress: async (id: number | string, type: 'movie' | 'tv') => {
+  removeProgress: async (id: number | string, type: 'movie' | 'tv' | 'anime') => {
     try {
       const profile = ProfileService.getActiveProfile();
       if (!profile) return;
+
+      if (isGuest()) {
+        const list = getLocalProgress(profile.id);
+        const filtered = list.filter(i => !(i.item_id === id.toString() && i.type === type));
+        saveLocalProgress(profile.id, filtered);
+        return;
+      }
 
       const { error } = await supabase
         .from('watch_progress')
@@ -453,10 +637,16 @@ export const WatchProgressService = {
       const profile = ProfileService.getActiveProfile();
       if (!profile) return false;
 
+      if (isGuest()) {
+        saveLocalProgress(profile.id, []);
+        return true;
+      }
+
       const { error } = await supabase
         .from('watch_progress')
         .delete()
-        .eq('profile_id', profile.id);
+        .eq('profile_id', profile.id)
+        .neq('type', 'stats');
         
       if (error) {
         console.error('Error clearing progress:', error);
@@ -469,4 +659,3 @@ export const WatchProgressService = {
     }
   }
 };
-

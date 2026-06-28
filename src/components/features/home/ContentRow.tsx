@@ -1,8 +1,13 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import type { Movie, TVShow } from '../../../types';
-import { getPosterUrl, getBackdropUrl } from '../../../services/tmdb';
+import { getPosterUrl, getBackdropUrl, API_KEY, getMovieDetails } from '../../../services/tmdb';
 import { triggerHaptic } from '../../../utils/haptics';
 import { COLORS } from '../../../constants';
+
+// Module-level deduplication for image recovery fetches.
+// If multiple cards show the same broken movie ID, only one TMDB fetch fires.
+// Keys are cleared when the fetch resolves (success or failure).
+const recoveringIds = new Set<string>();
 
 interface ContentRowProps {
   title: React.ReactNode;
@@ -28,38 +33,172 @@ const ContentCard = React.memo(({ movie, onClick, onReaction, index, isWide = fa
   isWide?: boolean
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);
-  const shimmerRef = useRef<HTMLDivElement>(null);
+  const [imageLoaded, setImageLoaded] = React.useState(false);
+  const [hasError, setHasError] = React.useState(false);
+  const [recoveredSrc, setRecoveredSrc] = React.useState<string | null>(null);
+  const isUpcomingInitial = !!((movie as Movie).releaseDate && new Date((movie as Movie).releaseDate || '').getTime() > Date.now());
+  const [inTheaters, setInTheaters] = React.useState<boolean>(!!(movie as Movie).inTheaters && !isUpcomingInitial);
+
+  useEffect(() => {
+    const isMovie = !(movie as any).name;
+    if (!isMovie) return;
+
+    const isUpcoming = !!((movie as Movie).releaseDate && new Date((movie as Movie).releaseDate || '').getTime() > Date.now());
+
+    if ((movie as Movie).inTheaters !== undefined) {
+      setInTheaters(!!(movie as Movie).inTheaters && !isUpcoming);
+      return;
+    }
+
+    let isMounted = true;
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries[0];
+      if (entry && entry.isIntersecting) {
+        observer.disconnect();
+
+        getMovieDetails(movie.id)
+          .then((details) => {
+            if (isMounted && details) {
+              const detailsUpcoming = !!(details.releaseDate && new Date(details.releaseDate).getTime() > Date.now());
+              setInTheaters(!!details.inTheaters && !detailsUpcoming);
+            }
+          })
+          .catch(() => {});
+      }
+    }, {
+      rootMargin: '100px',
+    });
+
+    if (cardRef.current) {
+      observer.observe(cardRef.current);
+    }
+
+    return () => {
+      isMounted = false;
+      observer.disconnect();
+    };
+  }, [movie.id, (movie as Movie).inTheaters, (movie as Movie).releaseDate]);
 
   const handleClick = useCallback(() => {
     triggerHaptic('medium');
     onClick?.(movie);
   }, [onClick, movie]);
 
-  const handleImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
-    if (shimmerRef.current) {
-      shimmerRef.current.remove();
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleClick();
     }
-    e.currentTarget.style.opacity = '1';
+  }, [handleClick]);
+
+  const handleImageLoad = useCallback(() => {
+    setImageLoaded(true);
   }, []);
 
   const handleImageError = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
-    e.currentTarget.onerror = null;
-    // Create elegant local inline SVG representation instead of hitting slow/unreliable external HTTP placeholder service
-    e.currentTarget.src = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="300" viewBox="0 0 200 300"><rect width="100%" height="100%" fill="%2318181b"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="800" font-size="13" fill="%2371717a">NO POSTER</text></svg>`;
-    e.currentTarget.style.opacity = '1';
-    if (shimmerRef.current) shimmerRef.current.remove();
-  }, []);
+    const failedSrc = e.currentTarget.src;
+
+    // Don't recurse if recovery URL itself failed
+    if (recoveredSrc && failedSrc === recoveredSrc) {
+      setHasError(true);
+      setImageLoaded(true);
+      return;
+    }
+
+    // Accept both number and string IDs (Supabase returns item_id as string)
+    const rawId = movie.id;
+    const numericId = rawId ? parseInt(String(rawId), 10) : NaN;
+
+    if (!isNaN(numericId) && numericId > 0) {
+      const recoveryKey = `${numericId}_${isWide ? 'wide' : 'poster'}`;
+
+      // Skip if another card is already fetching recovery for this same ID
+      if (recoveringIds.has(recoveryKey)) {
+        // Will show placeholder while the in-flight request resolves
+        return;
+      }
+
+      // Auto-recover: hit TMDB API to get the real current image path
+      const size = isWide ? 'w780' : 'w342';
+      const preferField = isWide ? 'backdrop_path' : 'poster_path';
+      const fallbackField = isWide ? 'poster_path' : 'backdrop_path';
+
+      recoveringIds.add(recoveryKey);
+      fetch(`https://api.themoviedb.org/3/movie/${numericId}?api_key=${API_KEY}&language=en-US`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          const path = data?.[preferField] || data?.[fallbackField];
+          if (path) {
+            setRecoveredSrc(`https://image.tmdb.org/t/p/${size}${path}`);
+            setImageLoaded(false);
+          } else {
+            setHasError(true);
+            setImageLoaded(true);
+          }
+        })
+        .catch(() => {
+          setHasError(true);
+          setImageLoaded(true);
+        })
+        .finally(() => {
+          recoveringIds.delete(recoveryKey);
+        });
+    } else {
+      // No numeric ID — can't recover, show placeholder
+      setHasError(true);
+      setImageLoaded(true);
+    }
+  }, [movie, isWide, recoveredSrc]);
+
 
   const displayTitle = (movie as Movie).title || (movie as TVShow).name;
   const watchedBy = (movie as any).watchedBy;
   const progress = (movie as any).progress;
   const duration = (movie as any).duration;
 
+  // Compute the primary image src from stored data
+  const computeImageSrc = (): string => {
+    // Support both camelCase and snake_case field names
+    const pPath = (movie as any).posterPath || (movie as any).poster_path;
+    const bPath = (movie as any).backdropPath || (movie as any).backdrop_path;
+
+    const rawPath = isWide ? (bPath || pPath) : (pPath || bPath);
+
+    if (!rawPath) return '/movie-placeholder.png';
+
+    // Already a full URL — return as-is
+    if (rawPath.startsWith('http://') || rawPath.startsWith('https://')) return rawPath;
+
+    const size = isWide ? 'w780' : 'w342';
+    return `https://image.tmdb.org/t/p/${size}${rawPath}`;
+  };
+
+  const imageSrc = recoveredSrc || computeImageSrc();
+
+  // Reset all state when the movie changes (different item)
+  const prevIdRef = useRef<number | string>(movie.id);
+  if (prevIdRef.current !== movie.id) {
+    prevIdRef.current = movie.id;
+    if (hasError) setHasError(false);
+    if (imageLoaded) setImageLoaded(false);
+    if (recoveredSrc) setRecoveredSrc(null);
+    const isUpcoming = !!((movie as Movie).releaseDate && new Date((movie as Movie).releaseDate || '').getTime() > Date.now());
+    setInTheaters(!!(movie as Movie).inTheaters && !isUpcoming);
+  }
+
+  const getCardImageSrc = (): string => {
+    if (hasError) {
+      return `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="300" viewBox="0 0 200 300"><rect width="100%" height="100%" fill="%2318181b"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="800" font-size="13" fill="%2371717a">NO POSTER</text></svg>`;
+    }
+    return imageSrc;
+  };
+
   return (
     <div
       ref={cardRef}
-      className="content-card movie-card"
+      className="content-card movie-card tv-focusable"
       onClick={handleClick}
+      onKeyDown={handleKeyDown}
       role="button"
       tabIndex={0}
       style={{
@@ -72,7 +211,7 @@ const ContentCard = React.memo(({ movie, onClick, onReaction, index, isWide = fa
         WebkitTapHighlightColor: 'transparent',
         userSelect: 'none',
         WebkitUserSelect: 'none',
-        scrollSnapAlign: 'start', // Lock in place beautifully during swipes
+        scrollSnapAlign: 'start',
         ['--stagger' as any]: Math.min(index, 8),
       }}
     >
@@ -90,23 +229,25 @@ const ContentCard = React.memo(({ movie, onClick, onReaction, index, isWide = fa
         }}
       >
         {/* Shimmer */}
-        <div
-          ref={shimmerRef}
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: 'linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%)',
-            backgroundSize: '200% 100%',
-            animation: 'shimmer 1.5s infinite linear',
-            zIndex: 1,
-          }}
-        />
+        {!imageLoaded && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%)',
+              backgroundSize: '200% 100%',
+              animation: 'shimmer 1.5s infinite linear',
+              zIndex: 1,
+            }}
+          />
+        )}
 
         <img
-          src={isWide ? (((movie as any).backdropPath || (movie as any).backdrop_path) ? getBackdropUrl((movie as any).backdropPath || (movie as any).backdrop_path) : getPosterUrl(movie.posterPath, 'medium')) : getPosterUrl(movie.posterPath, 'medium')}
+          key={imageSrc}
+          src={getCardImageSrc()}
           alt={displayTitle}
-          loading="lazy"
           decoding="async"
+          loading="lazy"
           onLoad={handleImageLoad}
           onError={handleImageError}
           style={{
@@ -115,8 +256,8 @@ const ContentCard = React.memo(({ movie, onClick, onReaction, index, isWide = fa
             width: '100%',
             height: '100%',
             objectFit: 'cover',
-            opacity: 0,
-            transition: 'opacity 0.5s ease-out',
+            opacity: imageLoaded ? 1 : 0,
+            transition: 'opacity 0.3s ease-out',
             pointerEvents: 'none',
             zIndex: 2,
           }}
@@ -128,9 +269,7 @@ const ContentCard = React.memo(({ movie, onClick, onReaction, index, isWide = fa
             position: 'absolute',
             top: '8px',
             left: '8px',
-            background: 'rgba(0, 0, 0, 0.75)',
-            backdropFilter: 'blur(10px)',
-            WebkitBackdropFilter: 'blur(10px)',
+            background: 'rgba(15, 15, 15, 0.9)',
             border: '1px solid rgba(255, 255, 255, 0.15)',
             color: '#ffffff',
             fontSize: '9px',
@@ -143,6 +282,29 @@ const ContentCard = React.memo(({ movie, onClick, onReaction, index, isWide = fa
             {(movie as any).season ? `S${(movie as any).season}:E${(movie as any).episode}` : `EP ${(movie as any).episode}`}
           </div>
         )}
+
+        {/* CAM Badge for Theater Releases */}
+        {inTheaters ? (
+          <div style={{
+            position: 'absolute',
+            top: '8px',
+            right: '8px',
+            background: '#ffffff',
+            border: '1px solid rgba(255, 255, 255, 0.3)',
+            color: '#000000',
+            fontSize: '8px',
+            fontWeight: 950,
+            padding: '2px 6px',
+            borderRadius: '4px',
+            zIndex: 10,
+            letterSpacing: '0.04em',
+            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.4)',
+          }}>
+            CAM
+          </div>
+        ) : null}
+
+
 
         {/* Dynamic Watch Progress Bar */}
         {progress !== undefined && duration && duration > 0 && (
@@ -302,6 +464,7 @@ const ContentCard = React.memo(({ movie, onClick, onReaction, index, isWide = fa
               {['🔥', '❤️', '👏', '😂'].map(emoji => (
                 <button
                   key={emoji}
+                  className="content-row-reaction-btn"
                   onClick={(e) => {
                     e.stopPropagation();
                     import('../../../utils/haptics').then(m => m.triggerHaptic('light'));
@@ -324,10 +487,7 @@ const ContentCard = React.memo(({ movie, onClick, onReaction, index, isWide = fa
                     fontSize: '0.85rem',
                     cursor: 'pointer',
                     pointerEvents: 'auto',
-                    transition: 'transform 0.15s ease',
                   }}
-                  onMouseEnter={e => (e.currentTarget.style.transform = 'scale(1.15)')}
-                  onMouseLeave={e => (e.currentTarget.style.transform = 'scale(1)')}
                 >
                   {emoji}
                 </button>
@@ -346,27 +506,8 @@ const ContentCard = React.memo(({ movie, onClick, onReaction, index, isWide = fa
 const ContentRow = React.memo(function ContentRow({ 
   title, movies, onMovieClick, onSeeAll, onReaction,
   activeTab, onTabChange, tabs, isWide = false
-}: ContentRowProps) {
+ }: ContentRowProps) {
   const rowRef = useRef<HTMLDivElement>(null);
-  const [isRendered, setIsRendered] = React.useState(false);
-
-  useEffect(() => {
-    const el = rowRef.current;
-    if (!el || isRendered) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          el.classList.add('is-visible');
-          setIsRendered(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: '400px 0px', threshold: 0.01 }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [isRendered]);
 
   if (!movies || movies.length === 0) return null;
 
@@ -374,7 +515,13 @@ const ContentRow = React.memo(function ContentRow({
     <div
       ref={rowRef}
       className="content-row-container"
-      style={{ marginBottom: '1.8rem', position: 'relative', zIndex: 10 }}
+      style={{ 
+        marginBottom: '1.8rem', 
+        position: 'relative', 
+        zIndex: 10,
+        contentVisibility: 'auto',
+        containIntrinsicSize: isWide ? 'auto 180px' : 'auto 240px'
+      }}
     >
       {/* Row Header */}
       <div style={{
@@ -413,7 +560,8 @@ const ContentRow = React.memo(function ContentRow({
                 return (
                   <button
                     key={tab.id}
-                    className="mobile-touch-target"
+                    className="mobile-touch-target tv-focusable"
+                    tabIndex={0}
                     onClick={(e) => {
                       e.stopPropagation();
                       import('../../../utils/haptics').then(m => m.triggerHaptic('light'));
@@ -447,7 +595,8 @@ const ContentRow = React.memo(function ContentRow({
 
           {onSeeAll && (
             <button
-              className="mobile-touch-target"
+              className="mobile-touch-target see-all-btn tv-focusable"
+              tabIndex={0}
               onClick={(e) => {
                 e.stopPropagation();
                 triggerHaptic('light');
@@ -467,17 +616,8 @@ const ContentRow = React.memo(function ContentRow({
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '5px',
-                transition: 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), background 0.25s ease',
                 textTransform: 'uppercase',
                 letterSpacing: '0.04em',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'scale(1.03)';
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
               }}
             >
               See All
@@ -505,25 +645,21 @@ const ContentRow = React.memo(function ContentRow({
             WebkitOverflowScrolling: 'touch',
             touchAction: 'pan-x pan-y',
             overscrollBehaviorX: 'contain',
-            scrollSnapType: 'x mandatory', // Smooth touch lock-snap on swipe
-            scrollPaddingLeft: '4vw', // Force browser snap to align with left padding
-            scrollPaddingRight: '4vw', // Force browser snap to align with right padding
+            scrollSnapType: 'x mandatory',
+            scrollPaddingLeft: '4vw',
+            scrollPaddingRight: '4vw',
           }}
         >
-          {isRendered ? (
-            movies.map((movie, index) => (
-              <ContentCard
-                key={`${movie.id}-${(movie as any).name ? 'tv' : 'movie'}`}
-                movie={movie}
-                index={index}
-                onClick={onMovieClick}
-                onReaction={onReaction}
-                isWide={isWide}
-              />
-            ))
-          ) : (
-            <div style={{ height: '180px', display: 'flex', width: '100%', pointerEvents: 'none' }} />
-          )}
+          {movies.map((movie, index) => (
+            <ContentCard
+              key={`${movie.id}-${(movie as any).name ? 'tv' : 'movie'}`}
+              movie={movie}
+              index={index}
+              onClick={onMovieClick}
+              onReaction={onReaction}
+              isWide={isWide}
+            />
+          ))}
           {/* Elegant spacer div to fix CSS scroll-padding-right bug in mobile browsers */}
           <div style={{ minWidth: '4vw', width: '4vw', flexShrink: 0, height: '8px', pointerEvents: 'none' }} />
         </div>

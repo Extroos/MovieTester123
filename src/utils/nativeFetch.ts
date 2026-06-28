@@ -8,7 +8,10 @@ export function getHeadersForUrl(url: string): Record<string, string> {
       const urlObj = new URL(url);
       const ref = urlObj.searchParams.get('origin_referer');
       if (ref) {
-        const origin = ref.replace(/\/$/, '');
+        let origin = ref.replace(/\/$/, '');
+        try {
+          origin = new URL(ref).origin;
+        } catch (_) {}
         return {
           'User-Agent': ua,
           'Referer': ref,
@@ -20,7 +23,10 @@ export function getHeadersForUrl(url: string): Record<string, string> {
       const match = url.match(/[?&]origin_referer=([^&]+)/);
       if (match) {
         const ref = decodeURIComponent(match[1]);
-        const origin = ref.replace(/\/$/, '');
+        let origin = ref.replace(/\/$/, '');
+        try {
+          origin = new URL(ref).origin;
+        } catch (_) {}
         return {
           'User-Agent': ua,
           'Referer': ref,
@@ -51,6 +57,14 @@ export function getHeadersForUrl(url: string): Record<string, string> {
       'Accept': '*/*',
     };
   }
+  if (url.includes('vidsrc.wtf')) {
+    return {
+      'User-Agent': ua,
+      'Referer': 'https://vidsrc.wtf/',
+      'Origin': 'https://vidsrc.wtf',
+      'Accept': '*/*',
+    };
+  }
   if (url.includes('vidsrc')) {
     return {
       'User-Agent': ua,
@@ -74,7 +88,11 @@ export function getHeadersForUrl(url: string): Record<string, string> {
 }
 
 export function base64ToArrayBuffer(base64: string): ArrayBuffer {
-  const binary = atob(base64);
+  let cleanBase64 = base64;
+  if (base64 && base64.includes(';base64,')) {
+    cleanBase64 = base64.split(';base64,')[1];
+  }
+  const binary = atob(cleanBase64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i);
@@ -84,12 +102,17 @@ export function base64ToArrayBuffer(base64: string): ArrayBuffer {
 
 export async function fetchWithCapacitor(
   url: string,
-  responseType: 'text' | 'arraybuffer'
-): Promise<{ ok: boolean; text: () => Promise<string>; arrayBuffer: () => Promise<ArrayBuffer>; base64?: () => Promise<string> }> {
+  responseType: 'text' | 'arraybuffer',
+  headers?: Record<string, string>
+): Promise<{ ok: boolean; status?: number; text: () => Promise<string>; arrayBuffer: () => Promise<ArrayBuffer>; base64?: () => Promise<string> }> {
   const isBinary = responseType === 'arraybuffer';
+  const mergedHeaders = {
+    ...getHeadersForUrl(url),
+    ...headers,
+  };
   const response = await CapacitorHttp.get({
     url,
-    headers: getHeadersForUrl(url),
+    headers: mergedHeaders,
     responseType: isBinary ? 'blob' : 'text',
     webFetchExtra: {
       mode: 'no-cors',
@@ -98,7 +121,13 @@ export async function fetchWithCapacitor(
 
   return {
     ok: response.status >= 200 && response.status < 300,
-    text: async () => response.data,
+    status: response.status,
+    text: async () => {
+      if (typeof response.data === 'object' && response.data !== null) {
+        return JSON.stringify(response.data);
+      }
+      return response.data;
+    },
     base64: async () => response.data,
     arrayBuffer: async () => {
       let data = response.data;

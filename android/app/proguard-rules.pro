@@ -19,3 +19,7 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# CineMovie: Keep custom Capacitor plugins and CastOptions classes resolved dynamically by name
+-keep class com.cinemovie.app.** { *; }
+-keep class com.getcapacitor.** { *; }

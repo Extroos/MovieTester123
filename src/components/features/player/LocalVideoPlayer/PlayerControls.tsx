@@ -121,7 +121,111 @@ export const PlayerControls = React.memo(function PlayerControls({
     }
   }, [currentTime]);
 
-  if (iframeFallback) return null;
+  if (iframeFallback) {
+    return (
+      <div 
+        style={{
+          position: 'absolute', 
+          inset: 0, 
+          pointerEvents: showControls ? 'auto' : 'none', 
+          zIndex: 10010,
+          opacity: showControls ? 1 : 0, 
+          visibility: showControls ? 'visible' : 'hidden',
+          transition: 'opacity 0.25s ease-out, visibility 0.25s ease-out',
+          background: 'transparent',
+          display: 'flex', 
+          flexDirection: 'column', 
+          justifyContent: 'flex-start'
+        }}
+      >
+        {/* Top Bar (Metadata & Settings) */}
+        <div 
+          onClick={(e) => e.stopPropagation()}
+          data-player-controls="true"
+          style={{ 
+            padding: 'calc(12px + env(safe-area-inset-top, 0px)) 24px 20px', 
+            background: 'transparent',
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '20px', 
+            pointerEvents: showControls ? 'auto' : 'none',
+            transform: showControls ? 'translateY(0)' : 'translateY(-20px)',
+            transition: 'transform 0.25s ease-out',
+            willChange: 'transform, opacity'
+          }}
+        >
+          <button 
+            onClick={(e) => { e.stopPropagation(); onClose(); }} 
+            tabIndex={0}
+            className="tv-focusable"
+            style={{ 
+              background: 'rgba(255,255,255,0.08)', 
+              border: '1px solid rgba(255,255,255,0.1)', 
+              color: '#fff', 
+              width: 44, 
+              height: 44, 
+              borderRadius: '50%', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+            onMouseDown={e => e.currentTarget.style.transform = 'scale(0.92)'}
+            onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+            aria-label="Back"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <polyline points="15 18 9 12 15 6"/>
+            </svg>
+          </button>
+
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', letterSpacing: '-0.02em' }}>
+              {title}
+            </h2>
+            <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)', marginTop: '2px', fontWeight: 600 }}>
+              Third-Party Provider • Embed Player (Contains Ads)
+            </div>
+          </div>
+
+
+
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              import('../../../../utils/haptics').then(m => m.triggerHaptic('light'));
+              setSettingsTab('servers');
+              setShowSettings(true);
+            }}
+            tabIndex={0}
+            className="tv-focusable"
+            style={{ 
+              background: 'rgba(255,255,255,0.08)', 
+              border: '1px solid rgba(255,255,255,0.1)', 
+              color: '#fff', 
+              width: 44, 
+              height: 44, 
+              borderRadius: '50%', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+            onMouseDown={e => e.currentTarget.style.transform = 'scale(0.92)'}
+            onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+            title="Player Settings"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Robust Coordinate-based Scrubber Seek & Touch Handlers
   const handleScrubberAction = (clientX: number, target: HTMLDivElement, isEnd = false) => {
@@ -159,6 +263,7 @@ export const PlayerControls = React.memo(function PlayerControls({
   };
 
   const handleScrubberMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    // mouse movement logic for scrubber preview
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const percent = Math.max(0, Math.min(1, clickX / rect.width));
@@ -215,13 +320,16 @@ export const PlayerControls = React.memo(function PlayerControls({
   };
 
   const bufferedPercent = (() => {
-    if (!videoRef.current || !duration || duration <= 0) return 0;
+    const dur = duration;
+    if (!videoRef.current || !dur || dur <= 0 || isNaN(dur)) return 0;
     try {
       const buffered = videoRef.current.buffered;
       if (buffered && buffered.length > 0) {
         for (let i = buffered.length - 1; i >= 0; i--) {
-          if (buffered.start(i) <= currentTime) {
-            return (buffered.end(i) / duration) * 100;
+          const start = buffered.start(i);
+          const end = buffered.end(i);
+          if (!isNaN(start) && !isNaN(end) && start <= currentTime) {
+            return Math.max(0, Math.min(100, (end / dur) * 100));
           }
         }
       }
@@ -230,16 +338,20 @@ export const PlayerControls = React.memo(function PlayerControls({
   })();
 
   const isScrubbingActive = isDraggingRef.current || isScrubberHovered;
+  const playedPercent = (duration > 0 && !isNaN(currentTime) && !isNaN(duration)) 
+    ? Math.max(0, Math.min(100, (currentTime / duration) * 100)) 
+    : 0;
 
   return (
     <div 
       style={{
         position: 'absolute', 
         inset: 0, 
-        pointerEvents: 'none', 
+        pointerEvents: showControls ? 'auto' : 'none', 
         zIndex: 10010,
         opacity: showControls ? 1 : 0, 
-        transition: 'opacity 0.25s ease-out',
+        visibility: showControls ? 'visible' : 'hidden',
+        transition: 'opacity 0.25s ease-out, visibility 0.25s ease-out',
         background: 'transparent',
         display: 'flex', 
         flexDirection: 'column', 
@@ -258,11 +370,14 @@ export const PlayerControls = React.memo(function PlayerControls({
           gap: '20px', 
           pointerEvents: 'auto',
           transform: showControls ? 'translateY(0)' : 'translateY(-20px)',
-          transition: 'transform 0.25s ease-out'
+          transition: 'transform 0.25s ease-out',
+          willChange: 'transform, opacity'
         }}
       >
         <button 
           onClick={(e) => { e.stopPropagation(); onClose(); }} 
+          tabIndex={0}
+          className="tv-focusable"
           style={{ 
             background: 'rgba(255,255,255,0.08)', 
             border: '1px solid rgba(255,255,255,0.1)', 
@@ -278,6 +393,7 @@ export const PlayerControls = React.memo(function PlayerControls({
           }}
           onMouseDown={e => e.currentTarget.style.transform = 'scale(0.92)'}
           onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+          aria-label="Back"
         >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <polyline points="15 18 9 12 15 6"/>
@@ -303,7 +419,7 @@ export const PlayerControls = React.memo(function PlayerControls({
             <div style={{ display: 'flex', alignItems: 'center', marginLeft: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', position: 'relative', height: '32px' }}>
                 {partyParticipants.map((user, idx) => {
-                  const colors = ['#e50914', '#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899'];
+                  const colors = ['#6366f1', '#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899'];
                   const userColor = colors[idx % colors.length];
                   const avatarUrl = user.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(user.name)}`;
                   return (
@@ -346,6 +462,8 @@ export const PlayerControls = React.memo(function PlayerControls({
             setIsLocked(true); 
             setShowControls(false); 
           }} 
+          tabIndex={0}
+          className="tv-focusable"
           style={{ 
             background: 'rgba(255,255,255,0.08)', 
             border: '1px solid rgba(255,255,255,0.1)', 
@@ -383,6 +501,8 @@ export const PlayerControls = React.memo(function PlayerControls({
               setZoomScale(1.0);
             }
           }}
+          tabIndex={0}
+          className="tv-focusable"
           style={{ 
             background: 'rgba(255,255,255,0.08)', 
             border: '1px solid rgba(255,255,255,0.1)', 
@@ -427,6 +547,8 @@ export const PlayerControls = React.memo(function PlayerControls({
         {isCastAvailable && (
           <button 
             onClick={(e) => { e.stopPropagation(); handleCastClick(); }}
+            tabIndex={0}
+            className="tv-focusable"
             style={{
               background: castConnected ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.08)',
               border: castConnected ? 'none' : '1px solid rgba(255,255,255,0.1)',
@@ -454,6 +576,8 @@ export const PlayerControls = React.memo(function PlayerControls({
           </button>
         )}
         
+
+
         <button 
           onClick={(e) => {
             e.stopPropagation();
@@ -461,6 +585,8 @@ export const PlayerControls = React.memo(function PlayerControls({
             setSettingsTab(isOfflineMode ? 'subtitles' : 'servers');
             setShowSettings(true);
           }}
+          tabIndex={0}
+          className="tv-focusable"
           style={{ 
             background: 'rgba(255,255,255,0.08)', 
             border: '1px solid rgba(255,255,255,0.1)', 
@@ -485,13 +611,15 @@ export const PlayerControls = React.memo(function PlayerControls({
         </button>
       </div>
 
-      {/* Central Controls (Play/Pause) */}
       <div 
         style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}
       >
         <button 
           onClick={(e) => { e.stopPropagation(); togglePlay(e); }} 
-          disabled={buffering || resolving}
+          disabled={resolving}
+          tabIndex={0}
+          className="tv-focusable"
+          aria-label={playing ? 'Pause' : 'Play'}
           style={{ 
             pointerEvents: 'auto',
             background: 'transparent', 
@@ -537,7 +665,8 @@ export const PlayerControls = React.memo(function PlayerControls({
           transition: 'transform 0.25s ease-out',
           display: 'flex',
           flexDirection: 'column',
-          gap: '8px'
+          gap: '8px',
+          willChange: 'transform, opacity'
         }}
       >
         {/* Progress Scrubber Container with custom drag & coordinate-based tapping listeners */}
@@ -605,20 +734,22 @@ export const PlayerControls = React.memo(function PlayerControls({
                 top: 0,
                 bottom: 0,
                 width: `${bufferedPercent}%`,
+                maxWidth: '100%',
                 background: 'rgba(255, 255, 255, 0.24)',
                 borderRadius: '3px',
                 transition: 'width 0.3s ease'
               }}
             />
-            {/* Played Red Bar */}
+            {/* Played Bar */}
             <div 
               style={{
                 position: 'absolute',
                 left: 0,
                 top: 0,
                 bottom: 0,
-                width: `${(currentTime / (duration || 1)) * 100}%`,
-                background: '#e50914',
+                width: `${playedPercent}%`,
+                maxWidth: '100%',
+                background: '#ffffff',
                 borderRadius: '3px'
               }}
             />
@@ -627,12 +758,12 @@ export const PlayerControls = React.memo(function PlayerControls({
               style={{
                 position: 'absolute',
                 top: '50%',
-                left: `${(currentTime / (duration || 1)) * 100}%`,
+                left: `${playedPercent}%`,
                 width: '12px',
                 height: '12px',
                 borderRadius: '50%',
                 background: '#ffffff',
-                border: '1.5px solid #e50914',
+                border: '1.5px solid #ffffff',
                 transform: isScrubbingActive ? 'translate(-50%, -50%) scale(1.35)' : 'translate(-50%, -50%) scale(0.65)',
                 transition: isDraggingRef.current ? 'transform 0.15s ease' : 'left 0.1s linear, transform 0.15s ease'
               }}
@@ -642,8 +773,10 @@ export const PlayerControls = React.memo(function PlayerControls({
         
         {/* Row 2: Time & Actions */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ fontSize: '0.85rem', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'rgba(255,255,255,0.9)' }}>
-            {formatTime(currentTime)} / {formatTime(duration)}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'rgba(255,255,255,0.9)' }}>
+                {formatTime(currentTime)} / {formatTime(duration)}
+              </div>
           </div>
 
           {IS_MOBILE_DEVICE ? (
@@ -683,6 +816,8 @@ export const PlayerControls = React.memo(function PlayerControls({
           ) : (
             <button
               onClick={toggleFullScreen}
+              tabIndex={0}
+              className="tv-focusable"
               style={{
                 background: 'rgba(255,255,255,0.08)',
                 border: '1px solid rgba(255,255,255,0.1)',

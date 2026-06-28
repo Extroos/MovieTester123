@@ -67,22 +67,22 @@ async function idbDelete(id: string): Promise<void> {
 
 // ─── Build an in-memory HLS playlist wrapping a segment blob URL ──────────────
 
-function buildM3u8Playlist(segmentUrl: string): string {
-  // Single-segment playlist — the whole downloaded video is one .ts file
+function buildM3u8Playlist(segmentUrl: string, durationSeconds = 7200): string {
+  // Single-segment playlist wrapping the merged video
   return [
     '#EXTM3U',
     '#EXT-X-VERSION:3',
-    '#EXT-X-TARGETDURATION:86400',
+    `#EXT-X-TARGETDURATION:${durationSeconds}`,
     '#EXT-X-MEDIA-SEQUENCE:0',
-    '#EXTINF:86400.0,',
+    `#EXTINF:${durationSeconds}.0,`,
     segmentUrl,
     '#EXT-X-ENDLIST',
     '',
   ].join('\n');
 }
 
-function makeBlobM3u8(segmentUrl: string): string {
-  const playlist = buildM3u8Playlist(segmentUrl);
+function makeBlobM3u8(segmentUrl: string, durationSeconds = 7200): string {
+  const playlist = buildM3u8Playlist(segmentUrl, durationSeconds);
   const blob = new Blob([playlist], { type: 'application/x-mpegURL' });
   return URL.createObjectURL(blob);
 }
@@ -93,12 +93,38 @@ function safeFilename(id: string): string {
   return id.replace(/[^a-z0-9_\-]/gi, '_');
 }
 
-function tsFilename(id: string): string { return safeFilename(id) + '.ts'; }
+function isDownloadMp4(id: string): boolean {
+  try {
+    const raw = localStorage.getItem('cinemovie_downloads');
+    if (raw) {
+      const list = JSON.parse(raw);
+      const item = list.find((i: any) => i.id === id);
+      if (item) {
+        if (item.localUrl && item.localUrl.includes('type=mp4')) {
+          return true;
+        }
+        if (item.streamUrl) {
+          const streamLower = item.streamUrl.toLowerCase();
+          if (streamLower.includes('.mp4') || streamLower.includes('.mkv') || streamLower.includes('resource/h265')) {
+            return true;
+          }
+        }
+      }
+    }
+  } catch (e) {}
+  return false;
+}
+
+function getStoredFilename(id: string): string {
+  return safeFilename(id) + (isDownloadMp4(id) ? '.mp4' : '.ts');
+}
+
+function tsFilename(id: string): string { return getStoredFilename(id); }
 function m3u8Filename(id: string): string { return safeFilename(id) + '.m3u8'; }
 
 function uint8ToBase64(bytes: Uint8Array): Promise<string> {
   return new Promise((resolve, reject) => {
-    const blob = new Blob([bytes], { type: 'application/octet-stream' });
+    const blob = new Blob([bytes as any], { type: 'application/octet-stream' });
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result as string;
@@ -113,41 +139,51 @@ function uint8ToBase64(bytes: Uint8Array): Promise<string> {
 async function fsWrite(id: string, data: Uint8Array): Promise<string> {
   const { Filesystem, Directory } = await import('@capacitor/filesystem');
   const dir = 'cinemovie_offline';
+  const isMp4 = isDownloadMp4(id);
+  const videoFile = getStoredFilename(id);
 
   // 1. Convert bytes to base64 asynchronously using memory-safe Blob/FileReader
   const base64Data = await uint8ToBase64(data);
 
-  // 2. Write the TS segment
+  // 2. Write the TS/MP4 file
   await Filesystem.writeFile({
-    path: `${dir}/${tsFilename(id)}`,
+    path: `${dir}/${videoFile}`,
     data: base64Data,
     directory: Directory.Data,
     recursive: true,
   });
 
-  // 3. Write a companion .m3u8 playlist with a RELATIVE path to the segment
-  //    HLS.js will resolve it relative to the m3u8 URL
-  const playlist = buildM3u8Playlist(tsFilename(id));
-  await Filesystem.writeFile({
-    path: `${dir}/${m3u8Filename(id)}`,
-    data: btoa(unescape(encodeURIComponent(playlist))), // UTF-8 safe base64
-    directory: Directory.Data,
-    recursive: true,
-  });
+  if (isMp4) {
+    const result = await Filesystem.getUri({
+      path: `${dir}/${videoFile}`,
+      directory: Directory.Data,
+    });
+    return Capacitor.convertFileSrc(result.uri) + '#type=mp4';
+  } else {
+    // 3. Write a companion .m3u8 playlist with a RELATIVE path to the segment
+    const playlist = buildM3u8Playlist(videoFile);
+    await Filesystem.writeFile({
+      path: `${dir}/${m3u8Filename(id)}`,
+      data: btoa(unescape(encodeURIComponent(playlist))), // UTF-8 safe base64
+      directory: Directory.Data,
+      recursive: true,
+    });
 
-  // 4. Return the playable capacitor:// URL for the m3u8
-  const result = await Filesystem.getUri({
-    path: `${dir}/${m3u8Filename(id)}`,
-    directory: Directory.Data,
-  });
-  return Capacitor.convertFileSrc(result.uri);
+    // 4. Return the playable capacitor:// URL for the m3u8
+    const result = await Filesystem.getUri({
+      path: `${dir}/${m3u8Filename(id)}`,
+      directory: Directory.Data,
+    });
+    return Capacitor.convertFileSrc(result.uri) + '#type=m3u8';
+  }
 }
 
 async function fsDelete(id: string): Promise<void> {
   try {
     const { Filesystem, Directory } = await import('@capacitor/filesystem');
     const dir = 'cinemovie_offline';
-    await Filesystem.deleteFile({ path: `${dir}/${tsFilename(id)}`,  directory: Directory.Data }).catch(() => {});
+    const videoFile = getStoredFilename(id);
+    await Filesystem.deleteFile({ path: `${dir}/${videoFile}`,  directory: Directory.Data }).catch(() => {});
     await Filesystem.deleteFile({ path: `${dir}/${m3u8Filename(id)}`, directory: Directory.Data }).catch(() => {});
   } catch { /* ignore */ }
 }
@@ -233,23 +269,51 @@ export const OfflineStorageService = {
    * Finalize the progressive write session, write playlist manifest, and return playable URL.
    */
   async finalizeWrite(id: string): Promise<string> {
+    // Resolve dynamic duration
+    let durationSeconds = 7200;
+    try {
+      const raw = localStorage.getItem('cinemovie_downloads');
+      if (raw) {
+        const list = JSON.parse(raw);
+        const item = list.find((i: any) => i.id === id);
+        if (item) {
+          if (item.durationSeconds) {
+            durationSeconds = item.durationSeconds;
+          } else if (item.data) {
+            const runtime = item.data.runtime || (item.data.episode_run_time && item.data.episode_run_time[0]) || 120;
+            durationSeconds = runtime * 60;
+          }
+        }
+      }
+    } catch (_) {}
+
     if (isNative) {
       const { Filesystem, Directory } = await import('@capacitor/filesystem');
       const dir = 'cinemovie_offline';
+      const isMp4 = isDownloadMp4(id);
+      const videoFile = getStoredFilename(id);
 
-      const playlist = buildM3u8Playlist(tsFilename(id));
-      await Filesystem.writeFile({
-        path: `${dir}/${m3u8Filename(id)}`,
-        data: btoa(unescape(encodeURIComponent(playlist))),
-        directory: Directory.Data,
-        recursive: true,
-      });
+      if (isMp4) {
+        const result = await Filesystem.getUri({
+          path: `${dir}/${videoFile}`,
+          directory: Directory.Data,
+        });
+        return Capacitor.convertFileSrc(result.uri) + '#type=mp4';
+      } else {
+        const playlist = buildM3u8Playlist(videoFile, durationSeconds);
+        await Filesystem.writeFile({
+          path: `${dir}/${m3u8Filename(id)}`,
+          data: btoa(unescape(encodeURIComponent(playlist))),
+          directory: Directory.Data,
+          recursive: true,
+        });
 
-      const result = await Filesystem.getUri({
-        path: `${dir}/${m3u8Filename(id)}`,
-        directory: Directory.Data,
-      });
-      return Capacitor.convertFileSrc(result.uri);
+        const result = await Filesystem.getUri({
+          path: `${dir}/${m3u8Filename(id)}`,
+          directory: Directory.Data,
+        });
+        return Capacitor.convertFileSrc(result.uri) + '#type=m3u8';
+      }
     } else {
       const chunks = activeSessions[id] || [];
       delete activeSessions[id];
@@ -267,7 +331,8 @@ export const OfflineStorageService = {
       }
 
       await idbPut(id, mergedArray.buffer as ArrayBuffer);
-      return `idb://${id}`;
+      const isMp4 = isDownloadMp4(id);
+      return `idb://${id}#type=${isMp4 ? 'mp4' : 'm3u8'}`;
     }
   },
 
@@ -281,7 +346,8 @@ export const OfflineStorageService = {
       return fsWrite(id, data);
     } else {
       await idbPut(id, data.buffer as ArrayBuffer);
-      return `idb://${id}`;
+      const isMp4 = isDownloadMp4(id);
+      return `idb://${id}#type=${isMp4 ? 'mp4' : 'm3u8'}`;
     }
   },
 
@@ -295,14 +361,44 @@ export const OfflineStorageService = {
    * because it is an MPEG-TS container which browsers cannot natively play.
    */
   async getPlayableUrl(id: string): Promise<string | null> {
+    // Resolve dynamic duration
+    let durationSeconds = 7200;
+    try {
+      const raw = localStorage.getItem('cinemovie_downloads');
+      if (raw) {
+        const list = JSON.parse(raw);
+        const item = list.find((i: any) => i.id === id);
+        if (item) {
+          if (item.durationSeconds) {
+            durationSeconds = item.durationSeconds;
+          } else if (item.data) {
+            const runtime = item.data.runtime || (item.data.episode_run_time && item.data.episode_run_time[0]) || 120;
+            durationSeconds = runtime * 60;
+          }
+        }
+      }
+    } catch (_) {}
+
     if (isNative) {
       try {
         const { Filesystem, Directory } = await import('@capacitor/filesystem');
-        const result = await Filesystem.getUri({
-          path: `cinemovie_offline/${m3u8Filename(id)}`,
-          directory: Directory.Data,
-        });
-        return Capacitor.convertFileSrc(result.uri);
+        const dir = 'cinemovie_offline';
+        const isMp4 = isDownloadMp4(id);
+        const videoFile = getStoredFilename(id);
+
+        if (isMp4) {
+          const result = await Filesystem.getUri({
+            path: `${dir}/${videoFile}`,
+            directory: Directory.Data,
+          });
+          return Capacitor.convertFileSrc(result.uri) + '#type=mp4';
+        } else {
+          const result = await Filesystem.getUri({
+            path: `${dir}/${m3u8Filename(id)}`,
+            directory: Directory.Data,
+          });
+          return Capacitor.convertFileSrc(result.uri) + '#type=m3u8';
+        }
       } catch {
         return null;
       }
@@ -310,11 +406,17 @@ export const OfflineStorageService = {
       const buffer = await idbGet(id);
       if (!buffer) return null;
 
-      // Build segment blob URL → wrap in m3u8 blob URL
-      // HLS.js will fetch the segment blob URL via XHR (same-origin blob: access is allowed)
-      const segBlob = new Blob([buffer], { type: 'video/mp2t' });
-      const segUrl  = URL.createObjectURL(segBlob);
-      return makeBlobM3u8(segUrl);
+      const isMp4 = isDownloadMp4(id);
+      if (isMp4) {
+        const blob = new Blob([buffer], { type: 'video/mp4' });
+        return URL.createObjectURL(blob) + '#type=mp4';
+      } else {
+        // Build segment blob URL → wrap in m3u8 blob URL
+        // HLS.js will fetch the segment blob URL via XHR (same-origin blob: access is allowed)
+        const segBlob = new Blob([buffer], { type: 'video/mp2t' });
+        const segUrl  = URL.createObjectURL(segBlob);
+        return makeBlobM3u8(segUrl, durationSeconds) + '#type=m3u8';
+      }
     }
   },
 
@@ -336,15 +438,23 @@ export const OfflineStorageService = {
     if (isNative) {
       try {
         const { Filesystem, Directory } = await import('@capacitor/filesystem');
-        const tsInfo = await Filesystem.stat({
-          path: `cinemovie_offline/${tsFilename(id)}`,
+        const isMp4 = isDownloadMp4(id);
+        const videoFile = getStoredFilename(id);
+
+        const videoInfo = await Filesystem.stat({
+          path: `cinemovie_offline/${videoFile}`,
           directory: Directory.Data,
         });
-        const m3u8Info = await Filesystem.stat({
-          path: `cinemovie_offline/${m3u8Filename(id)}`,
-          directory: Directory.Data,
-        });
-        return tsInfo.size > 0 && m3u8Info.size > 0;
+
+        if (isMp4) {
+          return videoInfo.size > 0;
+        } else {
+          const m3u8Info = await Filesystem.stat({
+            path: `cinemovie_offline/${m3u8Filename(id)}`,
+            directory: Directory.Data,
+          });
+          return videoInfo.size > 0 && m3u8Info.size > 0;
+        }
       } catch {
         return false;
       }

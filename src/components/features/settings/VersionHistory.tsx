@@ -8,6 +8,18 @@ interface VersionHistoryProps {
 
 const versionData = [
   {
+    version: 'v0.6.5',
+    date: '2026-06-21',
+    changes: [
+      'Guest Mode Support: Allow entering and exploring the app immediately without email signup, under strict local storage access rules.',
+      'Performance Overhaul: Optimized search overlay lazy chunk loading and removed layout-thrashing DOM queries for lag-free performance.',
+      'Visual Page Redesigns: Resized and streamlined page views, implementing iOS-style compact settings rows and avatar layout adjustments.',
+      'Chromecast Subtitles: Chromecast users can now fully read, delay, and customize playback subtitle tracks.',
+      'Friends Watch Together: Integrated Watch Party rooms with live sync play/pause controls, active participant lists, and real-time state synchronizers.',
+      'Android Core Bugfixes: Resolved "no page nonce" interceptor errors, base64 TS binary decode crashes, and HLS loader referer injection collisions on native devices.'
+    ]
+  },
+  {
     version: 'v0.5.0',
     date: '2026-06-03',
     changes: [
@@ -62,48 +74,63 @@ export default function VersionHistory({ onBack }: VersionHistoryProps) {
       minHeight: '100vh',
       background: COLORS.bgPrimary,
       color: '#fff',
-      padding: '20px',
+      padding: 'calc(90px + env(safe-area-inset-top, 0px)) 20px 20px 20px',
       overflowX: 'hidden'
     }}>
-      {/* Header */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        marginBottom: '30px',
-        paddingTop: 'env(safe-area-inset-top, 0px)'
-      }}>
+      {/* Premium Header */}
+      <header
+        style={{
+          position: 'fixed',
+          top: 'calc(12px + env(safe-area-inset-top, 0px))',
+          left: '12px',
+          right: '12px',
+          height: '60px',
+          background: 'rgba(10, 10, 10, 0.96)',
+          backdropFilter: 'blur(30px) saturate(190%)',
+          WebkitBackdropFilter: 'blur(30px) saturate(190%)',
+          border: '1px solid rgba(255, 255, 255, 0.09)',
+          borderRadius: '20px',
+          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.6)',
+          zIndex: 500,
+          display: 'flex',
+          alignItems: 'center',
+          padding: '0 16px',
+          boxSizing: 'border-box'
+        }}
+      >
         <button
           onClick={() => { triggerHaptic('light'); onBack(); }}
+          className="changelog-back-btn"
           style={{
             background: 'transparent',
             border: 'none',
             color: '#FFFFFF',
             cursor: 'pointer',
-            padding: '6px',
+            padding: '6px 6px 6px 0',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             transition: 'opacity 0.2s ease',
             opacity: 0.9,
             outline: 'none',
-            marginRight: '16px'
+            marginRight: '8px'
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.9'; }}
         >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 18 9 12 15 6" />
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
           </svg>
         </button>
         <h1 style={{
           margin: 0,
-          fontSize: '1.5rem',
+          fontSize: '1.25rem',
           fontWeight: 800,
-          letterSpacing: '-0.02em'
+          letterSpacing: '-0.02em',
+          color: '#fff'
         }}>
           Version History
         </h1>
-      </div>
+      </header>
 
       {/* Version List */}
       <div style={{ marginBottom: '30px' }}>

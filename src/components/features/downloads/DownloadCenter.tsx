@@ -15,7 +15,8 @@ interface DownloadItem {
   speed?: number;
   streamUrl?: string;
   subtitles?: any[];
-  data: Movie | TVShow | any;
+  data?: Movie | TVShow | any;
+  metaData?: Movie | TVShow | any;
   addedAt: number;
 }
 
@@ -139,6 +140,7 @@ export default function DownloadCenter({ isOpen, onClose, onItemClick }: Downloa
                 <h2 style={{ margin: 0, fontSize: '1.8rem', fontWeight: 950, letterSpacing: '-0.04em' }}>Offline Library</h2>
                 <button 
                   onClick={onClose}
+                  className="download-close-btn"
                   style={{ 
                     background: 'rgba(255,255,255,0.06)', 
                     border: 'none', 
@@ -150,10 +152,7 @@ export default function DownloadCenter({ isOpen, onClose, onItemClick }: Downloa
                     display: 'flex', 
                     alignItems: 'center', 
                     justifyContent: 'center',
-                    transition: 'background 0.2s'
                   }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
@@ -177,7 +176,8 @@ export default function DownloadCenter({ isOpen, onClose, onItemClick }: Downloa
                   {downloads.map((item) => (
                     <div
                       key={item.id}
-                      onClick={() => { triggerHaptic('light'); onItemClick(item.data); onClose(); }}
+                      onClick={() => { triggerHaptic('light'); onItemClick(item.data || item.metaData); onClose(); }}
+                      className="download-item-container"
                       style={{
                         padding: '14px',
                         borderRadius: '16px',
@@ -185,10 +185,7 @@ export default function DownloadCenter({ isOpen, onClose, onItemClick }: Downloa
                         border: '1px solid rgba(255,255,255,0.05)',
                         cursor: 'pointer',
                         position: 'relative',
-                        transition: 'all 0.2s ease',
                       }}
-                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.05)'; }}
                     >
                       <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                         <div style={{ width: '56px', aspectRatio: '2/3', borderRadius: '8px', overflow: 'hidden', background: '#111', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -234,6 +231,7 @@ export default function DownloadCenter({ isOpen, onClose, onItemClick }: Downloa
                         </div>
                         <button 
                           onClick={(e) => handleDelete(e, item.id)}
+                          className="download-item-delete-btn"
                           style={{ 
                             background: 'transparent', 
                             border: 'none', 
@@ -244,10 +242,7 @@ export default function DownloadCenter({ isOpen, onClose, onItemClick }: Downloa
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            transition: 'all 0.2s'
                           }}
-                          onMouseEnter={e => { e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; }}
-                          onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.3)'; e.currentTarget.style.background = 'transparent'; }}
                         >
                           <Trash2 size={16} />
                         </button>

@@ -16,67 +16,62 @@ export default function SearchResults({ query, results, loading, onMovieClick, o
   return (
     <div style={{
       position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
+      inset: 0,
       zIndex: 2000,
-      background: 'rgba(5, 5, 5, 0.4)', 
-      backdropFilter: 'blur(20px) saturate(220%)',
-      WebkitBackdropFilter: 'blur(20px) saturate(220%)',
+      background: 'rgba(10, 10, 10, 0.5)', 
+      backdropFilter: 'blur(25px) saturate(200%) brightness(1.1)',
+      WebkitBackdropFilter: 'blur(25px) saturate(200%) brightness(1.1)',
       overflowY: 'auto',
       WebkitOverflowScrolling: 'touch',
       overscrollBehavior: 'contain',
       animation: 'resultsIn 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
     }}>
-      {/* Sticky Floating Header Capsule */}
+      {/* Floating Search Results Capsule - Styled exactly like Header.tsx */}
       <div style={{
-        position: 'sticky',
+        position: 'fixed',
         top: 'calc(12px + env(safe-area-inset-top, 0px))',
-        margin: '12px 12px 0',
-        height: '52px',
-        background: 'rgba(15, 15, 15, 0.65)',
-        backdropFilter: 'blur(20px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-        border: '1px solid rgba(255, 255, 255, 0.08)',
-        borderRadius: '14px',
-        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+        left: '12px',
+        right: '12px',
+        height: '60px',
+        background: 'rgba(10, 10, 10, 0.96)',
+        backdropFilter: 'blur(30px) saturate(190%)',
+        WebkitBackdropFilter: 'blur(30px) saturate(190%)',
+        border: '1px solid rgba(255, 255, 255, 0.09)',
+        borderRadius: '20px',
+        boxShadow: '0 12px 40px rgba(0, 0, 0, 0.6)',
         zIndex: 2001,
         display: 'flex',
         alignItems: 'center',
         padding: '0 16px',
-        animation: 'fadeInDown 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards'
       }}>
         <button
           onClick={() => { triggerHaptic('light'); onClose(); }}
           aria-label="Back"
+          className="search-overlay-back-btn"
           style={{
             background: 'transparent',
             border: 'none',
             color: '#FFFFFF',
             cursor: 'pointer',
-            padding: '6px',
+            padding: '4px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             opacity: 0.9,
             outline: 'none',
-            transition: 'opacity 0.2s ease, transform 0.2s ease'
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'scale(1.05)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.9'; e.currentTarget.style.transform = 'scale(1)'; }}
         >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
         
         {/* Divider */}
-        <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.15)', margin: '0 12px' }} />
+        <div style={{ width: '1px', height: '18px', background: 'rgba(255,255,255,0.15)', margin: '0 10px' }} />
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <h2 style={{
-            fontSize: '14px',
+            fontSize: '13px',
             fontWeight: 700,
             color: '#FFFFFF',
             margin: 0,
@@ -89,7 +84,7 @@ export default function SearchResults({ query, results, loading, onMovieClick, o
             {query ? `"${query}"` : 'Results'}
           </h2>
           <p style={{
-            fontSize: '10px',
+            fontSize: '9px',
             color: 'rgba(255, 255, 255, 0.5)',
             margin: '0',
             fontWeight: 600,
@@ -100,8 +95,8 @@ export default function SearchResults({ query, results, loading, onMovieClick, o
         </div>
       </div>
 
-      {/* Content Grid */}
-      <div style={{ padding: '16px 16px 100px' }}>
+      {/* Content Grid with offset for fixed header */}
+      <div style={{ padding: 'calc(84px + env(safe-area-inset-top, 0px)) 12px 100px' }}>
         {loading ? (
           <div style={{
             display: 'flex',
@@ -109,8 +104,8 @@ export default function SearchResults({ query, results, loading, onMovieClick, o
             padding: '4rem 0',
           }}>
             <div style={{
-              width: '32px',
-              height: '32px',
+              width: '26px',
+              height: '26px',
               border: '3px solid rgba(255, 255, 255, 0.1)',
               borderTopColor: COLORS.primary,
               borderRadius: '50%',
@@ -120,51 +115,59 @@ export default function SearchResults({ query, results, loading, onMovieClick, o
         ) : results.length === 0 ? (
           <div style={{
             textAlign: 'center',
-            padding: '6rem 2rem',
+            padding: '5rem 1.5rem',
             color: '#8E8E93',
           }}>
             <svg 
-              width="48" 
-              height="48" 
+              width="40" 
+              height="40" 
               viewBox="0 0 24 24" 
               fill="none" 
               stroke="currentColor" 
               strokeWidth="1.5"
-              style={{ margin: '0 auto 16px', opacity: 0.5 }}
+              style={{ margin: '0 auto 12px', opacity: 0.5 }}
             >
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
-            <p style={{ fontSize: '16px', fontWeight: 500, margin: '0 0 8px' }}>No matches found</p>
-            <p style={{ fontSize: '14px', opacity: 0.7 }}>Try changing your keywords</p>
+            <p style={{ fontSize: '15px', fontWeight: 600, margin: '0 0 6px', color: '#fff' }}>No matches found</p>
+            <p style={{ fontSize: '13px', opacity: 0.6, margin: 0 }}>Try changing your keywords</p>
           </div>
         ) : (
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', /* Reduced from 110px */
-            gap: '12px 10px', /* Reduced gap */
+            gridTemplateColumns: 'repeat(auto-fill, minmax(92px, 1fr))', /* Perfect 3-column scaling on 360px */
+            gap: '10px 8px',
           }}>
             {results.map((movie, index) => (
               <div
                 key={`${movie.id}-${index}`}
-                onClick={() => { triggerHaptic('medium'); onMovieClick(movie); }}
+                onClick={() => { 
+                  if (document.activeElement instanceof HTMLElement) {
+                    document.activeElement.blur();
+                  }
+                  triggerHaptic('medium'); 
+                  onMovieClick(movie); 
+                }}
                 className="search-grid-card"
                 style={{
                   cursor: 'pointer',
                   WebkitTapHighlightColor: 'transparent',
-                  animation: `fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) ${Math.min(index * 0.04, 0.5)}s both`
+                  animation: `fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) ${Math.min(index * 0.03, 0.4)}s both`,
+                  contentVisibility: 'auto',
+                  containIntrinsicSize: 'auto 160px'
                 }}
               >
                 {/* Poster Container */}
                 <div style={{
                   position: 'relative',
                   paddingBottom: '150%',
-                  borderRadius: '12px',
+                  borderRadius: '10px',
                   overflow: 'hidden',
                   background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 100%)',
                   border: '1px solid rgba(255, 255, 255, 0.08)',
-                  boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.1), 0 4px 12px rgba(0,0,0,0.3)',
-                  marginBottom: '8px',
+                  boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.1), 0 4px 10px rgba(0,0,0,0.3)',
+                  marginBottom: '6px',
                 }}>
                   {/* Skeleton / Shimmer Overlay */}
                   <div style={{
@@ -182,7 +185,9 @@ export default function SearchResults({ query, results, loading, onMovieClick, o
                     loading="lazy"
                     onLoad={(e) => {
                        // Hide skeleton on load
-                       (e.currentTarget.previousSibling as HTMLElement).style.display = 'none';
+                       if (e.currentTarget.previousSibling instanceof HTMLElement) {
+                         e.currentTarget.previousSibling.style.display = 'none';
+                       }
                        e.currentTarget.style.opacity = '1';
                     }}
                     style={{
@@ -193,7 +198,7 @@ export default function SearchResults({ query, results, loading, onMovieClick, o
                       height: '100%',
                       objectFit: 'cover',
                       opacity: 0,
-                      transition: 'opacity 0.3s ease-out, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                      transition: 'opacity 0.25s ease-out, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
                       zIndex: 2,
                     }}
                   />
@@ -201,7 +206,7 @@ export default function SearchResults({ query, results, loading, onMovieClick, o
                 
                 {/* Title */}
                 <h3 style={{
-                  fontSize: '13px',
+                  fontSize: '12px',
                   fontWeight: 600,
                   color: '#FFFFFF',
                   margin: 0,
@@ -210,7 +215,7 @@ export default function SearchResults({ query, results, loading, onMovieClick, o
                   display: '-webkit-box',
                   WebkitLineClamp: 2,
                   WebkitBoxOrient: 'vertical',
-                  lineHeight: '1.4',
+                  lineHeight: '1.3',
                   opacity: 0.9
                 }}>
                   {movie.title || (movie as any).name}
@@ -220,7 +225,6 @@ export default function SearchResults({ query, results, loading, onMovieClick, o
           </div>
         )}
       </div>
-
     </div>
   );
 }

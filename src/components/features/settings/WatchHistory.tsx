@@ -3,26 +3,51 @@ import { WatchProgress, WatchProgressService } from '../../../services/progress'
 import { getPosterUrl } from '../../../services/tmdb';
 import { COLORS } from '../../../constants';
 import { triggerHaptic } from '../../../utils/haptics';
+import { ProfileService } from '../../../services/profiles';
 
 interface WatchHistoryProps {
   onItemClick: (item: any) => void;
+  isVisible?: boolean;
 }
 
-export default function WatchHistory({ onItemClick }: WatchHistoryProps) {
-  const [history, setHistory] = useState<WatchProgress[]>([]);
-  const [loading, setLoading] = useState(true);
+export default function WatchHistory({ onItemClick, isVisible = true }: WatchHistoryProps) {
+  const profileId = ProfileService.getActiveProfile()?.id || 'default';
+  const cacheKey = `cinemovie_watch_history_cache_${profileId}`;
+
+  const [history, setHistory] = useState<WatchProgress[]>(() => {
+    try {
+      const raw = localStorage.getItem(cacheKey);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [loading, setLoading] = useState(() => {
+    try {
+      const raw = localStorage.getItem(cacheKey);
+      return !raw;
+    } catch {
+      return true;
+    }
+  });
 
   useEffect(() => {
+    if (!isVisible) return;
+
     const loadHistory = async () => {
-      setLoading(true);
       const data = await WatchProgressService.getWatchHistory(0, 30);
       setHistory(data);
       setLoading(false);
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify(data));
+      } catch (e) {
+        // ignore
+      }
     };
     loadHistory();
-  }, []);
+  }, [isVisible, cacheKey]);
 
-  if (loading) return null;
+  if (loading && history.length === 0) return null;
   if (history.length === 0) return null;
 
   return (
@@ -46,7 +71,7 @@ export default function WatchHistory({ onItemClick }: WatchHistoryProps) {
         scrollbarWidth: 'none',
         WebkitOverflowScrolling: 'touch'
       }}>
-        {history.map((item) => (
+        {history.filter(item => item && item.data).map((item) => (
           <div 
             key={`${item.type}-${item.itemId}`}
             onClick={() => { triggerHaptic('light'); onItemClick(item.data); }}
@@ -57,31 +82,22 @@ export default function WatchHistory({ onItemClick }: WatchHistoryProps) {
               position: 'relative'
             }}
           >
-            <div style={{
-              position: 'relative',
-              aspectRatio: '2/3',
-              borderRadius: '12px',
-              overflow: 'hidden',
-              background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 100%)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.1), 0 4px 12px rgba(0, 0, 0, 0.3)',
-              marginBottom: '6px',
-              transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'scale(1.05)';
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.18)';
-              e.currentTarget.style.boxShadow = 'inset 0 1px 1px rgba(255, 255, 255, 0.15), 0 8px 20px rgba(0, 0, 0, 0.5)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
-              e.currentTarget.style.boxShadow = 'inset 0 1px 1px rgba(255, 255, 255, 0.1), 0 4px 12px rgba(0, 0, 0, 0.3)';
-            }}
+            <div 
+              className="watch-history-item-inner"
+              style={{
+                position: 'relative',
+                aspectRatio: '2/3',
+                borderRadius: '12px',
+                overflow: 'hidden',
+                background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 100%)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.1), 0 4px 12px rgba(0, 0, 0, 0.3)',
+                marginBottom: '6px',
+              }}
             >
               <img 
                 src={getPosterUrl(item.data.posterPath || item.data.poster_path, 'small')} 
-                alt={item.data.title || item.data.name}
+                alt={item.data.title || item.data.name || 'Untitled'}
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />
               
@@ -114,7 +130,7 @@ export default function WatchHistory({ onItemClick }: WatchHistoryProps) {
               whiteSpace: 'nowrap',
               textAlign: 'center'
             }}>
-              {item.data.title || item.data.name}
+              {item.data.title || item.data.name || 'Untitled'}
             </div>
           </div>
         ))}

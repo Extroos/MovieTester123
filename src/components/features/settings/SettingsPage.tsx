@@ -1,17 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { COLORS } from '../../../constants';
 import { triggerHaptic } from '../../../utils/haptics';
+import packageJson from '../../../../package.json';
 import { Profile, ProfileService } from '../../../services/profiles';
+import { t } from '../../../utils/i18n';
 import { Movie } from '../../../types';
-import { getBackdropUrl } from '../../../services/tmdb';
+import { getBackdropUrl, getPosterUrl } from '../../../services/tmdb';
 import { SettingsService, AppSettings } from '../../../services/settings';
 import { WatchProgressService } from '../../../services/progress';
 import WatchHistory from './WatchHistory';
 import { supabase } from '../../../utils/supabase';
 import VersionHistory from './VersionHistory';
 import { getLocalServerUrl, setLocalServerUrl } from '../../../services/LocalStreamService';
-import { Play, Languages, Sliders, Shield, Users, Copy, Check, Download } from 'lucide-react';
+import { Play, Languages, Sliders, Shield, Users, Copy, Check, Download, Eye, EyeOff, ChevronRight, ChevronLeft, List, BarChart2, LogOut, User } from 'lucide-react';
 import { useFriends } from '../../../hooks/useFriends';
+import { StatsService } from '../../../services/user/stats';
+
+import { SettingRow, Switch } from './settingpage/SettingsRow';
+import ReauthModal from './settingpage/ReauthModal';
+import AvatarPicker from './settingpage/AvatarPicker';
+import StreamingSubPage from './settingpage/StreamingSubPage';
+import SubtitlesSubPage from './settingpage/SubtitlesSubPage';
+import AppearanceSubPage from './settingpage/AppearanceSubPage';
+import StatisticsSubPage from './settingpage/StatisticsSubPage';
+import AccountSubPage from './settingpage/AccountSubPage';
+import SocialSubPage from './settingpage/SocialSubPage';
+import MyListSubPage from './settingpage/MyListSubPage';
+
 
 interface SettingsPageProps {
   onNavigate: (view: any) => void;
@@ -19,6 +34,12 @@ interface SettingsPageProps {
   activeProfile: Profile | null;
   onSwitchProfile: () => void;
   onLogout: () => void;
+  activeSubPage?: 'streaming' | 'subtitles' | 'appearance' | 'account' | 'social' | 'statistics' | 'mylist' | null;
+  onActiveSubPageChange?: (subPage: 'streaming' | 'subtitles' | 'appearance' | 'account' | 'social' | 'statistics' | 'mylist' | null) => void;
+  showVersionHistory: boolean;
+  onShowVersionHistoryChange: (show: boolean) => void;
+  onMovieClick?: (movie: any) => void;
+  isVisible?: boolean;
 }
 
 export default function SettingsPage({ 
@@ -26,9 +47,15 @@ export default function SettingsPage({
   heroBackground, 
   activeProfile, 
   onSwitchProfile, 
-  onLogout
+  onLogout,
+  activeSubPage: propActiveSubPage,
+  onActiveSubPageChange,
+  showVersionHistory,
+  onShowVersionHistoryChange,
+  onMovieClick,
+  isVisible = true
 }: SettingsPageProps) {
-  const [settings, setSettings] = useState<AppSettings>(SettingsService.getAll());
+  const [settings, setSettings] = useState<AppSettings>({ ...SettingsService.getAll() });
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState(activeProfile?.name || '');
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
@@ -38,8 +65,97 @@ export default function SettingsPage({
   const [isTestingUrl, setIsTestingUrl] = useState(false);
   const [testStatus, setTestStatus] = useState<'success' | 'error' | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
+  const [profileStats, setProfileStats] = useState<any>(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [showOsPassword, setShowOsPassword] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [authProvider, setAuthProvider] = useState<string | null>(null);
+  const [reauthAction, setReauthAction] = useState<'delete_profile' | 'delete_account' | 'change_password' | null>(null);
+  const [reauthPassword, setReauthPassword] = useState('');
+  const [isVerifyingReauth, setIsVerifyingReauth] = useState(false);
+  const [reauthError, setReauthError] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [showPasswordChangeForm, setShowPasswordChangeForm] = useState(false);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        setCurrentUser(user);
+        if (user) {
+          const provider = user.app_metadata?.provider || user.identities?.[0]?.provider || 'email';
+          setAuthProvider(provider);
+        }
+      } catch (err) {
+        console.error('Error fetching auth user:', err);
+      }
+    };
+    fetchUser();
+  }, []);
+
+  const handleVerifyReauth = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!currentUser) return;
+    
+    setIsVerifyingReauth(true);
+    setReauthError(null);
+    triggerHaptic('light');
+
+    try {
+      const provider = authProvider || 'email';
+      
+      if (provider === 'email') {
+        if (!reauthPassword.trim()) {
+          setReauthError('Password is required');
+          setIsVerifyingReauth(false);
+          return;
+        }
+        
+        const { error } = await supabase.auth.signInWithPassword({
+          email: currentUser.email,
+          password: reauthPassword,
+        });
+
+        if (error) {
+          setReauthError('Incorrect password. Please try again.');
+          triggerHaptic('heavy');
+          setIsVerifyingReauth(false);
+          return;
+        }
+      }
+
+      // Reauth verification succeeded!
+      triggerHaptic('medium');
+      const action = reauthAction;
+      setReauthAction(null);
+      setReauthPassword('');
+
+      if (action === 'delete_profile') {
+        executeDeleteProfile();
+      } else if (action === 'delete_account') {
+        executeDeleteAccount();
+      } else if (action === 'change_password') {
+        const { error } = await supabase.auth.updateUser({
+          password: newPassword,
+        });
+
+        if (error) {
+          showToast(`Password update failed: ${error.message}`);
+        } else {
+          showToast('Password changed successfully.');
+          setNewPassword('');
+          setConfirmNewPassword('');
+          setShowPasswordChangeForm(false);
+        }
+      }
+    } catch (err: any) {
+      setReauthError(err.message || 'An error occurred during verification.');
+      triggerHaptic('heavy');
+    } finally {
+      setIsVerifyingReauth(false);
+    }
+  };
 
   const handleTestConnection = async (overrideUrl?: string) => {
     const urlToTest = (overrideUrl || serverUrl).trim().replace(/\/$/, '');
@@ -84,13 +200,54 @@ export default function SettingsPage({
   const [osPassword, setOsPassword] = useState(localStorage.getItem('cinemovie_opensubtitles_password') || '');
   const [osSaved, setOsSaved] = useState(false);
 
-  const [activeCategory, setActiveCategory] = useState<'streaming' | 'subtitles' | 'appearance' | 'account' | 'social'>('streaming');
+  const [internalActiveSubPage, setInternalActiveSubPage] = useState<'streaming' | 'subtitles' | 'appearance' | 'account' | 'social' | 'statistics' | 'mylist' | null>(null);
+  const activeSubPage = propActiveSubPage !== undefined ? propActiveSubPage : internalActiveSubPage;
+  const setActiveSubPage = onActiveSubPageChange || setInternalActiveSubPage;
 
-  const { friends, requests, activity, addFriend, acceptFriend, userId, refresh: refreshFriends } = useFriends();
+  useEffect(() => {
+    if (activeProfile && activeSubPage === 'statistics') {
+      StatsService.getStats(activeProfile.id).then(stats => {
+        setProfileStats(stats);
+      });
+    }
+    // Scroll to top whenever user enters a subpage
+    if (activeSubPage) {
+      window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+    }
+  }, [activeProfile, activeSubPage]);
+
+  const { 
+    friends, 
+    requests, 
+    sentRequests, 
+    activity, 
+    loading: friendsLoading, 
+    userId, 
+    accountName, 
+    addFriend, 
+    acceptFriend, 
+    cancelSentRequest, 
+    declineReceivedRequest, 
+    searchUsers, 
+    refresh: refreshFriends 
+  } = useFriends();
+  const [socialTab, setSocialTab] = useState<'friends' | 'requests' | 'add'>('friends');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [friendInput, setFriendInput] = useState('');
   const [copied, setCopied] = useState(false);
   const [socialMessage, setSocialMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [isSending, setIsSending] = useState(false);
+
+  const handleUserSearch = async () => {
+    if (!searchQuery.trim()) return;
+    setIsSearching(true);
+    triggerHaptic('light');
+    const results = await searchUsers(searchQuery.trim());
+    setSearchResults(results);
+    setIsSearching(false);
+  };
 
   const getRelativeTime = (timestamp: number) => {
     const diff = Date.now() - timestamp;
@@ -112,7 +269,7 @@ export default function SettingsPage({
   };
 
   const [confirmModal, setConfirmModal] = useState<{
-    type: 'remove_friend' | 'clear_history' | 'clear_search' | 'delete_profile' | 'delete_account';
+    type: 'remove_friend' | 'clear_history' | 'clear_search' | 'delete_profile' | 'delete_account' | 'reset_statistics';
     title: string;
     message: string;
     actionText: string;
@@ -238,6 +395,16 @@ export default function SettingsPage({
     setConfirmModal(null);
   };
 
+  const executeResetStatistics = async () => {
+    if (!activeProfile) return;
+    await StatsService.resetStats(activeProfile.id);
+    const stats = await StatsService.getStats(activeProfile.id);
+    setProfileStats(stats);
+    triggerHaptic('heavy');
+    showToast('Statistics reset successfully.');
+    setConfirmModal(null);
+  };
+
   useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth < 768);
@@ -248,7 +415,7 @@ export default function SettingsPage({
 
   useEffect(() => {
     const handleSettingsChange = () => {
-      setSettings(SettingsService.getAll());
+      setSettings({ ...SettingsService.getAll() });
     };
     window.addEventListener('settingsChanged', handleSettingsChange);
     return () => window.removeEventListener('settingsChanged', handleSettingsChange);
@@ -256,6 +423,7 @@ export default function SettingsPage({
 
   const updateSetting = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     SettingsService.set(key, value);
+    setSettings({ ...SettingsService.getAll() });
     triggerHaptic('light');
   };
 
@@ -271,11 +439,9 @@ export default function SettingsPage({
 
   const handleSelectAvatar = async (avatarUrl: string) => {
     if (activeProfile) {
-      const success = await ProfileService.updateProfile(activeProfile.id, { avatar: avatarUrl });
-      if (success) {
-        triggerHaptic('medium');
-        setShowAvatarPicker(false);
-      }
+      triggerHaptic('medium');
+      setShowAvatarPicker(false);
+      await ProfileService.updateProfile(activeProfile.id, { avatar: avatarUrl });
     }
   };
 
@@ -298,1110 +464,806 @@ export default function SettingsPage({
   const toggleDebug = () => updateSetting('debugMode', !settings.debugMode);
   const toggleHostControlsOnly = () => updateSetting('hostControlsOnly', !settings.hostControlsOnly);
   const toggleAutoJoinParty = () => updateSetting('autoJoinParty', !settings.autoJoinParty);
+  const toggleHaptics = () => updateSetting('hapticsEnabled', !settings.hapticsEnabled);
 
   // Muted Section Heading Style
   const sectionHeaderStyle = (): React.CSSProperties => ({
     padding: isMobile ? '32px 8px 12px' : '40px 8px 16px',
     fontSize: '0.75rem',
     textTransform: 'uppercase',
-    color: 'rgba(255, 255, 255, 0.4)',
+    color: 'var(--text-muted)',
     letterSpacing: '0.15em',
     fontWeight: 900,
-    borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+    borderBottom: '1px solid var(--border-color)',
     marginBottom: '8px'
   });
 
   if (showVersionHistory) {
-    return <VersionHistory onBack={() => setShowVersionHistory(false)} />;
+    return <VersionHistory onBack={() => onShowVersionHistoryChange(false)} />;
   }
 
   return (
     <div style={{
       minHeight: '100vh',
       background: COLORS.bgPrimary,
-      color: '#fff',
+      color: 'var(--text-primary)',
       paddingBottom: isMobile ? '100px' : '140px',
       overflowX: 'hidden'
     }}>
-      {/* Compact Cinematic Header */}
-      <div style={{ 
-        position: 'relative', 
-        height: isMobile ? '24vh' : '38vh', 
-        maxHeight: '350px',
-        overflow: 'hidden' 
-      }}>
-        {heroBackground && (
-          <img 
-            src={getBackdropUrl(heroBackground.backdropPath, 'original')} 
-            alt="" 
-            style={{ 
-              width: '100%', 
-              height: '100%', 
-              objectFit: 'cover', 
-              opacity: 0.3,
-              filter: 'brightness(0.6) contrast(1.2) saturate(1.1)'
-            }}
-          />
-        )}
-        <div style={{
-          position: 'absolute',
-          inset: 0,
-          background: 'linear-gradient(to bottom, transparent 0%, rgba(10,10,10,0.8) 70%, #0a0a0a 100%)',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'flex-end',
-          padding: isMobile ? 'calc(88px + env(safe-area-inset-top, 0px)) 20px 16px 20px' : 'calc(108px + env(safe-area-inset-top, 0px)) 5% 40px 5%'
-        }}>
-          <h1 style={{ 
-            margin: 0, 
-            fontSize: isMobile ? '2rem' : '3.5rem', 
-            fontWeight: 900,
-            letterSpacing: '-0.04em'
-          }}>Settings</h1>
-          <p 
-            onClick={() => {
-              triggerHaptic('light');
-              setShowVersionHistory(true);
-            }}
-            style={{ 
-              margin: '4px 0 0', 
-              opacity: 0.5, 
-              fontSize: '0.75rem',
-              fontWeight: 700,
-              textTransform: 'uppercase',
-              letterSpacing: '0.12em',
-              cursor: 'pointer',
-              display: 'inline-block',
-              transition: 'opacity 0.2s'
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.9'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.5'; }}
-          >Cinemovie v0.5.0</p>
-
-        </div>
-      </div>
-
-      {/* Main Settings Wrapper - Centered & Capped for OLED layout */}
-      <div style={{ 
-        padding: '0 5%', 
-        marginTop: isMobile ? '-5px' : '-15px',
-        position: 'relative',
-        zIndex: 10
-      }}>
-        <div style={{
-          maxWidth: '800px',
-          margin: '0 auto',
-          width: '100%'
-        }}>
-          
-          {/* Borderless Profile Header Section */}
-          <section style={{ marginBottom: isMobile ? '32px' : '48px', padding: '0 8px' }}>
-            <div style={{ 
+      <style>{`
+        .settings-group-container {
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          margin-bottom: 16px;
+          overflow: hidden;
+        }
+        .settings-list-item {
+          display: flex;
+          align-items: center;
+          padding: 12px 14px;
+          cursor: pointer;
+          transition: background 0.2s ease;
+          border-bottom: 1px solid var(--border-color);
+        }
+        .settings-list-item:last-child {
+          border-bottom: none;
+        }
+        .settings-list-item:hover {
+          background: var(--bg-card-hover);
+        }
+        .settings-icon-wrapper {
+          width: 30px;
+          height: 30px;
+          border-radius: 6px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          display: flex;
+          align-items: center;
+          justifyContent: center;
+          color: var(--text-secondary);
+          margin-right: 10px;
+          flex-shrink: 0;
+          transition: all 0.2s ease;
+        }
+        .settings-list-item:hover .settings-icon-wrapper {
+          background: var(--bg-card-hover);
+          border-color: var(--text-muted);
+          color: var(--text-primary);
+        }
+        .settings-item-label {
+          flex: 1;
+          font-weight: 600;
+          font-size: 0.86rem;
+          color: var(--text-primary);
+        }
+        .settings-item-chevron {
+          opacity: 0.55;
+          transition: transform 0.2s;
+          color: var(--text-primary);
+          flex-shrink: 0;
+        }
+        .settings-list-item:hover .settings-item-chevron {
+          opacity: 0.95;
+          transform: translateX(2px);
+        }
+        .settings-group-title {
+          font-size: 0.68rem;
+          text-transform: uppercase;
+          color: var(--text-muted);
+          letter-spacing: 0.08em;
+          font-weight: 800;
+          margin: 18px 0 6px 4px;
+        }
+        .settings-row {
+          background: var(--bg-card);
+          border-bottom: 1px solid var(--border-color);
+          transition: all 0.2s ease;
+        }
+        .settings-row:hover {
+          background: var(--bg-card-hover);
+        }
+        .settings-category-btn {
+          transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .settings-category-btn:hover {
+          background: var(--bg-card-hover);
+          color: var(--text-primary) !important;
+        }
+        .settings-profile-switch-btn, .settings-profile-login-btn {
+          border: 1px solid var(--border-color);
+          background: var(--bg-card);
+          color: var(--text-primary);
+          border-radius: 6px;
+          font-weight: 600;
+          font-size: 0.75rem;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .settings-profile-switch-btn:hover, .settings-profile-login-btn:hover {
+          background: var(--text-primary);
+          color: var(--bg-primary);
+          border-color: var(--text-primary);
+        }
+        .settings-btn-clear, .settings-btn-danger {
+          padding: 6px 12px;
+          border-radius: 6px;
+          font-weight: 600;
+          font-size: 0.76rem;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .settings-btn-clear {
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          color: var(--text-primary);
+        }
+        .settings-btn-clear:hover {
+          background: var(--bg-card-hover);
+        }
+        .settings-btn-danger {
+          background: rgba(239, 68, 68, 0.08);
+          border: 1px solid rgba(239, 68, 68, 0.15);
+          color: #ef4444;
+        }
+        .settings-btn-danger:hover {
+          background: #ef4444;
+          color: #fff;
+          border-color: #ef4444;
+        }
+        .settings-version-label {
+          margin: 4px 0 0;
+          font-size: 0.7rem;
+          font-weight: 700;
+          color: rgba(255,255,255,0.5);
+          letter-spacing: 0.02em;
+          text-transform: uppercase;
+          display: inline-block;
+          cursor: pointer;
+          transition: color 0.2s;
+        }
+        .settings-version-label:hover {
+          color: #ffffff;
+          text-decoration: underline;
+        }
+        .settings-back-btn:hover {
+          background: rgba(255, 255, 255, 0.08) !important;
+          border-color: rgba(255, 255, 255, 0.15) !important;
+          transform: scale(1.05);
+        }
+        @media (max-width: 768px) {
+          .settings-category-btn {
+            background: rgba(255, 255, 255, 0.03) !important;
+            border: 1px solid rgba(255, 255, 255, 0.08) !important;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
+          }
+          .settings-category-btn.active {
+            background: #ffffff !important;
+            color: #000000 !important;
+            border-color: #ffffff !important;
+          }
+        }
+      `}</style>
+      {!activeSubPage ? (
+        <>
+          {/* Compact Header for Settings */}
+          {isMobile ? (
+            <div style={{
+              padding: 'calc(80px + env(safe-area-inset-top, 0px)) 16px 12px 16px',
               display: 'flex',
-              alignItems: 'center',
-              gap: isMobile ? '16px' : '28px',
+              flexDirection: 'column',
+              gap: '2px'
             }}>
-              <div 
-                onClick={() => { triggerHaptic('light'); setShowAvatarPicker(true); }}
-                style={{
-                  position: 'relative',
-                  cursor: 'pointer',
-                  flexShrink: 0
+              <h1 style={{ 
+                margin: 0, 
+                fontSize: '1.65rem', 
+                fontWeight: 900,
+                letterSpacing: '-0.03em'
+              }}>Settings</h1>
+              <p 
+                onClick={() => {
+                  triggerHaptic('light');
+                  onShowVersionHistoryChange(true);
                 }}
-              >
+                className="settings-version-label"
+              >Cinemovie v{packageJson.version}</p>
+            </div>
+          ) : (
+            <div style={{ 
+              position: 'relative', 
+              height: '34vh', 
+              maxHeight: '320px',
+              overflow: 'hidden' 
+            }}>
+              {heroBackground && (
                 <img 
-                  src={activeProfile?.avatar} 
-                  alt=""
-                  style={{
-                    width: isMobile ? '76px' : '96px',
-                    height: isMobile ? '76px' : '96px',
-                    borderRadius: '50%',
-                    objectFit: 'cover',
-                    border: '2.5px solid rgba(255,255,255,0.12)'
+                  src={getBackdropUrl(heroBackground.backdropPath, 'original')} 
+                  alt="" 
+                  style={{ 
+                    width: '100%', 
+                    height: '100%', 
+                    objectFit: 'cover', 
+                    opacity: 0.3,
+                    filter: 'brightness(0.6) contrast(1.2) saturate(1.1)'
                   }}
                 />
-                <div style={{
-                  position: 'absolute',
-                  bottom: '0px',
-                  right: '0px',
-                  background: '#ffffff',
-                  borderRadius: '50%',
-                  width: '26px',
-                  height: '26px',
+              )}
+              <div style={{
+                position: 'absolute',
+                inset: 0,
+                background: 'linear-gradient(to bottom, transparent 0%, rgba(10,10,10,0.8) 70%, #0a0a0a 100%)',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'flex-end',
+                padding: 'calc(92px + env(safe-area-inset-top, 0px)) 5% 32px 5%'
+              }}>
+                <h1 style={{ 
+                  margin: 0, 
+                  fontSize: '3rem', 
+                  fontWeight: 900,
+                  letterSpacing: '-0.04em'
+                }}>Settings</h1>
+                <p 
+                  onClick={() => {
+                    triggerHaptic('light');
+                    onShowVersionHistoryChange(true);
+                  }}
+                  className="settings-version-label"
+                >Cinemovie v{packageJson.version}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Main Settings Wrapper - Centered & Capped for OLED layout */}
+          <div style={{ 
+            padding: '0 16px', 
+            marginTop: '8px',
+            position: 'relative',
+            zIndex: 10
+          }}>
+            <div style={{
+              maxWidth: '800px',
+              margin: '0 auto',
+              width: '100%'
+            }}>
+              
+              {/* Borderless Profile Header Section */}
+              <section style={{ marginBottom: '20px', padding: '0 4px' }}>
+                <div style={{ 
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  border: '2px solid #0a0a0a',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.5)'
+                  gap: isMobile ? '12px' : '20px',
                 }}>
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#000000" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                  </svg>
+                  {(() => {
+                    const isGuest = localStorage.getItem('cinemovie_is_guest') === 'true';
+                    return (
+                      <div 
+                        onClick={isGuest ? undefined : () => { triggerHaptic('light'); setShowAvatarPicker(true); }}
+                        style={{
+                          position: 'relative',
+                          cursor: isGuest ? 'default' : 'pointer',
+                          flexShrink: 0
+                        }}
+                      >
+                        <img 
+                          src={activeProfile?.avatar} 
+                          alt=""
+                          style={{
+                            width: isMobile ? '56px' : '76px',
+                            height: isMobile ? '56px' : '76px',
+                            borderRadius: '50%',
+                            objectFit: 'cover',
+                            border: '2px solid rgba(255,255,255,0.12)'
+                          }}
+                        />
+                        {!isGuest && (
+                          <div style={{
+                            position: 'absolute',
+                            bottom: '0px',
+                            right: '0px',
+                            background: '#ffffff',
+                            borderRadius: '50%',
+                            width: '20px',
+                            height: '20px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            border: '1.5px solid #0a0a0a',
+                            boxShadow: '0 2px 6px rgba(0,0,0,0.5)'
+                          }}>
+                            <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#000000" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                            </svg>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {(() => {
+                      const isGuest = localStorage.getItem('cinemovie_is_guest') === 'true';
+                      return isEditingName && !isGuest ? (
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <input 
+                            autoFocus
+                            value={tempName}
+                            onChange={(e) => setTempName(e.target.value)}
+                            onBlur={handleSaveName}
+                            onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
+                            style={{
+                              background: 'var(--bg-card-hover)',
+                              border: '1px solid var(--border-color)',
+                              color: 'var(--text-primary)',
+                              padding: '4px 8px',
+                              fontSize: isMobile ? '0.92rem' : '1.1rem',
+                              fontWeight: 800,
+                              width: '100%',
+                              maxWidth: '180px',
+                              outline: 'none'
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <div 
+                          onClick={isGuest ? undefined : () => { triggerHaptic('light'); setIsEditingName(true); setTempName(activeProfile?.name || ''); }}
+                          style={{ 
+                            fontWeight: 800, 
+                            fontSize: isMobile ? '1.15rem' : '1.55rem', 
+                            letterSpacing: '-0.02em', 
+                            cursor: isGuest ? 'default' : 'pointer', 
+                            color: 'var(--text-primary)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            maxWidth: '100%'
+                          }}
+                        >
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {activeProfile?.name}
+                          </span>
+                          {!isGuest && (
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="3">
+                              <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                            </svg>
+                          )}
+                        </div>
+                      );
+                    })()}
+                    <div style={{ 
+                      fontSize: isMobile ? '0.68rem' : '0.75rem', 
+                      fontWeight: 700,
+                      opacity: 0.4,
+                      marginTop: '2px',
+                      letterSpacing: '0.04em',
+                      textTransform: 'uppercase'
+                    }}>{activeProfile?.isKids ? 'Kids Profile' : 'Adult Profile'}</div>
+                  </div>
+                  
+                  {localStorage.getItem('cinemovie_is_guest') === 'true' ? (
+                    <button 
+                      onClick={() => { triggerHaptic('heavy'); onLogout(); }}
+                      className="settings-profile-login-btn"
+                      style={{
+                        padding: isMobile ? '6px 12px' : '10px 18px',
+                      }}
+                    >
+                      Log In
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={onSwitchProfile}
+                      className="settings-profile-switch-btn"
+                      style={{
+                        padding: isMobile ? '6px 12px' : '10px 18px',
+                        fontSize: isMobile ? '0.7rem' : '0.8rem',
+                      }}
+                    >
+                      Switch
+                    </button>
+                  )}
+                </div>
+              </section>
+
+              {/* Watch History */}
+              <WatchHistory isVisible={isVisible} onItemClick={(item) => window.dispatchEvent(new CustomEvent('movieClick', { detail: item }))} />
+
+              {/* Library & Downloads Group */}
+              <div className="settings-group-title">{t('library_lists')}</div>
+              <div className="settings-group-container">
+                <div 
+                  onClick={() => {
+                    triggerHaptic('light');
+                    onNavigate('downloads');
+                  }}
+                  className="settings-list-item"
+                >
+                  <Download size={16} style={{ marginRight: '12px', opacity: 0.8, color: 'var(--text-primary)', flexShrink: 0 }} />
+                  <div className="settings-item-label">{t('offline_downloads')}</div>
+                  <ChevronRight size={14} className="settings-item-chevron" />
+                </div>
+
+                <div 
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setActiveSubPage('mylist');
+                  }}
+                  className="settings-list-item"
+                >
+                  <List size={16} style={{ marginRight: '12px', opacity: 0.8, color: 'var(--text-primary)', flexShrink: 0 }} />
+                  <div className="settings-item-label">{t('watchlist')}</div>
+                  <ChevronRight size={14} className="settings-item-chevron" />
                 </div>
               </div>
 
-              <div style={{ flex: 1 }}>
-                {isEditingName ? (
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <input 
-                      autoFocus
-                      value={tempName}
-                      onChange={(e) => setTempName(e.target.value)}
-                      onBlur={handleSaveName}
-                      onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
-                      style={{
-                        background: 'rgba(255,255,255,0.06)',
-                        border: '1px solid rgba(255,255,255,0.12)',
-                        borderRadius: '10px',
-                        color: '#fff',
-                        padding: '6px 12px',
-                        fontSize: isMobile ? '1.1rem' : '1.3rem',
-                        fontWeight: 800,
-                        width: '100%',
-                        maxWidth: '280px',
-                        outline: 'none'
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <div 
-                    onClick={() => { triggerHaptic('light'); setIsEditingName(true); setTempName(activeProfile?.name || ''); }}
-                    style={{ 
-                      fontWeight: 900, 
-                      fontSize: isMobile ? '1.45rem' : '2.1rem', 
-                      letterSpacing: '-0.04em', 
-                      cursor: 'pointer', 
-                      color: '#fff',
-                      display: 'inline-flex',
+              {/* Preferences Group */}
+              <div className="settings-group-title">{t('preferences')}</div>
+              <div className="settings-group-container">
+                <div 
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setActiveSubPage('streaming');
+                  }}
+                  className="settings-list-item"
+                >
+                  <Play size={16} style={{ marginRight: '12px', opacity: 0.8, color: 'var(--text-primary)', flexShrink: 0 }} />
+                  <div className="settings-item-label">{t('streaming_settings')}</div>
+                  <ChevronRight size={14} className="settings-item-chevron" />
+                </div>
+
+                <div 
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setActiveSubPage('subtitles');
+                  }}
+                  className="settings-list-item"
+                >
+                  <Languages size={16} style={{ marginRight: '12px', opacity: 0.8, color: 'var(--text-primary)', flexShrink: 0 }} />
+                  <div className="settings-item-label">{t('subtitle_engine')}</div>
+                  <ChevronRight size={14} className="settings-item-chevron" />
+                </div>
+
+                <div 
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setActiveSubPage('appearance');
+                  }}
+                  className="settings-list-item"
+                >
+                  <Sliders size={16} style={{ marginRight: '12px', opacity: 0.8, color: 'var(--text-primary)', flexShrink: 0 }} />
+                  <div className="settings-item-label">{t('appearance_theme')}</div>
+                  <ChevronRight size={14} className="settings-item-chevron" />
+                </div>
+              </div>
+
+              {/* Social & Account Group */}
+              <div className="settings-group-title">{t('social_account')}</div>
+              <div className="settings-group-container">
+                <div 
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setActiveSubPage('statistics');
+                  }}
+                  className="settings-list-item"
+                >
+                  <BarChart2 size={16} style={{ marginRight: '12px', opacity: 0.8, color: 'var(--text-primary)', flexShrink: 0 }} />
+                  <div className="settings-item-label">{t('statistics_insights')}</div>
+                  <ChevronRight size={14} className="settings-item-chevron" />
+                </div>
+
+                <div 
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setActiveSubPage('social');
+                  }}
+                  className="settings-list-item"
+                >
+                  <Users size={16} style={{ marginRight: '12px', opacity: 0.8, color: 'var(--text-primary)', flexShrink: 0 }} />
+                  <div className="settings-item-label">{t('social_friends')}</div>
+                  <ChevronRight size={14} className="settings-item-chevron" />
+                </div>
+
+                <div 
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setActiveSubPage('account');
+                  }}
+                  className="settings-list-item"
+                >
+                  <Shield size={16} style={{ marginRight: '12px', opacity: 0.8, color: 'var(--text-primary)', flexShrink: 0 }} />
+                  <div className="settings-item-label">{t('account_privacy')}</div>
+                  <ChevronRight size={14} className="settings-item-chevron" />
+                </div>
+
+                <div 
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    triggerHaptic('light');
+                    const url = 'https://t.me/CinemovieApp';
+                    try {
+                      const { Capacitor } = await import('@capacitor/core');
+                      if (Capacitor.isNativePlatform()) {
+                        const { Browser } = await import('@capacitor/browser');
+                        await Browser.open({ url });
+                        return;
+                      }
+                    } catch (err) {
+                      console.warn('Capacitor check failed, using web fallback');
+                    }
+                    const newTab = window.open(url, '_blank', 'noopener,noreferrer');
+                    if (!newTab || newTab.closed || typeof newTab.closed === 'undefined') {
+                      window.location.href = url;
+                    }
+                  }}
+                  className="settings-list-item"
+                  style={{ cursor: 'pointer' }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style={{ marginRight: '12px', opacity: 0.8, color: '#0088cc', flexShrink: 0 }}>
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69.01-.03.01-.14-.07-.2-.08-.06-.19-.04-.27-.02-.11.02-1.93 1.23-5.46 3.62-.51.35-.98.53-1.39.52-.46-.01-1.35-.26-2.01-.48-.81-.27-1.46-.42-1.4-.88.03-.24.37-.49 1.02-.75 3.98-1.73 6.64-2.88 7.97-3.45 3.79-1.63 4.57-1.91 5.09-1.92.11 0 .37.03.54.17.14.12.18.28.2.43-.02.07-.02.13-.02.2z"/>
+                  </svg>
+                  <div className="settings-item-label" style={{ color: '#0088cc', fontWeight: 700 }}>{t('telegram_channel')}</div>
+                  <ChevronRight size={14} className="settings-item-chevron" />
+                </div>
+              </div>
+
+              {/* Centered Logout/Login Action Button */}
+              <div style={{ 
+                marginTop: '32px', 
+                display: 'flex', 
+                justifyContent: 'center',
+                padding: '0 4px'
+              }}>
+                {localStorage.getItem('cinemovie_is_guest') === 'true' ? (
+                  <button 
+                    onClick={() => { triggerHaptic('heavy'); onLogout(); }}
+                    className="settings-btn-logout"
+                    style={{
+                      background: '#ffffff',
+                      border: 'none',
+                      color: '#000000',
+                      padding: '8px 24px',
+                      borderRadius: '6px',
+                      fontWeight: 700,
+                      fontSize: '0.8rem',
+                      width: isMobile ? '100%' : 'auto',
+                      display: 'flex',
                       alignItems: 'center',
-                      gap: '8px'
+                      justifyContent: 'center',
+                      gap: '6px',
+                      boxShadow: '0 4px 10px rgba(255, 255, 255, 0.08)'
                     }}
                   >
-                    {activeProfile?.name}
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="2.5">
-                      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                    </svg>
-                  </div>
+                    <User size={14} />
+                    {t('log_in_register')}
+                  </button>
+                ) : (
+                  <button 
+                    onClick={() => { triggerHaptic('heavy'); onLogout(); }}
+                    className="settings-btn-logout"
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.08)',
+                      border: '1px solid rgba(239, 68, 68, 0.15)',
+                      color: '#ef4444',
+                      padding: '8px 24px',
+                      borderRadius: '6px',
+                      fontWeight: 600,
+                      fontSize: '0.8rem',
+                      width: isMobile ? '100%' : 'auto',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <LogOut size={14} />
+                    {t('log_out')}
+                  </button>
                 )}
-                <div style={{ 
-                  fontSize: isMobile ? '0.75rem' : '0.82rem', 
-                  fontWeight: 700,
-                  opacity: 0.4,
-                  marginTop: '4px',
-                  letterSpacing: '0.04em',
-                  textTransform: 'uppercase'
-                }}>{activeProfile?.isKids ? 'Kids Discovery Profile' : 'Main Cinema Profile'}</div>
               </div>
-              
-              <button 
-                onClick={onSwitchProfile}
-                style={{
-                  background: 'transparent',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  color: '#fff',
-                  padding: isMobile ? '8px 14px' : '10px 18px',
-                  borderRadius: '12px',
-                  fontSize: isMobile ? '0.75rem' : '0.8rem',
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em'
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-              >
-                Switch
-              </button>
-            </div>
-          </section>
 
-          {/* Watch History */}
-          <WatchHistory onItemClick={(item) => window.dispatchEvent(new CustomEvent('movieClick', { detail: item }))} />
-
-          {/* Downloads Card */}
-          <div 
-            onClick={() => {
-              triggerHaptic('light');
-              onNavigate('downloads');
-            }}
-            style={{
-              marginTop: '24px',
-              padding: isMobile ? '16px 20px' : '20px 24px',
-              background: 'rgba(255, 255, 255, 0.04)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '14px',
-              cursor: 'pointer',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'flex-start',
-              gap: '4px',
-              transition: 'all 0.2s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.07)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
-            }}
-          >
-            <div style={{ fontWeight: 800, fontSize: isMobile ? '1rem' : '1.1rem', color: '#fff' }}>Offline Downloads</div>
-            <div style={{ fontSize: isMobile ? '0.78rem' : '0.85rem', color: 'rgba(255,255,255,0.4)', fontWeight: 600 }}>
-              View, play, or delete your downloaded movies and series
             </div>
           </div>
-
-          {/* My List Card */}
-          <div 
-            onClick={() => {
-              triggerHaptic('light');
-              onNavigate('mylist');
-            }}
-            style={{
-              marginTop: '12px',
-              padding: isMobile ? '16px 20px' : '20px 24px',
-              background: 'rgba(255, 255, 255, 0.04)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '14px',
-              cursor: 'pointer',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'flex-start',
-              gap: '4px',
-              transition: 'all 0.2s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.07)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
-            }}
-          >
-            <div style={{ fontWeight: 800, fontSize: isMobile ? '1rem' : '1.1rem', color: '#fff' }}>My List</div>
-            <div style={{ fontSize: isMobile ? '0.78rem' : '0.85rem', color: 'rgba(255,255,255,0.4)', fontWeight: 600 }}>
-              View your bookmarked movies, series, and anime watchlists
-            </div>
-          </div>
-
-          {/* Main Content Layout with Sidebar */}
+        </>
+      ) : (
+        <div style={{
+          padding: isMobile ? 'calc(88px + env(safe-area-inset-top, 0px)) 16px 40px' : 'calc(108px + env(safe-area-inset-top, 0px)) 5% 60px',
+          position: 'relative',
+          zIndex: 10
+        }}>
           <div style={{
-            display: 'flex',
-            flexDirection: isMobile ? 'column' : 'row',
-            gap: isMobile ? '24px' : '40px',
-            alignItems: 'flex-start',
-            marginTop: '32px',
-            borderTop: '1px solid rgba(255, 255, 255, 0.06)',
-            paddingTop: '24px',
+            maxWidth: '800px',
+            margin: '0 auto',
             width: '100%'
           }}>
-            {/* Sidebar Column */}
+            {/* Premium Header Capsule */}
             <div style={{
-              width: isMobile ? '100%' : '240px',
-              flexShrink: 0,
               display: 'flex',
-              flexDirection: isMobile ? 'row' : 'column',
-              gap: '6px',
-              borderRight: isMobile ? 'none' : '1px solid rgba(255, 255, 255, 0.06)',
-              borderBottom: isMobile ? '1px solid rgba(255, 255, 255, 0.06)' : 'none',
-              paddingBottom: isMobile ? '16px' : '0',
-              marginBottom: isMobile ? '8px' : '0',
-              overflowX: isMobile ? 'auto' : 'visible',
-              whiteSpace: isMobile ? 'nowrap' : 'normal',
-              msOverflowStyle: 'none',
-              scrollbarWidth: 'none',
-              WebkitOverflowScrolling: 'touch',
-              paddingLeft: isMobile ? '8px' : '0',
-              paddingRight: isMobile ? '8px' : '24px'
+              alignItems: 'center',
+              gap: '12px',
+              marginBottom: '28px',
             }}>
-              {([
-                { id: 'streaming', label: 'Streaming', icon: Play },
-                { id: 'subtitles', label: 'Subtitles', icon: Languages },
-                { id: 'appearance', label: 'Appearance', icon: Sliders },
-                { id: 'social', label: 'Friends', icon: Users },
-                { id: 'account', label: 'Account', icon: Shield }
-              ] as const).map(cat => {
-                const isActive = activeCategory === cat.id;
-                const Icon = cat.icon;
-                return (
-                  <button
-                    key={cat.id}
-                    onClick={() => { triggerHaptic('light'); setActiveCategory(cat.id); }}
-                    style={{
-                      display: isMobile ? 'inline-flex' : 'flex',
-                      alignItems: 'center',
-                      gap: isMobile ? '8px' : '12px',
-                      width: isMobile ? 'auto' : '100%',
-                      padding: isMobile ? '8px 16px' : '12px 16px',
-                      borderRadius: isMobile ? '20px' : '8px',
-                      border: 'none',
-                      background: isActive ? (isMobile ? '#ffffff' : 'rgba(255, 255, 255, 0.08)') : 'transparent',
-                      color: isActive ? (isMobile ? '#000000' : '#ffffff') : 'rgba(255, 255, 255, 0.5)',
-                      fontWeight: isActive ? 800 : 500,
-                      fontSize: isMobile ? '0.8rem' : '0.9rem',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      transition: 'all 0.15s ease',
-                      borderLeft: isMobile ? 'none' : (isActive ? '3px solid #ffffff' : '3px solid transparent'),
-                      flexShrink: 0
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isActive && !isMobile) {
-                        e.currentTarget.style.color = '#ffffff';
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isActive && !isMobile) {
-                        e.currentTarget.style.color = 'rgba(255, 255, 255, 0.5)';
-                        e.currentTarget.style.background = 'transparent';
-                      }
-                    }}
-                  >
-                    <Icon size={isMobile ? 14 : 16} strokeWidth={2.5} />
-                    <span>{cat.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Settings Content Column */}
-            <div key={activeCategory} className="settings-section-animate" style={{ 
-              flex: 1, 
-              width: '100%',
-              display: 'flex', 
-              flexDirection: 'column' 
-            }}>
-            
-            {/* 1. Streaming & Server */}
-            {activeCategory === 'streaming' && (
-              <>
-                <div style={sectionHeaderStyle()}>Streaming Settings</div>
-                <SettingRow label="Auto-Playback" sub="Seamless transitions between episodes" isMobile={isMobile}>
-                  <Switch checked={settings.autoNext} onChange={toggleAutoNext} isMobile={isMobile} />
-                </SettingRow>
-                <div style={sectionHeaderStyle()}>Watch Together Sync Settings</div>
-                <SettingRow label="Host-Only Playback Controls" sub="Lock playback control strictly to the watch party host" isMobile={isMobile}>
-                  <Switch checked={settings.hostControlsOnly} onChange={toggleHostControlsOnly} isMobile={isMobile} />
-                </SettingRow>
-                <SettingRow label="Auto-Join Watch Parties" sub="Automatically accept invites and open player without prompt" isMobile={isMobile}>
-                  <Switch checked={settings.autoJoinParty} onChange={toggleAutoJoinParty} isMobile={isMobile} />
-                </SettingRow>
-              </>
-            )}
-
-            {/* 2. Subtitles */}
-            {activeCategory === 'subtitles' && (
-              <>
-                <div style={sectionHeaderStyle()}>Subtitle Engine</div>
-                <SettingRow 
-                  label="OpenSubtitles API Key" 
-                  sub="Required for TV show subtitles search (Get key from opensubtitles.org)" 
-                  isMobile={isMobile}
-                  stackOnMobile={true}
-                >
-                  <input
-                    type="text"
-                    value={osApiKey}
-                    onChange={(e) => { setOsApiKey(e.target.value); setOsSaved(false); }}
-                    placeholder="Paste API Key here..."
-                    style={{
-                      width: isMobile ? '100%' : '320px',
-                      background: 'rgba(255,255,255,0.06)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: '10px',
-                      padding: '8px 12px',
-                      color: '#fff',
-                      fontSize: '0.82rem',
-                      fontWeight: 600,
-                      outline: 'none',
-                      fontFamily: 'monospace',
-                    }}
-                  />
-                </SettingRow>
-                <SettingRow 
-                  label="OpenSubtitles Credentials" 
-                  sub="Username and Password required for subtitle downloads" 
-                  isMobile={isMobile}
-                  stackOnMobile={true}
-                >
-                  <div style={{ 
-                    display: 'flex', 
-                    flexDirection: isMobile ? 'column' : 'row',
-                    gap: '8px', 
-                    alignItems: 'stretch',
-                    width: isMobile ? '100%' : 'auto',
-                  }}>
-                    <input
-                      type="text"
-                      value={osUsername}
-                      onChange={(e) => { setOsUsername(e.target.value); setOsSaved(false); }}
-                      placeholder="Username"
-                      style={{
-                        width: isMobile ? '100%' : '150px',
-                        background: 'rgba(255,255,255,0.06)',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        borderRadius: '10px',
-                        padding: '8px 12px',
-                        color: '#fff',
-                        fontSize: '0.82rem',
-                        fontWeight: 600,
-                        outline: 'none',
-                      }}
-                    />
-                    <input
-                      type="password"
-                      value={osPassword}
-                      onChange={(e) => { setOsPassword(e.target.value); setOsSaved(false); }}
-                      placeholder="Password"
-                      style={{
-                        width: isMobile ? '100%' : '150px',
-                        background: 'rgba(255,255,255,0.06)',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        borderRadius: '10px',
-                        padding: '8px 12px',
-                        color: '#fff',
-                        fontSize: '0.82rem',
-                        fontWeight: 600,
-                        outline: 'none',
-                      }}
-                    />
-                    <button
-                      onClick={() => {
-                        localStorage.setItem('cinemovie_opensubtitles_apikey', osApiKey.trim());
-                        localStorage.setItem('cinemovie_opensubtitles_username', osUsername.trim());
-                        localStorage.setItem('cinemovie_opensubtitles_password', osPassword.trim());
-                        setOsSaved(true);
-                        triggerHaptic('medium');
-                        setTimeout(() => setOsSaved(false), 2000);
-                      }}
-                      style={{
-                        background: osSaved ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.1)',
-                        border: osSaved ? '1px solid rgba(34,197,94,0.3)' : '1px solid rgba(255,255,255,0.15)',
-                        color: osSaved ? '#22c55e' : '#fff',
-                        borderRadius: '10px',
-                        padding: '8px 14px',
-                        fontWeight: 800,
-                        fontSize: '0.82rem',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {osSaved ? '✓ Saved' : 'Save'}
-                    </button>
-                  </div>
-                </SettingRow>
-
-
-              </>
-            )}
-
-            {/* 3. Appearance */}
-            {activeCategory === 'appearance' && (
-              <>
-                <div style={sectionHeaderStyle()}>Cinematic Experience</div>
-                <SettingRow label="Minimal Discovery" sub="Simplified home layout" isMobile={isMobile}>
-                  <Switch checked={settings.minimalHome} onChange={toggleMinimalHome} isMobile={isMobile} />
-                </SettingRow>
-                <div style={sectionHeaderStyle()}>Visual Theme</div>
-                <SettingRow label="Appearance" sub="Select UI atmosphere" isMobile={isMobile}>
-                  <select 
-                    value={settings.theme}
-                    onChange={(e) => updateSetting('theme', e.target.value as any)}
-                    style={{
-                      background: 'rgba(255,255,255,0.08)',
-                      border: '1px solid rgba(255,255,255,0.12)',
-                      color: '#fff',
-                      padding: '8px 14px',
-                      borderRadius: '12px',
-                      fontSize: '0.85rem',
-                      fontWeight: 800,
-                      outline: 'none',
-                      appearance: 'none',
-                      textAlign: 'center',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <option value="dark" style={{ background: '#111' }}>Cinematic Dark</option>
-                    <option value="amoled" style={{ background: '#000' }}>Deep AMOLED</option>
-                    <option value="light" style={{ background: '#fff', color: '#000' }}>Classic Light</option>
-                  </select>
-                </SettingRow>
-                <div style={sectionHeaderStyle()}>Developer Settings</div>
-                <SettingRow label="Debug Overlay" sub="Show playback stats and diagnostic logs" isMobile={isMobile}>
-                  <Switch checked={settings.debugMode} onChange={toggleDebug} isMobile={isMobile} />
-                </SettingRow>
-                <div style={sectionHeaderStyle()}>Notification Center</div>
-                <SettingRow label="App Notifications" sub="Request permission and test notification alerts" isMobile={isMobile}>
-                  <button
-                    onClick={async () => {
-                      triggerHaptic('medium');
-                      try {
-                        const { LocalNotifications } = await import('@capacitor/local-notifications');
-                        const perm = await LocalNotifications.requestPermissions();
-                        if (perm.display === 'granted') {
-                          await LocalNotifications.schedule({
-                            notifications: [
-                              {
-                                title: "CineMovie Alerts",
-                                body: "Notification permission active! Swipe up/tap to confirm.",
-                                id: 999,
-                                schedule: { at: new Date(Date.now() + 500) }
-                              }
-                            ]
-                          });
-                          showToast("Test notification sent! Swipe down your panel.");
-                        } else {
-                          showToast("Notification permission denied on this device.");
-                        }
-                      } catch (err: any) {
-                        console.error(err);
-                        showToast("Notifications not supported or failed to request.");
-                      }
-                    }}
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.08)',
-                      border: '1px solid rgba(255, 255, 255, 0.12)',
-                      color: '#fff',
-                      padding: '8px 16px',
-                      borderRadius: '12px',
-                      fontSize: '0.82rem',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                    }}
-                  >
-                    Activate & Test Alerts
-                  </button>
-                </SettingRow>
-              </>
-            )}
-
-            {/* 4. Account & Privacy */}
-            {activeCategory === 'account' && (
-              <>
-                <div style={sectionHeaderStyle()}>Privacy & Data</div>
-                <SettingRow label="Library History" sub="Wipe all watch progress" isMobile={isMobile}>
-                  <button 
-                    onClick={handleClearHistory}
-                    style={{
-                      background: 'transparent',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
-                      color: '#fff',
-                      padding: '8px 16px',
-                      borderRadius: '10px',
-                      fontSize: '0.8rem',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      textTransform: 'uppercase'
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    Clear All
-                  </button>
-                </SettingRow>
-                <SettingRow label="Search History" sub="Wipe recent queries" isMobile={isMobile}>
-                  <button 
-                    onClick={handleClearSearchHistory}
-                    style={{
-                      background: 'transparent',
-                      border: '1px solid rgba(255, 255, 255, 0.15)',
-                      color: '#fff',
-                      padding: '8px 16px',
-                      borderRadius: '10px',
-                      fontSize: '0.8rem',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      textTransform: 'uppercase'
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    Clear
-                  </button>
-                </SettingRow>
-                <div style={sectionHeaderStyle()}>Danger Zone</div>
-                <SettingRow label="Delete Profile" sub={`Wipe "${activeProfile?.name}" data`} isMobile={isMobile}>
-                  <button 
-                    onClick={handleDeleteProfile}
-                    style={{
-                      background: 'transparent',
-                      border: '1px solid rgba(239, 68, 68, 0.4)',
-                      color: '#ef4444',
-                      padding: '8px 16px',
-                      borderRadius: '10px',
-                      fontSize: '0.8rem',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    Delete
-                  </button>
-                </SettingRow>
-                <SettingRow label="Terminate Account" sub="Permanent data removal" isMobile={isMobile}>
-                  <button 
-                    onClick={handleDeleteAccount}
-                    style={{
-                      background: 'transparent',
-                      border: '1px solid #ef4444',
-                      color: '#ef4444',
-                      padding: '8px 16px',
-                      borderRadius: '10px',
-                      fontSize: '0.8rem',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = '#ef4444'; e.currentTarget.style.color = '#000'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#ef4444'; }}
-                  >
-                    Terminate
-                  </button>
-                </SettingRow>
-              </>
-            )}
-
-            {/* 5. Social & Friends */}
-            {activeCategory === 'social' && (
-              <>
-                <div style={sectionHeaderStyle()}>Social & Friends</div>
-                
-                {/* 1. Share Identity */}
-                <div style={{
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid rgba(255, 255, 255, 0.06)',
-                  borderRadius: '12px',
-                  padding: isMobile ? '16px' : '20px',
-                  marginBottom: '24px',
-                  display: 'flex',
-                  flexDirection: isMobile ? 'column' : 'row',
-                  justifyContent: 'space-between',
-                  alignItems: isMobile ? 'flex-start' : 'center',
-                  gap: '16px'
-                }}>
-                  <div>
-                    <div style={{ fontSize: '1rem', fontWeight: 800, color: '#fff' }}>Your Unique User Code</div>
-                    <div style={{ fontSize: '0.8rem', opacity: 0.4, marginTop: '4px' }}>Share this code with your friends so they can add you.</div>
-                  </div>
-                  <div style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    gap: '8px',
-                    width: isMobile ? '100%' : 'auto'
-                  }}>
-                    <input
-                      readOnly
-                      value={userId || ''}
-                      style={{
-                        background: '#000000',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        borderRadius: '8px',
-                        padding: '8px 12px',
-                        color: '#fff',
-                        fontSize: '0.8rem',
-                        fontWeight: 700,
-                        outline: 'none',
-                        fontFamily: 'monospace',
-                        width: isMobile ? '100%' : '280px',
-                        textAlign: 'center'
-                      }}
-                    />
-                    <button
-                      onClick={() => {
-                        if (userId) {
-                          navigator.clipboard.writeText(userId);
-                          setCopied(true);
-                          triggerHaptic('medium');
-                          setTimeout(() => setCopied(false), 2000);
-                        }
-                      }}
-                      style={{
-                        background: copied ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.1)',
-                        border: copied ? '1px solid rgba(34,197,94,0.3)' : '1px solid rgba(255,255,255,0.15)',
-                        color: copied ? '#22c55e' : '#fff',
-                        borderRadius: '8px',
-                        padding: '8px 12px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        transition: 'all 0.2s',
-                        height: '34px',
-                        width: '38px',
-                        flexShrink: 0
-                      }}
-                    >
-                      {copied ? <Check size={16} /> : <Copy size={16} />}
-                    </button>
-                  </div>
-                </div>
-
-                {/* 2. Add Friend Input */}
-                <div style={{
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid rgba(255, 255, 255, 0.06)',
-                  borderRadius: '12px',
-                  padding: isMobile ? '16px' : '20px',
-                  marginBottom: '24px'
-                }}>
-                  <div style={{ fontSize: '1rem', fontWeight: 800, color: '#fff', marginBottom: '12px' }}>Add a Friend</div>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch' }}>
-                    <input
-                      type="text"
-                      placeholder="Paste your friend's unique code here..."
-                      value={friendInput}
-                      onChange={(e) => setFriendInput(e.target.value)}
-                      style={{
-                        flex: 1,
-                        background: 'rgba(255,255,255,0.06)',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        borderRadius: '8px',
-                        padding: '8px 12px',
-                        color: '#fff',
-                        fontSize: '0.85rem',
-                        fontWeight: 600,
-                        outline: 'none',
-                      }}
-                    />
-                    <button
-                      onClick={async () => {
-                        if (!friendInput.trim()) return;
-                        setIsSending(true);
-                        triggerHaptic('light');
-                        const res = await addFriend(friendInput.trim());
-                        setIsSending(false);
-                        if (res.success) {
-                          setFriendInput('');
-                          setSocialMessage({ type: 'success', text: res.message });
-                          triggerHaptic('medium');
-                        } else {
-                          setSocialMessage({ type: 'error', text: res.message });
-                          triggerHaptic('heavy');
-                        }
-                        setTimeout(() => setSocialMessage(null), 4000);
-                      }}
-                      disabled={isSending || !friendInput.trim()}
-                      style={{
-                        background: '#ffffff',
-                        border: 'none',
-                        color: '#000000',
-                        borderRadius: '8px',
-                        padding: '8px 16px',
-                        fontWeight: 800,
-                        fontSize: '0.85rem',
-                        cursor: 'pointer',
-                        transition: 'opacity 0.2s',
-                        opacity: (isSending || !friendInput.trim()) ? 0.5 : 1
-                      }}
-                    >
-                      {isSending ? 'Sending...' : 'Add Friend'}
-                    </button>
-                  </div>
-                  {socialMessage && (
-                    <div style={{
-                      marginTop: '12px',
-                      fontSize: '0.8rem',
-                      fontWeight: 700,
-                      color: socialMessage.type === 'success' ? '#22c55e' : '#ef4444'
-                    }}>
-                      {socialMessage.text}
-                    </div>
-                  )}
-                </div>
-
-                {/* 3. Pending Invites */}
-                <div style={{ marginBottom: '32px' }}>
-                  <div style={{ 
-                    fontSize: '0.75rem', 
-                    textTransform: 'uppercase', 
-                    color: 'rgba(255, 255, 255, 0.4)', 
-                    letterSpacing: '0.15em', 
-                    fontWeight: 900,
-                    borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
-                    paddingBottom: '8px',
-                    marginBottom: '16px'
-                  }}>Pending Friend Requests ({requests.length})</div>
-
-                  {requests.length === 0 ? (
-                    <div style={{ padding: '16px 8px', fontSize: '0.85rem', opacity: 0.4, fontWeight: 500 }}>No pending friend requests.</div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      {requests.map((req) => (
-                        <div 
-                          key={req.id}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '12px 16px',
-                            background: 'rgba(255, 255, 255, 0.02)',
-                            border: '1px solid rgba(255, 255, 255, 0.04)',
-                            borderRadius: '12px',
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <img
-                              src={req.senderAvatar || 'https://upload.wikimedia.org/wikipedia/commons/0/0b/Netflix-avatar.png'}
-                              alt=""
-                              style={{ width: '38px', height: '38px', borderRadius: '50%', objectFit: 'cover' }}
-                            />
-                            <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{req.senderName}</div>
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <button
-                              onClick={() => {
-                                triggerHaptic('medium');
-                                acceptFriend(req.id, req.sender_id);
-                              }}
-                              style={{
-                                background: '#22c55e',
-                                border: 'none',
-                                color: '#fff',
-                                padding: '6px 12px',
-                                borderRadius: '8px',
-                                fontSize: '0.8rem',
-                                fontWeight: 800,
-                                cursor: 'pointer'
-                              }}
-                            >
-                              Accept
-                            </button>
-                            <button
-                              onClick={async () => {
-                                triggerHaptic('light');
-                                await supabase.from('friend_requests').delete().eq('id', req.id);
-                                // Trigger state refresh via settings change dispatcher
-                                window.dispatchEvent(new CustomEvent('settingsChanged'));
-                              }}
-                              style={{
-                                background: 'transparent',
-                                border: '1px solid rgba(255,255,255,0.15)',
-                                color: 'rgba(255,255,255,0.6)',
-                                padding: '6px 12px',
-                                borderRadius: '8px',
-                                fontSize: '0.8rem',
-                                fontWeight: 800,
-                                cursor: 'pointer'
-                              }}
-                            >
-                              Decline
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* 4. Friends List */}
-                <div>
-                  <div style={{ 
-                    fontSize: '0.75rem', 
-                    textTransform: 'uppercase', 
-                    color: 'rgba(255, 255, 255, 0.4)', 
-                    letterSpacing: '0.15em', 
-                    fontWeight: 900,
-                    borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
-                    paddingBottom: '8px',
-                    marginBottom: '16px'
-                  }}>Friends ({friends.length})</div>
-
-                  {friends.length === 0 ? (
-                    <div style={{ padding: '16px 8px', fontSize: '0.85rem', opacity: 0.4, fontWeight: 500 }}>You haven't added any friends yet.</div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      {friends.map((friend) => (
-                        <div 
-                          key={friend.id}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '14px 16px',
-                            background: 'rgba(255, 255, 255, 0.02)',
-                            border: '1px solid rgba(255, 255, 255, 0.04)',
-                            borderRadius: '12px',
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <img
-                              src={friend.avatar || 'https://upload.wikimedia.org/wikipedia/commons/0/0b/Netflix-avatar.png'}
-                              alt=""
-                              style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }}
-                            />
-                            <div>
-                              <div style={{ fontWeight: 700, fontSize: '0.92rem' }}>{friend.name}</div>
-                              <div style={{ fontSize: '0.75rem', opacity: 0.5, marginTop: '2px', color: '#22c55e', fontWeight: 600 }}>
-                                {getFriendStatus(friend.id)}
-                              </div>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => handleRemoveFriend(friend.id)}
-                            style={{
-                              background: 'transparent',
-                              border: '1px solid rgba(239, 68, 68, 0.3)',
-                              color: '#ef4444',
-                              padding: '6px 14px',
-                              borderRadius: '8px',
-                              fontSize: '0.8rem',
-                              fontWeight: 800,
-                              cursor: 'pointer',
-                              transition: 'all 0.2s',
-                            }}
-                            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)'; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-          {/* Centered Logout Action Button */}
-          <div style={{ 
-            marginTop: '56px', 
-            display: 'flex', 
-            justifyContent: 'center' 
-          }}>
-            <button 
-              onClick={() => { triggerHaptic('heavy'); onLogout(); }}
-              style={{
-                background: 'transparent',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                color: '#fff',
-                padding: '12px 36px',
-                borderRadius: '12px',
-                fontWeight: 800,
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.03)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '100px',
+                padding: '8px 16px',
+                backdropFilter: 'blur(20px)',
+                WebkitBackdropFilter: 'blur(20px)',
                 fontSize: '0.9rem',
-                cursor: 'pointer',
-                textTransform: 'uppercase',
-                letterSpacing: '0.08em',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => { 
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'; 
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.25)';
-              }}
-              onMouseLeave={(e) => { 
-                e.currentTarget.style.background = 'transparent'; 
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
-              }}
-            >
-              Log Out
-            </button>
-          </div>
-
-          {/* Footer Copyright Removed */}
-
-        </div>
-      </div>
-
-      {/* Avatar Picker Modal */}
-      {showAvatarPicker && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,0.6)',
-          backdropFilter: 'blur(30px) saturate(200%)',
-          WebkitBackdropFilter: 'blur(30px) saturate(200%)',
-          zIndex: 5000,
-          display: 'flex',
-          flexDirection: 'column',
-          padding: 'calc(24px + env(safe-area-inset-top)) 24px 40px'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-            <div>
-              <h2 style={{ margin: 0, fontSize: '2rem', fontWeight: 900, letterSpacing: '-0.05em' }}>Gallery</h2>
-              <p style={{ margin: '4px 0 0', opacity: 0.5, fontSize: '0.9rem', fontWeight: 700 }}>Choose your cinematic identity</p>
+                fontWeight: 850,
+                color: '#fff'
+              }}>
+                {activeSubPage === 'streaming' && t('streaming_settings')}
+                {activeSubPage === 'subtitles' && t('subtitle_engine')}
+                {activeSubPage === 'appearance' && t('appearance_theme')}
+                {activeSubPage === 'social' && t('social_friends')}
+                {activeSubPage === 'account' && t('account_privacy')}
+                {activeSubPage === 'statistics' && t('statistics_insights')}
+                {activeSubPage === 'mylist' && t('watchlist')}
+              </div>
             </div>
-            <button 
-              onClick={() => { triggerHaptic('light'); setShowAvatarPicker(false); }}
-              aria-label="Close"
-              style={{ 
-                background: 'rgba(255,255,255,0.1)', 
-                border: 'none', 
-                color: '#fff', 
-                width: '44px', 
-                height: '44px', 
-                borderRadius: '50%', 
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-            >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-            </button>
-          </div>
 
-          <div style={{ marginBottom: '24px' }}>
-            <label style={{ 
-              display: 'block', 
-              padding: '16px 20px', 
-              background: '#ffffff', 
-              color: '#000000', 
-              borderRadius: '16px', 
-              textAlign: 'center', 
-              fontWeight: 900, 
-              cursor: 'pointer',
-              opacity: isUploading ? 0.5 : 1,
-              transition: 'all 0.2s',
-            }}>
-              {isUploading ? 'Uploading...' : 'Upload Custom Image'}
-              <input type="file" accept="image/*" onChange={handleFileUpload} disabled={isUploading} style={{ display: 'none' }} />
-            </label>
-          </div>
+            <div style={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
+              {activeSubPage === 'streaming' && (
+                <StreamingSubPage
+                  settings={settings}
+                  isMobile={isMobile}
+                  toggleAutoNext={toggleAutoNext}
+                  toggleHostControlsOnly={toggleHostControlsOnly}
+                  toggleAutoJoinParty={toggleAutoJoinParty}
+                  sectionHeaderStyle={sectionHeaderStyle}
+                  serverUrl={serverUrl}
+                  setServerUrl={setServerUrl}
+                  serverUrlSaved={serverUrlSaved}
+                  setServerUrlSaved={setServerUrlSaved}
+                  isTestingUrl={isTestingUrl}
+                  testStatus={testStatus}
+                  testError={testError}
+                  handleTestConnection={handleTestConnection}
+                  updateSetting={updateSetting}
+                  triggerHaptic={triggerHaptic}
+                />
+              )}
 
-          <div style={{ 
-            flex: 1, 
-            overflowY: 'auto', 
-            display: 'grid', 
-            gridTemplateColumns: 'repeat(auto-fill, minmax(70px, 1fr))', 
-            gap: '12px',
-            paddingBottom: '40px'
-          }}>
-            {Array.from({ length: 67 }).map((_, i) => (
-              <img 
-                key={i}
-                src={`/avatars/avatar-${i + 1}.jpg`}
-                alt=""
-                onClick={() => handleSelectAvatar(`/avatars/avatar-${i + 1}.jpg`)}
-                style={{
-                  width: '100%',
-                  aspectRatio: '1/1',
-                  borderRadius: '12px',
-                  objectFit: 'cover',
-                  cursor: 'pointer',
-                  border: activeProfile?.avatar === `/avatars/avatar-${i + 1}.jpg` ? `3px solid ${COLORS.primary}` : '2px solid transparent'
-                }}
-              />
-            ))}
+              {activeSubPage === 'subtitles' && (
+                <SubtitlesSubPage
+                  settings={settings}
+                  updateSetting={updateSetting}
+                  isMobile={isMobile}
+                  osApiKey={osApiKey}
+                  setOsApiKey={setOsApiKey}
+                  osUsername={osUsername}
+                  setOsUsername={setOsUsername}
+                  osPassword={osPassword}
+                  setOsPassword={setOsPassword}
+                  osSaved={osSaved}
+                  setOsSaved={setOsSaved}
+                  showOsPassword={showOsPassword}
+                  setShowOsPassword={setShowOsPassword}
+                  triggerHaptic={triggerHaptic}
+                  sectionHeaderStyle={sectionHeaderStyle}
+                />
+              )}
+
+              {activeSubPage === 'appearance' && (
+                <AppearanceSubPage
+                  settings={settings}
+                  isMobile={isMobile}
+                  toggleMinimalHome={toggleMinimalHome}
+                  updateSetting={updateSetting}
+                  toggleHaptics={toggleHaptics}
+                  toggleDebug={toggleDebug}
+                  triggerHaptic={triggerHaptic}
+                  showToast={showToast}
+                  sectionHeaderStyle={sectionHeaderStyle}
+                />
+              )}
+
+              {activeSubPage === 'account' && (
+                <AccountSubPage
+                  currentUser={currentUser}
+                  authProvider={authProvider}
+                  isMobile={isMobile}
+                  activeProfile={activeProfile}
+                  newPassword={newPassword}
+                  setNewPassword={setNewPassword}
+                  confirmNewPassword={confirmNewPassword}
+                  setConfirmNewPassword={setConfirmNewPassword}
+                  showPasswordChangeForm={showPasswordChangeForm}
+                  setShowPasswordChangeForm={setShowPasswordChangeForm}
+                  handleClearHistory={handleClearHistory}
+                  handleClearSearchHistory={handleClearSearchHistory}
+                  handleDeleteProfile={handleDeleteProfile}
+                  handleDeleteAccount={handleDeleteAccount}
+                  setReauthAction={setReauthAction}
+                  showToast={showToast}
+                  triggerHaptic={triggerHaptic}
+                  onLogout={onLogout}
+                  sectionHeaderStyle={sectionHeaderStyle}
+                />
+              )}
+
+              {activeSubPage === 'social' && (
+                <SocialSubPage
+                  isMobile={isMobile}
+                  friends={friends}
+                  requests={requests}
+                  sentRequests={sentRequests}
+                  friendsLoading={friendsLoading}
+                  accountName={accountName}
+                  socialTab={socialTab}
+                  setSocialTab={setSocialTab}
+                  searchQuery={searchQuery}
+                  setSearchQuery={setSearchQuery}
+                  searchResults={searchResults}
+                  isSearching={isSearching}
+                  handleUserSearch={handleUserSearch}
+                  handleRemoveFriend={handleRemoveFriend}
+                  acceptFriend={acceptFriend}
+                  declineReceivedRequest={declineReceivedRequest}
+                  cancelSentRequest={cancelSentRequest}
+                  addFriend={addFriend}
+                  triggerHaptic={triggerHaptic}
+                  getFriendStatus={getFriendStatus}
+                  onLogout={onLogout}
+                  userId={userId}
+                  copied={copied}
+                  setCopied={setCopied}
+                  friendInput={friendInput}
+                  setFriendInput={setFriendInput}
+                  isSending={isSending}
+                  setIsSending={setIsSending}
+                  socialMessage={socialMessage}
+                  setSocialMessage={setSocialMessage}
+                  showToast={showToast}
+                />
+              )}
+
+              {activeSubPage === 'statistics' && (
+                <StatisticsSubPage
+                  profileStats={profileStats}
+                  isMobile={isMobile}
+                  onResetStatsClick={() => {
+                    setConfirmModal({
+                      type: 'reset_statistics',
+                      title: 'Reset Viewing Statistics?',
+                      message: 'Are you sure you want to completely clear your viewing history stats, streaks, and achievements? Your active watch progress in Continue Watching will remain, but analytics dashboards will be fully wiped.',
+                      actionText: 'Reset Stats',
+                      isDanger: true
+                    });
+                  }}
+                  triggerHaptic={triggerHaptic}
+                  getBackdropUrl={getBackdropUrl}
+                  getPosterUrl={getPosterUrl}
+                  COLORS={COLORS}
+                />
+              )}
+
+              {activeSubPage === 'mylist' && (
+                <MyListSubPage
+                  isMobile={isMobile}
+                  sectionHeaderStyle={sectionHeaderStyle}
+                  onMovieClick={onMovieClick}
+                />
+              )}
+
+            </div>
           </div>
         </div>
       )}
+
+      {/* Avatar Picker Modal */}
+      <AvatarPicker
+        showAvatarPicker={showAvatarPicker}
+        onClose={() => setShowAvatarPicker(false)}
+        activeProfile={activeProfile}
+        isUploading={isUploading}
+        isMobile={isMobile}
+        handleFileUpload={handleFileUpload}
+        handleSelectAvatar={handleSelectAvatar}
+      />
       {/* Toast Message Banners */}
       {toastMessage && (
         <div style={{
@@ -1498,9 +1360,17 @@ export default function SettingsPage({
                   } else if (confirmModal.type === 'clear_search') {
                     executeClearSearchHistory();
                   } else if (confirmModal.type === 'delete_profile') {
-                    executeDeleteProfile();
+                    if (localStorage.getItem('cinemovie_is_guest') === 'true') {
+                      executeDeleteProfile();
+                    } else {
+                      setConfirmModal(null);
+                      setReauthAction('delete_profile');
+                    }
                   } else if (confirmModal.type === 'delete_account') {
-                    executeDeleteAccount();
+                    setConfirmModal(null);
+                    setReauthAction('delete_account');
+                  } else if (confirmModal.type === 'reset_statistics') {
+                    executeResetStatistics();
                   }
                 }}
                 style={{
@@ -1523,90 +1393,21 @@ export default function SettingsPage({
         </div>
       )}
 
-    </div>
-  );
-}
-
-interface SettingRowProps {
-  label: string;
-  sub: string;
-  isMobile: boolean;
-  children: React.ReactNode;
-  stackOnMobile?: boolean;
-}
-
-function SettingRow({ label, sub, isMobile, children, stackOnMobile = false }: SettingRowProps) {
-  const [hovered, setHovered] = useState(false);
-  const shouldStack = isMobile && stackOnMobile;
-
-  return (
-    <div 
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        padding: isMobile ? '16px 8px' : '20px 8px',
-        display: 'flex',
-        flexDirection: shouldStack ? 'column' : 'row',
-        justifyContent: 'space-between',
-        alignItems: shouldStack ? 'stretch' : 'center',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-        background: hovered ? 'rgba(255, 255, 255, 0.02)' : 'transparent',
-        borderRadius: '12px',
-        gap: shouldStack ? '12px' : '16px',
-        transition: 'all 0.2s ease',
-      }}
-    >
-      <div style={{ flex: 1 }}>
-        <div style={{ fontWeight: 800, fontSize: isMobile ? '0.95rem' : '1.1rem', marginBottom: '2px', color: '#fff' }}>
-          {label}
-        </div>
-        <div style={{ fontSize: isMobile ? '0.72rem' : '0.82rem', color: 'rgba(255,255,255,0.4)', fontWeight: 600 }}>
-          {sub}
-        </div>
-      </div>
-      <div style={{ display: 'flex', justifyContent: shouldStack ? 'stretch' : 'flex-end', width: shouldStack ? '100%' : 'auto' }}>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function Switch({ checked, onChange, isMobile }: { checked: boolean, onChange: () => void, isMobile?: boolean }) {
-  const trackWidth = isMobile ? 42 : 50;
-  const trackHeight = isMobile ? 24 : 28;
-  const knobSize = isMobile ? 18 : 22;
-  const padding = 2;
-
-  return (
-    <div 
-      onClick={onChange}
-      style={{
-        width: `${trackWidth}px`,
-        height: `${trackHeight}px`,
-        background: checked ? '#ffffff' : 'rgba(255,255,255,0.06)',
-        borderRadius: '30px',
-        position: 'relative',
-        transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-        cursor: 'pointer',
-        border: '1px solid rgba(255,255,255,0.08)',
-        boxShadow: checked ? '0 0 12px rgba(255, 255, 255, 0.15)' : 'none'
-      }}
-    >
-      <div style={{
-        position: 'absolute',
-        top: `${padding}px`,
-        left: `${checked ? (trackWidth - knobSize - padding) : padding}px`,
-        width: `${knobSize}px`,
-        height: `${knobSize}px`,
-        background: checked ? '#000000' : '#ffffff',
-        borderRadius: '50%',
-        transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}>
-      </div>
+      {/* Reauthentication Modal Overlay */}
+      <ReauthModal
+        reauthAction={reauthAction}
+        onClose={() => {
+          setReauthAction(null);
+          setReauthPassword('');
+          setReauthError(null);
+        }}
+        authProvider={authProvider}
+        reauthPassword={reauthPassword}
+        setReauthPassword={setReauthPassword}
+        isVerifyingReauth={isVerifyingReauth}
+        reauthError={reauthError}
+        handleVerifyReauth={handleVerifyReauth}
+      />
     </div>
   );
 }

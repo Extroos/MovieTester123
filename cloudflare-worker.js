@@ -31,7 +31,7 @@ export default {
             if (path.startsWith('/vidsrc/')) return handleVidSrc(path, respond);
             if (path.startsWith('/vidsrc-pm/')) return handleVidSrcPm(path, respond);
 
-            if (path === '/') return respond({ status: 'ACTIVE', v: '1.4.0' });
+            if (path === '/' || path === '/home') return respond({ status: 'ACTIVE', v: '1.4.0' });
             return respond({ error: 'Route Not Found', path }, 404);
         } catch (e) {
             return respond({ error: 'Worker Interior Error', message: e.message, data: {} }, 200);

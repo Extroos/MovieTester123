@@ -15,8 +15,52 @@ function hexToUint8Array(hex: string): Uint8Array {
 const KEY = hexToUint8Array(KEY_HEX);
 const NONCE = new Uint8Array(24);
 
+let timeOffsetMs = 0;
+let hasSyncedTime = false;
+
+export async function syncClockOffset() {
+  if (hasSyncedTime) return;
+  try {
+    const start = Date.now();
+    let text = '';
+    
+    if (Capacitor.isNativePlatform()) {
+      const { fetchWithCapacitor } = await import('../../utils/nativeFetch');
+      const capRes = await fetchWithCapacitor('https://cloudflare.com/cdn-cgi/trace', 'text');
+      if (capRes.ok) {
+        text = await capRes.text();
+      }
+    } else {
+      const res = await fetch('https://cloudflare.com/cdn-cgi/trace');
+      if (res.ok) {
+        text = await res.text();
+      }
+    }
+
+    if (text) {
+      const match = text.match(/ts=(\d+)/);
+      if (match) {
+        const cfTimeSec = parseInt(match[1]);
+        const latency = (Date.now() - start) / 2;
+        const cfTimeMs = (cfTimeSec * 1000) + latency;
+        timeOffsetMs = cfTimeMs - Date.now();
+        hasSyncedTime = true;
+        console.log(`[ClientScraper] Synchronized clock offset with Cloudflare: ${timeOffsetMs}ms`);
+      }
+    }
+  } catch (e) {
+    console.warn('[ClientScraper] Failed to sync time offset with Cloudflare:', e);
+  }
+}
+
+// Trigger initial sync on module load
+syncClockOffset().catch(() => {});
+
 export function encryptToken(mediaId: string): string {
-  const timestamp = Math.floor(Date.now() / 1000) + 480;
+  if (!hasSyncedTime) {
+    syncClockOffset().catch(() => {});
+  }
+  const timestamp = Math.floor((Date.now() + timeOffsetMs) / 1000) + 480;
   
   const encoder = new TextEncoder();
   const mediaIdBytes = encoder.encode(mediaId);
@@ -58,8 +102,59 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 8
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
   const host = new URL(url).host;
+
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const { fetchWithCapacitor } = await import('../../utils/nativeFetch');
+      let capRes = await fetchWithCapacitor(url, 'text', options.headers as Record<string, string>);
+      let text = await capRes.text();
+      
+      if (!capRes.ok) {
+        console.warn(`[ClientScraper] Native direct fetch failed. Retrying via Cloud proxy...`);
+        const cloudProxy = 'https://cinemovie-proxy.abderrahmanchakkouri.workers.dev';
+        const referer = (options.headers as any)?.['Referer'] || (options.headers as any)?.['referer'] || 'https://vidlink.pro/';
+        const origin = (options.headers as any)?.['Origin'] || (options.headers as any)?.['origin'] || 'https://vidlink.pro';
+        const fallbackUrl = `${cloudProxy}/local-proxy?url=${encodeURIComponent(url)}&referer=${encodeURIComponent(referer)}&origin=${encodeURIComponent(origin)}`;
+        
+        capRes = await fetchWithCapacitor(fallbackUrl, 'text');
+        text = await capRes.text();
+      }
+      
+      clearTimeout(id);
+      if (!capRes.ok) {
+        throw new Error(`Gateway responded HTTP ${(capRes as any).status || 500}: ${text || 'empty'}`);
+      }
+      return JSON.parse(text);
+    } catch (e: any) {
+      clearTimeout(id);
+      throw e;
+    }
+  }
+
+  let fetchUrl = url;
+  const isWeb = true; // Web fallback
+  const localServer = getLocalServerUrl() || 'http://localhost:3001';
+  const referer = (options.headers as any)?.['Referer'] || (options.headers as any)?.['referer'] || 'https://vidlink.pro/';
+  const origin = (options.headers as any)?.['Origin'] || (options.headers as any)?.['origin'] || 'https://vidlink.pro';
+  fetchUrl = `${localServer}/local-proxy?url=${encodeURIComponent(url)}&referer=${encodeURIComponent(referer)}&origin=${encodeURIComponent(origin)}`;
+
   try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
+    let res;
+    try {
+      res = await fetch(fetchUrl, { ...options, signal: controller.signal });
+    } catch (fetchErr) {
+      if (fetchUrl.includes('localhost')) {
+        console.warn(`[ClientScraper] Local proxy failed, falling back to Cloud proxy...`);
+        const cloudProxy = 'https://cinemovie-proxy.abderrahmanchakkouri.workers.dev';
+        const referer = (options.headers as any)?.['Referer'] || (options.headers as any)?.['referer'] || 'https://vidlink.pro/';
+        const origin = (options.headers as any)?.['Origin'] || (options.headers as any)?.['origin'] || 'https://vidlink.pro';
+        const fallbackUrl = `${cloudProxy}/local-proxy?url=${encodeURIComponent(url)}&referer=${encodeURIComponent(referer)}&origin=${encodeURIComponent(origin)}`;
+        res = await fetch(fallbackUrl, { ...options, signal: controller.signal });
+      } else {
+        throw fetchErr;
+      }
+    }
+
     clearTimeout(id);
     if (!res.ok) {
       let bodyText = '';
@@ -96,16 +191,20 @@ export function formatVidlinkResponse(data: any): any {
   const sources = [];
   if (data.stream.playlist) {
     const originalPlaylist = data.stream.playlist;
+    const delimiter = originalPlaylist.includes('?') ? '&' : '?';
+    const markedUrl = `${originalPlaylist}${delimiter}origin_referer=${encodeURIComponent('https://vidlink.pro/')}`;
     sources.push({
-      url: originalPlaylist,
+      url: markedUrl,
       quality: 'auto',
       isM3U8: data.stream.type === 'hls' || originalPlaylist.includes('.m3u8')
     });
   } else if (data.stream.qualities) {
     Object.entries(data.stream.qualities).forEach(([quality, qObj]: [string, any]) => {
       if (qObj && qObj.url) {
+        const delimiter = qObj.url.includes('?') ? '&' : '?';
+        const markedUrl = `${qObj.url}${delimiter}origin_referer=${encodeURIComponent('https://vidlink.pro/')}`;
         sources.push({
-          url: qObj.url,
+          url: markedUrl,
           quality: quality,
           isM3U8: qObj.type === 'hls' || qObj.url.includes('.m3u8')
         });
@@ -129,6 +228,10 @@ export function formatVidlinkResponse(data: any): any {
         subUrl = `https://vidlink.pro/${subUrl}`;
       }
     }
+    if (subUrl) {
+      const delimiter = subUrl.includes('?') ? '&' : '?';
+      subUrl = `${subUrl}${delimiter}origin_referer=${encodeURIComponent('https://vidlink.pro/')}`;
+    }
     return {
       url: subUrl,
       lang: c.language || 'Unknown'
@@ -142,6 +245,9 @@ export function formatVidlinkResponse(data: any): any {
 }
 
 export async function scrapeVidlinkStream(tmdbId: string, type: 'movie' | 'tv', season = 1, episode = 1, gatewayUrl?: string): Promise<any> {
+  try {
+    await syncClockOffset();
+  } catch (_) {}
   const token = encryptToken(tmdbId);
   const gateways = gatewayUrl ? [gatewayUrl] : [
     'https://vidlink.pro',
@@ -327,62 +433,237 @@ export async function scrapeVidifyStream(tmdbId: string, isTv = false, season = 
 }
 
 export async function scrapeVidsrcPmStream(tmdbId: string, type: 'movie' | 'tv', season = 1, episode = 1): Promise<any> {
-  if (Capacitor.isNativePlatform()) {
-    const param = tmdbId.startsWith("tt") ? "imdb" : "tmdb";
-    let url = `https://streamdata.vaplayer.ru/api.php?${param}=${tmdbId}&type=${type}`;
-    if (type === 'tv') {
-      url += `&season=${season}&episode=${episode}`;
-    }
-    console.log(`[Client VidSrc PM Native] Fetching stream directly: ${url}`);
-    try {
-      const nativeFetch = await import('../../utils/nativeFetch');
-      const res = await nativeFetch.fetchWithCapacitor(url, 'text');
-      if (!res.ok) throw new Error('vidsrc.pm direct API returned status error');
-      const text = await res.text();
-      const data = typeof text === 'string' ? JSON.parse(text) : text;
-      if (data.status_code == 200 || data.status_code == "200") {
-        const streamData = data.data || {};
-        const streamUrls = streamData.stream_urls || [];
-        const sources = streamUrls.map((stream: string, idx: number) => {
-          const delimiter = stream.includes('?') ? '&' : '?';
-          const markedUrl = `${stream}${delimiter}origin_referer=${encodeURIComponent('https://brightpathsignals.com/')}`;
-          return {
-            url: markedUrl,
-            quality: idx === 0 ? 'auto' : `backup ${idx}`,
-            isM3U8: true
-          };
-        });
-        const subs = (data.default_subs || streamData.default_subs || []).map((sub: any) => {
-          const fileUrl = sub.url || sub.file;
-          const delimiter = fileUrl.includes('?') ? '&' : '?';
-          const markedUrl = `${fileUrl}${delimiter}origin_referer=${encodeURIComponent('https://brightpathsignals.com/')}`;
-          return {
-            url: markedUrl,
-            lang: sub.lang || sub.label || 'English'
-          };
-        });
-        return { sources, subtitles: subs };
-      }
-      throw new Error("No stream data found in vaplayer response");
-    } catch (e: any) {
-      console.error(`[Client VidSrc PM Native] Direct fetch failed:`, e.message);
-      throw e;
-    }
+  const param = tmdbId.startsWith("tt") ? "imdb" : "tmdb";
+  let url = `https://streamdata.vaplayer.ru/api.php?${param}=${tmdbId}&type=${type}`;
+  if (type === 'tv') {
+    url += `&season=${season}&episode=${episode}`;
   }
 
-  const localServer = getLocalServerUrl();
-  let url = `${localServer}/meta/tmdb/watch/${tmdbId}?type=${type}&server=vidsrc-pm`;
-  if (type === 'tv') {
-    url += `&s=${season}&e=${episode}`;
+  const localServer = getLocalServerUrl() || 'http://localhost:3001';
+  const endpoints = [
+    `${localServer}/meta/tmdb/watch/${tmdbId}?type=${type}&server=vidsrc-pm${type === 'tv' ? `&s=${season}&e=${episode}` : ''}`,
+    `https://cinemovie-proxy.abderrahmanchakkouri.workers.dev/meta/tmdb/watch/${tmdbId}?type=${type}&server=vidsrc-pm${type === 'tv' ? `&s=${season}&e=${episode}` : ''}`
+  ];
+
+  for (const ep of endpoints) {
+    try {
+      console.log(`[Client VidSrc PM] Trying resolver: ${ep}`);
+      const res = await fetch(ep);
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {}
   }
-  console.log(`[Client VidSrc PM] Fetching stream from: ${url}`);
+
+  console.log(`[Client VidSrc PM Fallback] Scraping directly: ${url}`);
   try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`vidsrc.pm resolver returned status ${res.status}`);
-    return await res.json();
+    let resText = '';
+    if (Capacitor.isNativePlatform()) {
+      const nativeFetch = await import('../../utils/nativeFetch');
+      const res = await nativeFetch.fetchWithCapacitor(url, 'text');
+      if (!res.ok) throw new Error('vidsrc.pm direct API failed');
+      resText = await res.text();
+    } else {
+      let proxiedUrl = `${localServer}/local-proxy?url=${encodeURIComponent(url)}&referer=${encodeURIComponent('https://brightpathsignals.com/')}&origin=${encodeURIComponent('https://brightpathsignals.com')}`;
+      let res;
+      try {
+        res = await fetch(proxiedUrl);
+      } catch (e) {
+        proxiedUrl = `https://cinemovie-proxy.abderrahmanchakkouri.workers.dev/local-proxy?url=${encodeURIComponent(url)}&referer=${encodeURIComponent('https://brightpathsignals.com/')}&origin=${encodeURIComponent('https://brightpathsignals.com')}`;
+        res = await fetch(proxiedUrl);
+      }
+      if (!res.ok) throw new Error('vidsrc.pm direct API failed');
+      resText = await res.text();
+    }
+
+    const data = typeof resText === 'string' ? JSON.parse(resText) : resText;
+    if (data.status_code == 200 || data.status_code == "200") {
+      const streamData = data.data || {};
+      const streamUrls = streamData.stream_urls || [];
+      const sources = streamUrls.map((stream: string, idx: number) => {
+        const delimiter = stream.includes('?') ? '&' : '?';
+        const markedUrl = `${stream}${delimiter}origin_referer=${encodeURIComponent('https://brightpathsignals.com/')}`;
+        return {
+          url: markedUrl,
+          quality: idx === 0 ? 'auto' : `backup ${idx}`,
+          isM3U8: true
+        };
+      });
+      const subs = (data.default_subs || streamData.default_subs || []).map((sub: any) => {
+        const fileUrl = sub.url || sub.file;
+        const delimiter = fileUrl.includes('?') ? '&' : '?';
+        const markedUrl = `${fileUrl}${delimiter}origin_referer=${encodeURIComponent('https://brightpathsignals.com/')}`;
+        return {
+          url: markedUrl,
+          lang: sub.lang || sub.label || 'English'
+        };
+      });
+      return { sources, subtitles: subs };
+    }
+    throw new Error("No stream data found in vaplayer response");
   } catch (e: any) {
-    console.error(`[Client VidSrc PM] Failed to resolve:`, e.message);
+    console.error(`[Client VidSrc PM Fallback] Failed:`, e.message);
     throw e;
+  }
+}
+
+// Mock webpack require 'n' for client-side evaluation
+function mockRequire(modId: number) {
+  if (modId === 6434) {
+    return { Buffer: Uint8Array };
+  }
+  return {};
+}
+(mockRequire as any).d = (exports: any, definition: any) => {
+  for (const key in definition) {
+    if (Object.prototype.hasOwnProperty.call(definition, key) && !Object.prototype.hasOwnProperty.call(exports, key)) {
+      Object.defineProperty(exports, key, { enumerable: true, get: definition[key] });
+    }
+  }
+};
+
+export async function scrapeWtfStream(
+  tmdbId: string,
+  apiType: 'wtf-1' | 'wtf-2' | 'wtf-3' | 'wtf-4',
+  serverName: string | null = null,
+  isTv = false,
+  season = 1,
+  episode = 1
+): Promise<any> {
+  const chunkRes = await fetch('./wtf_chunk_46_decrypted.js');
+  if (!chunkRes.ok) throw new Error("Decryption chunk asset could not be loaded");
+  const chunkCode = await chunkRes.text();
+
+  const wasmRes = await fetch('./makima.wasm');
+  if (!wasmRes.ok) throw new Error("Decryption WASM asset could not be loaded");
+  const wasmBuffer = await wasmRes.arrayBuffer();
+
+  // Extract top-level decryption functions
+  const webpackIdx = chunkCode.indexOf(',(self.webpackChunk_N_E');
+  if (webpackIdx !== -1) {
+    const decFuncs = chunkCode.substring(0, webpackIdx);
+    (window as any).eval(decFuncs + '; window._0x53ab = _0x53ab; window._0x471f = _0x471f;');
+  }
+
+  // Extract module 46 function body
+  const startStr = '46:function(e,t,n){';
+  const startIdx = chunkCode.indexOf(startStr);
+  if (startIdx === -1) {
+    throw new Error("Could not find module 46 function in decrypted chunk");
+  }
+
+  let braceCount = 1;
+  let endIdx = startIdx + startStr.length;
+  while (braceCount > 0 && endIdx < chunkCode.length) {
+    if (chunkCode[endIdx] === '{') braceCount++;
+    else if (chunkCode[endIdx] === '}') braceCount--;
+    endIdx++;
+  }
+
+  const functionBody = 'const _0x53ab = window._0x53ab;\n' + chunkCode.substring(startIdx + startStr.length, endIdx - 1);
+  const moduleFunc = new Function('e', 't', 'n', functionBody);
+
+  const mockExports = {} as any;
+  (window as any).__pn = null;
+
+  moduleFunc(mockExports, mockExports, mockRequire);
+
+  let refererUrl = 'https://vidsrc.wtf/';
+  if (apiType === 'wtf-2') {
+    refererUrl = isTv 
+      ? `https://vidsrc.wtf/2/tv/${tmdbId}/${season}/${episode}`
+      : `https://vidsrc.wtf/2/movie/${tmdbId}`;
+  } else if (apiType === 'wtf-4') {
+    refererUrl = isTv
+      ? `https://vidsrc.wtf/4/tv/${tmdbId}/${season}/${episode}`
+      : `https://vidsrc.wtf/4/movie/${tmdbId}`;
+  } else {
+    refererUrl = isTv
+      ? `https://vidsrc.wtf/1/tv/${tmdbId}/${season}/${episode}`
+      : `https://vidsrc.wtf/1/movie/${tmdbId}`;
+  }
+
+  const originalFetch = window.fetch;
+
+  window.fetch = async (url: string, options: any = {}) => {
+    
+    if (url.includes('/altcha-challenge') || url.includes('/bootstrap') || (!url.includes('.wasm') && !url.includes('/makima-manifest.json'))) {
+      const nativeFetch = await import('../../utils/nativeFetch');
+      const delimiter = url.includes('?') ? '&' : '?';
+      const decoratedUrl = `${url}${delimiter}origin_referer=${encodeURIComponent(refererUrl)}`;
+      const res = await nativeFetch.fetchWithCapacitor(decoratedUrl, 'text', options?.headers);
+      const text = await res.text();
+      
+      return {
+        ok: res.ok,
+        status: res.ok ? 200 : 500,
+        text: async () => text,
+        json: async () => JSON.parse(text)
+      } as any;
+    }
+
+    if (url.includes('.wasm')) {
+      return {
+        ok: true,
+        status: 200,
+        arrayBuffer: async () => wasmBuffer
+      } as any;
+    }
+
+    if (url.includes('/makima-manifest.json')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          url: "makima.wasm",
+          exports: {
+            alloc: "_BpDg",
+            reset: "_YrcY",
+            writeByte: "_xeBp",
+            readByte: "_e6Un",
+            decryptPepper: "_0S1G",
+            decryptEnvelope: "_7F6j",
+            dropPepper: "_DKz4"
+          }
+        })
+      } as any;
+    }
+
+    return originalFetch(url, options);
+  };
+
+  try {
+    let activeServer = serverName;
+    if (!activeServer && (apiType === 'wtf-1' || apiType === 'wtf-3')) {
+      try {
+        const serversRes = await mockExports.Ot();
+        if (serversRes && serversRes.ok && serversRes.data && serversRes.data.length > 0) {
+          activeServer = serversRes.data[0].name;
+        }
+      } catch (e: any) {
+        console.warn("[WTF Resolver Client] Failed to fetch servers list, fallback to Leon:", e.message);
+      }
+      if (!activeServer) activeServer = 'Leon';
+    }
+
+    let decrypted: any;
+    if (apiType === 'wtf-2') {
+      decrypted = isTv 
+        ? await mockExports.ju(tmdbId, season, episode)
+        : await mockExports.Cm(tmdbId);
+    } else if (apiType === 'wtf-4') {
+      decrypted = isTv
+        ? await mockExports.sk(tmdbId, season, episode)
+        : await mockExports.$q(tmdbId);
+    } else {
+      decrypted = isTv
+        ? await mockExports.Nw(tmdbId, season, episode, activeServer)
+        : await mockExports.dE(tmdbId, activeServer);
+    }
+
+    return decrypted;
+  } finally {
+    window.fetch = originalFetch;
   }
 }
 

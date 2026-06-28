@@ -5,7 +5,7 @@ import { OfflineStorageService } from '../../../services/OfflineStorageService';
 import { triggerHaptic } from '../../../utils/haptics';
 import { COLORS } from '../../../constants';
 import VideoPlayer from '../player/VideoPlayer';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Sliders, Check } from 'lucide-react';
 
 interface DownloadsPageProps {
   onNavigate: (view: any) => void;
@@ -24,7 +24,8 @@ interface DownloadItem {
   localUrl?: string;
   streamUrl?: string;
   subtitles?: any[];
-  data: any;
+  data?: any;
+  metaData?: any;
   addedAt: number;
 }
 
@@ -35,6 +36,16 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
   const [errorToast, setErrorToast] = useState<string | null>(null);
   
   const [isMobileSize, setIsMobileSize] = useState(window.innerWidth <= 380);
+  const [showQualityMenu, setShowQualityMenu] = useState(false);
+  const [selectedQuality, setSelectedQuality] = useState<'1080p' | '720p' | '480p' | '360p'>(
+    (localStorage.getItem('cinemovie_download_quality') as any) || '1080p'
+  );
+
+  const handleQualityChange = (q: '1080p' | '720p' | '480p' | '360p') => {
+    triggerHaptic('light');
+    setSelectedQuality(q);
+    localStorage.setItem('cinemovie_download_quality', q);
+  };
   
   useEffect(() => {
     let resizeTimer: ReturnType<typeof setTimeout>;
@@ -91,6 +102,10 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
 
   // Handle Play
   const handlePlay = async (item: DownloadItem) => {
+    if (item.status !== 'completed') {
+      setErrorToast(item.status === 'failed' ? 'Download failed. Please delete and retry.' : 'This video is still downloading...');
+      return;
+    }
     triggerHaptic('heavy');
     setLoadingItemId(item.id);
     try {
@@ -156,14 +171,17 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
     
     downloads.forEach(item => {
       if (item.type === 'tv') {
-        const showId = item.data.id;
-        if (!groups[showId]) {
-          groups[showId] = {
-            show: item.data,
-            episodes: []
-          };
+        const itemData = item.data || item.metaData;
+        if (itemData) {
+          const showId = itemData.id;
+          if (!groups[showId]) {
+            groups[showId] = {
+              show: itemData,
+              episodes: []
+            };
+          }
+          groups[showId].episodes.push(item);
         }
-        groups[showId].episodes.push(item);
       }
     });
 
@@ -190,16 +208,38 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
       }}>
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '16px' }}>
           <div>
-            <h1 style={{
-              fontSize: isMobileSize ? '1.7rem' : '2.2rem',
-              fontWeight: 950,
-              color: '#fff',
-              lineHeight: 1.1,
-              letterSpacing: '-0.04em',
-              margin: 0,
-            }}>
-              Offline Library
-            </h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <h1 style={{
+                fontSize: isMobileSize ? '1.7rem' : '2.2rem',
+                fontWeight: 950,
+                color: '#fff',
+                lineHeight: 1.1,
+                letterSpacing: '-0.04em',
+                margin: 0,
+              }}>
+                Offline Library
+              </h1>
+              <button 
+                onClick={() => { triggerHaptic('light'); setShowQualityMenu(!showQualityMenu); }}
+                style={{
+                  background: showQualityMenu ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.03)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  color: '#fff',
+                  borderRadius: '50%',
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  outline: 'none'
+                }}
+                title="Download Settings"
+              >
+                <Sliders size={14} />
+              </button>
+            </div>
             <p style={{
               fontSize: isMobileSize ? '0.72rem' : '0.8rem',
               color: 'rgba(255, 255, 255, 0.5)',
@@ -212,6 +252,98 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
             </p>
           </div>
         </div>
+
+        {showQualityMenu && (
+          <div style={{
+            background: 'rgba(255,255,255,0.02)',
+            border: '1px solid rgba(255,255,255,0.05)',
+            borderRadius: '12px',
+            padding: '12px',
+            marginBottom: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+            animation: 'fadeIn 0.2s ease-out'
+          }}>
+            <div>
+              <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '8px' }}>
+                Download Quality
+              </div>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                {(['1080p', '720p', '480p', '360p'] as const).map((q) => (
+                  <button
+                    key={q}
+                    onClick={() => handleQualityChange(q)}
+                    style={{
+                      flex: 1,
+                      height: '32px',
+                      borderRadius: '8px',
+                      background: selectedQuality === q ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                      border: selectedQuality === q ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(255,255,255,0.03)',
+                      color: selectedQuality === q ? '#fff' : 'rgba(255,255,255,0.45)',
+                      fontSize: '0.7rem',
+                      fontWeight: selectedQuality === q ? 800 : 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px',
+                      textTransform: 'uppercase',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    {selectedQuality === q && <Check size={12} />}
+                    {q}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '8px' }}>
+                Preferred Download Server
+              </div>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                {([
+                  { id: 'vidlink-pro', label: 'Vidlink Pro' },
+                  { id: 'vidsrc-pm', label: 'VidSrc PM' },
+                  { id: 'universal', label: 'Universal' }
+                ] as const).map((srv) => {
+                  const isSel = (localStorage.getItem('cinemovie_download_server') || 'vidlink-pro') === srv.id;
+                  return (
+                    <button
+                      key={srv.id}
+                      onClick={() => {
+                        triggerHaptic('light');
+                        localStorage.setItem('cinemovie_download_server', srv.id);
+                        loadDownloads(); // Trigger state update
+                      }}
+                      style={{
+                        flex: 1,
+                        height: '32px',
+                        borderRadius: '8px',
+                        background: isSel ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                        border: isSel ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(255,255,255,0.03)',
+                        color: isSel ? '#fff' : 'rgba(255,255,255,0.45)',
+                        fontSize: '0.7rem',
+                        fontWeight: isSel ? 800 : 600,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '4px',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      {isSel && <Check size={12} />}
+                      {srv.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Tab switchers in premium capsule design */}
         <div style={{ display: 'flex', gap: '4px', background: 'rgba(255,255,255,0.03)', padding: '4px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
@@ -240,28 +372,6 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
               {tab.label}
             </button>
           ))}
-        </div>
-      </div>
-
-      {/* Maintenance Notice Banner */}
-      <div style={{ padding: isMobileSize ? '0 12px' : '0 6%', maxWidth: '1400px', margin: '0 auto 16px' }}>
-        <div style={{
-          background: 'rgba(255,200,100,0.06)',
-          border: '1px solid rgba(255,200,100,0.15)',
-          borderRadius: '12px',
-          padding: '12px 16px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-        }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,200,100,0.9)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-            <line x1="12" y1="9" x2="12" y2="13"/>
-            <line x1="12" y1="17" x2="12.01" y2="17"/>
-          </svg>
-          <div style={{ fontSize: '0.82rem', color: 'rgba(255,200,100,0.95)', lineHeight: 1.4, textAlign: 'left' }}>
-            <strong>Offline Downloads Maintenance:</strong> We are currently optimizing and fixing the downloader for mobile users to improve battery consumption and segment loading. Streams are fully functional online.
-          </div>
         </div>
       </div>
 
@@ -310,18 +420,30 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
                       </div>
                     )}
 
-                    {/* Progress overlay if downloading */}
+                    {/* Progress overlay if downloading, resolving, or failed */}
                     {item.status !== 'completed' && (
                       <div style={{
                         position: 'absolute', inset: 0,
-                        background: 'rgba(0,0,0,0.7)',
+                        background: 'rgba(0,0,0,0.72)',
                         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                        gap: '6px'
+                        gap: '6px',
+                        backdropFilter: 'blur(2px)'
                       }}>
-                        <div style={{ width: '18px', height: '18px', border: '2px solid rgba(255,255,255,0.2)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                        <span style={{ fontSize: '0.7rem', fontWeight: 800 }}>{item.progress}%</span>
-                        {item.status === 'downloading' && item.speed !== undefined && (
-                          <span style={{ fontSize: '0.62rem', fontWeight: 800, color: COLORS.primary }}>{item.speed} MB/s</span>
+                        {item.status === 'failed' ? (
+                          <>
+                            <AlertCircle size={22} color="#ef4444" />
+                            <span style={{ fontSize: '0.7rem', fontWeight: 900, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Failed</span>
+                          </>
+                        ) : (
+                          <>
+                            <div style={{ width: '18px', height: '18px', border: '2px solid rgba(255,255,255,0.2)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                            <span style={{ fontSize: '0.7rem', fontWeight: 800 }}>
+                              {item.status === 'resolving' ? 'Resolving...' : `${item.progress}%`}
+                            </span>
+                            {item.status === 'downloading' && item.speed !== undefined && (
+                              <span style={{ fontSize: '0.62rem', fontWeight: 800, color: COLORS.primary }}>{item.speed} MB/s</span>
+                            )}
+                          </>
                         )}
                       </div>
                     )}

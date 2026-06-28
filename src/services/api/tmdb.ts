@@ -1,9 +1,20 @@
 import type { Movie, Genre, Video, MovieCategory, SearchResult, TVShow, Season, Episode } from '../../types';
 import { TMDB_BASE_URL, TMDB_IMAGE_BASE_URL, IMAGE_SIZES } from '../../constants';
 import { CacheService, DEFAULT_TTL, LONG_TTL } from '../core/cache';
+import { SettingsService } from '../user/settings';
 
-const API_KEY = '8265bd1679663a7ea12ac168da84d2e8'; // Using reliable demo key
+export const API_KEY = '8265bd1679663a7ea12ac168da84d2e8'; // Using reliable demo key
 const BASE_URL = 'https://api.themoviedb.org/3';
+
+const TMDB_LANG_MAP: Record<string, string> = {
+  en: 'en-US',
+  fr: 'fr-FR',
+  es: 'es-ES',
+  de: 'de-DE',
+  it: 'it-IT',
+  pt: 'pt-BR',
+  ru: 'ru-RU'
+};
 
 // Retry configuration
 const MAX_RETRIES = 3;
@@ -18,6 +29,8 @@ const activeSubscriptions = new Map<string, Set<(data: any) => void>>();
 async function fetchFromApi<T>(path: string, params: Record<string, string | number> = {}, ttl: number = DEFAULT_TTL, signal?: AbortSignal): Promise<T> {
   const urlObj = new URL(`${BASE_URL}${path}`);
   urlObj.searchParams.append('api_key', API_KEY);
+  const lang = SettingsService.get('appLanguage') || 'en';
+  urlObj.searchParams.append('language', TMDB_LANG_MAP[lang] || 'en-US');
   Object.entries(params).forEach(([key, value]) => urlObj.searchParams.append(key, String(value)));
   const fullUrl = urlObj.toString();
   const cacheKey = CacheService.generateKey(path, params);
@@ -72,19 +85,64 @@ async function fetchFromApi<T>(path: string, params: Record<string, string | num
   }
 
   // 3. COLD START: No cache, must fetch
-  const fetchPromise = performFetch();
-  pendingRequests.set(cacheKey, fetchPromise);
-  return fetchPromise;
+  try {
+    const fetchPromise = performFetch();
+    pendingRequests.set(cacheKey, fetchPromise);
+    return await fetchPromise;
+  } catch (error) {
+    console.warn(`Cold start fetch failed for ${path}, checking expired cache fallback:`, error);
+    try {
+      const fallbackStr = localStorage.getItem(cacheKey);
+      if (fallbackStr) {
+        const item = JSON.parse(fallbackStr);
+        return item.data;
+      }
+    } catch (e) {
+      console.warn('Failed to retrieve expired cache fallback:', e);
+    }
+    throw error;
+  }
 }
 
 function buildUrl(path: string, params: Record<string, string | number> = {}) {
   // Keeps existing helper if needed, but fetchFromApi handles generic calls now
   const url = new URL(`${BASE_URL}${path}`);
   url.searchParams.append('api_key', API_KEY);
+  const lang = SettingsService.get('appLanguage') || 'en';
+  url.searchParams.append('language', TMDB_LANG_MAP[lang] || 'en-US');
   Object.entries(params).forEach(([key, value]) => {
     url.searchParams.append(key, String(value));
   });
   return url.toString();
+}
+
+function checkInTheatersOnly(releaseDatesResult: any): boolean {
+  if (!releaseDatesResult || !Array.isArray(releaseDatesResult.results)) {
+    return false;
+  }
+  
+  let hasTheatrical = false;
+  let hasDigitalOrPhysical = false;
+  const now = new Date();
+
+  for (const country of releaseDatesResult.results) {
+    if (!Array.isArray(country.release_dates)) continue;
+    for (const rel of country.release_dates) {
+      if (!rel.release_date) continue;
+      const relDate = new Date(rel.release_date);
+      if (relDate > now) continue;
+      
+      const type = rel.type;
+      if (type === 2 || type === 3) {
+        hasTheatrical = true;
+      }
+      if (type === 4 || type === 5 || type === 6) {
+        hasDigitalOrPhysical = true;
+      }
+    }
+  }
+
+  return hasTheatrical && !hasDigitalOrPhysical;
 }
 
 function transformMovie(data: any): Movie {
@@ -94,7 +152,7 @@ function transformMovie(data: any): Movie {
     overview: data.overview || 'No overview available.',
     posterPath: data.poster_path,
     backdropPath: data.backdrop_path,
-    releaseDate: data.release_date || '2024-01-01',
+    releaseDate: data.release_date || '',
     voteAverage: data.vote_average || 0,
     voteCount: data.vote_count || 0,
     genres: data.genre_ids?.map((id: number) => ({ id, name: getGenreName(id) })) || data.genres || [],
@@ -102,6 +160,11 @@ function transformMovie(data: any): Movie {
     tagline: data.tagline,
     popularity: data.popularity,
     imdbId: data.imdb_id,
+    status: data.status,
+    budget: data.budget,
+    revenue: data.revenue,
+    originalLanguage: data.original_language,
+    inTheaters: data.release_dates ? checkInTheatersOnly(data.release_dates) : undefined,
   };
 }
 
@@ -183,8 +246,55 @@ export async function getTopRated(): Promise<Movie[]> {
 
 export async function getUpcoming(): Promise<Movie[]> {
   try {
-    const data: any = await fetchFromApi('/movie/upcoming');
-    return data.results.slice(0, 20).map(transformMovie);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+    const dateFrom = fmt(today);
+    const futureCap = new Date(today);
+    futureCap.setFullYear(futureCap.getFullYear() + 1);
+    const dateTo = fmt(futureCap);
+
+    // Sort by POPULARITY so blockbusters (Toy Story 5, Avengers, Spider-Man...) surface first.
+    // Then we re-sort by release_date ascending for display order (nearest first).
+    const baseParams = {
+      sort_by: 'popularity.desc',
+      'primary_release_date.gte': dateFrom,
+      'primary_release_date.lte': dateTo,
+      'vote_count.gte': 0,
+      include_adult: 'false',
+      include_video: 'false',
+    };
+
+    // Fetch 3 pages in parallel for ~60 popular upcoming candidates
+    const [page1, page2, page3] = await Promise.all([
+      fetchFromApi<any>('/discover/movie', { ...baseParams, page: 1 }),
+      fetchFromApi<any>('/discover/movie', { ...baseParams, page: 2 }),
+      fetchFromApi<any>('/discover/movie', { ...baseParams, page: 3 }),
+    ]);
+
+    const combined: any[] = [
+      ...(page1?.results || []),
+      ...(page2?.results || []),
+      ...(page3?.results || []),
+    ];
+
+    // Deduplicate by id, filter to strictly future dates, then sort by release_date ascending (nearest first)
+    const seen = new Set<number>();
+    return combined
+      .filter((m: any) => {
+        if (!m.release_date || seen.has(m.id)) return false;
+        const releaseDate = new Date(m.release_date);
+        if (releaseDate <= today) return false;
+        seen.add(m.id);
+        return true;
+      })
+      .sort((a: any, b: any) =>
+        new Date(a.release_date).getTime() - new Date(b.release_date).getTime()
+      )
+      .slice(0, 50)
+      .map(transformMovie);
   } catch (error) {
     console.error('Error fetching upcoming movies:', error);
     return [];
@@ -292,12 +402,12 @@ export async function searchMulti(query: string, signal?: AbortSignal): Promise<
 }
 
 export async function getMovieDetails(movieId: number | string): Promise<Movie | null> {
-  // Gracefully handle Anime IDs (non-numeric strings) passed to TMDB service
-  const numericId = typeof movieId === 'string' ? parseInt(movieId, 10) : movieId;
+  const cleanIdStr = typeof movieId === 'string' ? movieId.replace(/\D/g, '') : String(movieId);
+  const numericId = parseInt(cleanIdStr, 10);
   if (!numericId || isNaN(numericId)) return null;
 
   try {
-    const data: any = await fetchFromApi(`/movie/${numericId}`, {}, LONG_TTL/2);
+    const data: any = await fetchFromApi(`/movie/${numericId}`, { append_to_response: 'release_dates' }, LONG_TTL/2);
     if (!data || !data.id) return null;
     return transformMovie(data);
   } catch (error) {
@@ -309,6 +419,7 @@ export async function getMovieDetails(movieId: number | string): Promise<Movie |
 export async function getMovieVideos(movieId: number): Promise<Video[]> {
   try {
     const data: any = await fetchFromApi(`/movie/${movieId}/videos`);
+    if (!data || !data.results) return [];
     return data.results.map((video: any) => ({
       id: video.id,
       key: video.key,
@@ -343,7 +454,9 @@ export async function getSmartMovieRecommendations(movieId: number): Promise<Mov
       fetchFromApi<any>(`/movie/${movieId}/recommendations`)
     ]);
 
-    const allResults = [...(similar.results || []), ...(recommended.results || [])];
+    const similarResults = similar?.results || [];
+    const recResults = recommended?.results || [];
+    const allResults = [...similarResults, ...recResults];
     
     // Deduplicate and re-rank
     const uniqueMap = new Map<number, any>();
@@ -371,6 +484,7 @@ export async function getSmartMovieRecommendations(movieId: number): Promise<Mov
 export async function getMovieCredits(movieId: number): Promise<{ cast: any[], crew: any[] }> {
   try {
     const data: any = await fetchFromApi(`/movie/${movieId}/credits`);
+    if (!data || !data.cast) return { cast: [], crew: [] };
     
     return {
       cast: data.cast.slice(0, 10).map((person: any) => ({
@@ -380,7 +494,7 @@ export async function getMovieCredits(movieId: number): Promise<{ cast: any[], c
         profilePath: person.profile_path,
         order: person.order,
       })),
-      crew: data.crew
+      crew: (data.crew || [])
         .filter((person: any) => person.job === 'Director' || person.department === 'Writing')
         .slice(0, 5)
         .map((person: any) => ({
@@ -457,6 +571,7 @@ export async function getTVShowDetails(tvId: number | string): Promise<TVShow | 
 export async function getTVShowVideos(tvId: number): Promise<Video[]> {
   try {
     const data: any = await fetchFromApi(`/tv/${tvId}/videos`);
+    if (!data || !data.results) return [];
     return data.results.map((video: any) => ({
       id: video.id,
       key: video.key,
@@ -491,7 +606,9 @@ export async function getSmartTVRecommendations(tvId: number): Promise<TVShow[]>
       fetchFromApi<any>(`/tv/${tvId}/recommendations`)
     ]);
 
-    const allResults = [...(similar.results || []), ...(recommended.results || [])];
+    const similarResults = similar?.results || [];
+    const recResults = recommended?.results || [];
+    const allResults = [...similarResults, ...recResults];
     
     // Deduplicate and re-rank
     const uniqueMap = new Map<number, any>();
@@ -519,6 +636,7 @@ export async function getSmartTVRecommendations(tvId: number): Promise<TVShow[]>
 export async function getTVShowCredits(tvId: number): Promise<{ cast: any[], crew: any[] }> {
   try {
     const data: any = await fetchFromApi(`/tv/${tvId}/credits`);
+    if (!data || !data.cast) return { cast: [], crew: [] };
     
     return {
       cast: data.cast.slice(0, 10).map((person: any) => ({
@@ -528,7 +646,7 @@ export async function getTVShowCredits(tvId: number): Promise<{ cast: any[], cre
         profilePath: person.profile_path,
         order: person.order,
       })),
-      crew: data.crew
+      crew: (data.crew || [])
         .filter((person: any) => person.job === 'Executive Producer' || person.job === 'Creator')
         .slice(0, 5)
         .map((person: any) => ({
@@ -620,6 +738,7 @@ export async function getPersonCombinedCredits(personId: number, signal?: AbortS
 export async function getTVShowSeason(tvId: number, seasonNumber: number): Promise<any> {
   try {
     const data: any = await fetchFromApi(`/tv/${tvId}/season/${seasonNumber}`, {}, LONG_TTL);
+    if (!data) return null;
     
     // Transform episodes to match our Episode interface
     if (data.episodes) {
@@ -683,5 +802,51 @@ export function prewarmImages(urls: string[]) {
     const img = new Image();
     img.src = url;
   });
+}
+
+export async function getDiscoverNetflix(mediaType: 'movie' | 'tv' = 'movie', signal?: AbortSignal): Promise<(Movie | TVShow)[]> {
+  const path = mediaType === 'movie' ? '/discover/movie' : '/discover/tv';
+  try {
+    const data: any = await fetchFromApi(path, {
+      sort_by: 'popularity.desc',
+      with_watch_providers: 8,
+      watch_region: 'US'
+    }, DEFAULT_TTL, signal);
+    return data.results.slice(0, 20).map(mediaType === 'movie' ? transformMovie : transformTVShow);
+  } catch (e) {
+    return [];
+  }
+}
+
+export async function getDiscoverDisney(mediaType: 'movie' | 'tv' = 'movie', signal?: AbortSignal): Promise<(Movie | TVShow)[]> {
+  const path = mediaType === 'movie' ? '/discover/movie' : '/discover/tv';
+  try {
+    const data: any = await fetchFromApi(path, {
+      sort_by: 'popularity.desc',
+      with_watch_providers: 337,
+      watch_region: 'US'
+    }, DEFAULT_TTL, signal);
+    return data.results.slice(0, 20).map(mediaType === 'movie' ? transformMovie : transformTVShow);
+  } catch (e) {
+    return [];
+  }
+}
+
+export async function getDiscoverOscars(signal?: AbortSignal): Promise<Movie[]> {
+  try {
+    const data: any = await fetchFromApi('/discover/movie', {
+      sort_by: 'vote_average.desc',
+      'vote_count.gte': 1000,
+      with_keywords: '250212' // Oscar Winner keyword
+    }, DEFAULT_TTL, signal);
+    // If we get nothing, fallback to top-rated
+    if (!data.results || data.results.length === 0) {
+      const topRatedData: any = await fetchFromApi('/movie/top_rated', {}, DEFAULT_TTL, signal);
+      return topRatedData.results.slice(0, 20).map(transformMovie);
+    }
+    return data.results.slice(0, 20).map(transformMovie);
+  } catch (e) {
+    return [];
+  }
 }
 

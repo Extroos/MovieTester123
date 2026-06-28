@@ -8,50 +8,81 @@ import {
   getTVShowsByGenre 
 } from '../../../services/tmdb';
 import { triggerHaptic } from '../../../utils/haptics';
-import { COLORS } from '../../../constants';
+import { t } from '../../../utils/i18n';
+import { Play, Info, ChevronLeft, Layers, Film, Tv, TrendingUp, Calendar } from 'lucide-react';
 
-// --- Premium Design Tokens ---
-const DESIGN = {
-  glass: 'rgba(10, 10, 12, 0.45)',
-  blur: '24px', 
-  saturate: '190%',
-  border: '1px solid rgba(255, 255, 255, 0.06)',
-  borderActive: '1px solid rgba(255, 255, 255, 0.15)',
-  shadow: 'inset 0 1px 0px rgba(255, 255, 255, 0.08), 0 12px 32px rgba(0, 0, 0, 0.5)',
-  ease: [0.16, 1, 0.3, 1], 
-};
+const GENRES = [
+  { id: 28, name: 'Action', color: '#ff4d4d' },
+  { id: 12, name: 'Adventure', color: '#fbbf24' },
+  { id: 16, name: 'Animation', color: '#22d3ee' },
+  { id: 35, name: 'Comedy', color: '#facc15' },
+  { id: 80, name: 'Crime', color: '#a78bfa' },
+  { id: 99, name: 'Documentary', color: '#34d399' },
+  { id: 18, name: 'Drama', color: '#818cf8' },
+  { id: 10751, name: 'Family', color: '#f472b6' },
+  { id: 14, name: 'Fantasy', color: '#c084fc' },
+  { id: 27, name: 'Horror', color: '#fca5a5' },
+  { id: 10402, name: 'Music', color: '#fb7185' },
+  { id: 9648, name: 'Mystery', color: '#6366f1' },
+  { id: 10749, name: 'Romance', color: '#fda4af' },
+  { id: 878, name: 'Sci-Fi', color: '#38bdf8' },
+  { id: 53, name: 'Thriller', color: '#f87171' },
+];
+
+type ContentItem = (Movie | TVShow) & { mediaType: 'movie' | 'tv' };
 
 interface BrowseNewsProps {
   trending: (Movie | TVShow)[];
   upcoming: Movie[];
   onItemClick: (item: any) => void;
+  selectedGenre: number | null;
+  onSelectedGenreChange: (genreId: number | null) => void;
 }
 
-const GENRES = [
-  { id: 28, name: 'Action' },
-  { id: 12, name: 'Adventure' },
-  { id: 16, name: 'Animation' },
-  { id: 35, name: 'Comedy' },
-  { id: 80, name: 'Crime' },
-  { id: 99, name: 'Documentary' },
-  { id: 18, name: 'Drama' },
-  { id: 10751, name: 'Family' },
-  { id: 14, name: 'Fantasy' },
-  { id: 27, name: 'Horror' },
-  { id: 10402, name: 'Music' },
-  { id: 9648, name: 'Mystery' },
-  { id: 10749, name: 'Romance' },
-  { id: 878, name: 'Sci-Fi' },
-  { id: 53, name: 'Thriller' },
-];
-
-type ContentItem = (Movie | TVShow) & { mediaType: 'movie' | 'tv' };
-
-export default function BrowseNewsPage({ trending, upcoming, onItemClick }: BrowseNewsProps) {
+export default function BrowseNewsPage({ trending, upcoming, onItemClick, selectedGenre, onSelectedGenreChange }: BrowseNewsProps) {
   const [activeTab, setActiveTab] = useState<'everyone' | 'coming' | 'categories'>('everyone');
-  const [selectedGenre, setSelectedGenre] = useState<number | null>(null);
   const [genreContent, setGenreContent] = useState<ContentItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isSmallScreen, setIsSmallScreen] = useState(window.innerWidth < 380);
+
+  useEffect(() => {
+    const handleResize = () => setIsSmallScreen(window.innerWidth < 380);
+    window.addEventListener('resize', handleResize, { passive: true });
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const tabLabels = useMemo(() => [
+    { id: 'everyone' as const, label: t('trending'), icon: <TrendingUp size={12} /> },
+    { id: 'coming' as const, label: isSmallScreen ? t('soon') : t('coming_soon'), icon: <Calendar size={12} /> },
+    { id: 'categories' as const, label: isSmallScreen ? t('genres') : t('categories'), icon: <Layers size={12} /> }
+  ], [isSmallScreen]);
+
+  // Performance cap lists to top 15 items for trending feed
+  const trendingList = useMemo(() => trending.slice(0, 15), [trending]);
+  // Show all upcoming (up to 50) for the coming soon tab — sorted by date (nearest first)
+  const upcomingList = useMemo(() => upcoming.slice(0, 50), [upcoming]);
+
+  // Group upcoming by release month for organized display
+  const upcomingByMonth = useMemo(() => {
+    const groups: { label: string; key: string; items: Movie[] }[] = [];
+    const groupMap = new Map<string, Movie[]>();
+
+    upcomingList.forEach((item: any) => {
+      const releaseDate = item.releaseDate || item.release_date;
+      if (!releaseDate) return;
+      const d = new Date(releaseDate);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const label = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      if (!groupMap.has(key)) {
+        groupMap.set(key, []);
+        groups.push({ label, key, items: groupMap.get(key)! });
+      }
+      groupMap.get(key)!.push(item);
+    });
+
+    return groups;
+  }, [upcomingList]);
+
 
   useEffect(() => {
     if (selectedGenre) {
@@ -73,53 +104,32 @@ export default function BrowseNewsPage({ trending, upcoming, onItemClick }: Brow
     }
   }, [selectedGenre]);
 
-  const handleBack = useCallback(() => {
-    triggerHaptic('light');
-    setSelectedGenre(null);
-  }, []);
-
-  // Compute unique popular movie cover photo per genre with absolute reliability
+  // Pre-generate dynamic images for genre categories
   const genresWithImages = useMemo(() => {
-    const allContent = [...trending, ...upcoming].filter(item => !!(item.backdropPath || item.posterPath));
+    const allContent = [...trendingList, ...upcomingList].filter(item => !!(item.backdropPath || item.posterPath));
     const usedMovieIds = new Set<number>();
     
     return GENRES.map(genre => {
-      // 1. Find a unique movie matching this genre id
+      // 1. Try to find an unused movie matching this genre
       let matchedMovie = allContent.find(item => {
         const ids = item.genres?.map((g: any) => g.id) || [];
-        const hasGenre = ids.includes(genre.id);
-        const isUnique = !usedMovieIds.has(item.id);
-        return hasGenre && isUnique;
+        return ids.includes(genre.id) && !usedMovieIds.has(item.id);
       });
       
-      // 2. If no unique match by genre, try any match by genre (allowing duplicate)
-      if (!matchedMovie) {
-        matchedMovie = allContent.find(item => {
-          const ids = item.genres?.map((g: any) => g.id) || [];
-          return ids.includes(genre.id);
-        });
-      }
-      
-      // 3. If still no match, fallback to the most popular unused movie in the list
+      // 2. If none, find ANY unused movie to ensure visual uniqueness
       if (!matchedMovie) {
         matchedMovie = allContent.find(item => !usedMovieIds.has(item.id));
       }
       
-      // 4. Ultimate fallback to the first movie in the list
+      // 3. Fallback to any movie only if we run out of unique movies (highly unlikely since 30 > 15)
       if (!matchedMovie && allContent.length > 0) {
-        matchedMovie = allContent[0];
+        matchedMovie = allContent[Math.floor(Math.random() * allContent.length)];
       }
 
       let imagePath = '';
       if (matchedMovie) {
         usedMovieIds.add(matchedMovie.id);
-        const relativePath = matchedMovie.backdropPath || matchedMovie.posterPath || '';
-        imagePath = getBackdropUrl(relativePath, 'medium') || '';
-      }
-
-      // If no image could be resolved, use a premium dark fallback gradient
-      if (!imagePath) {
-        imagePath = 'linear-gradient(135deg, rgba(30,30,40,0.6) 0%, rgba(9,9,11,1) 100%)';
+        imagePath = getBackdropUrl(matchedMovie.backdropPath || matchedMovie.posterPath || '', 'medium') || '';
       }
 
       return {
@@ -127,331 +137,320 @@ export default function BrowseNewsPage({ trending, upcoming, onItemClick }: Brow
         imagePath
       };
     });
-  }, [trending, upcoming]);
+  }, [trendingList, upcomingList]);
 
   if (selectedGenre) {
     const genre = GENRES.find(g => g.id === selectedGenre);
     return (
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        style={{ minHeight: '100vh', background: '#09090b', paddingTop: 'env(safe-area-inset-top)' }}
-      >
-        <div style={{ 
-          position: 'sticky',
-          top: 'calc(16px + env(safe-area-inset-top, 0px))',
-          margin: '16px 16px 0',
-          height: '52px',
-          background: 'rgba(18, 18, 22, 0.7)',
-          backdropFilter: 'blur(24px) saturate(190%)',
-          WebkitBackdropFilter: 'blur(24px) saturate(190%)',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
-          borderRadius: '16px',
-          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.6)',
-          zIndex: 1000,
-          display: 'flex',
-          alignItems: 'center',
-          padding: '0 16px',
-        }}>
-          <button 
-            onClick={handleBack} 
-            style={{ 
-              background: 'transparent', 
-              border: 'none', 
-              color: '#fff', 
-              padding: '6px', 
-              cursor: 'pointer', 
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: 'center', 
-              opacity: 0.9,
-              outline: 'none',
-              transition: 'opacity 0.2s ease, transform 0.2s ease'
-            }}
-            onMouseEnter={(e) => {
-                e.currentTarget.style.opacity = '1';
-                e.currentTarget.style.transform = 'scale(1.08)';
-            }}
-            onMouseLeave={(e) => {
-                e.currentTarget.style.opacity = '0.9';
-                e.currentTarget.style.transform = 'scale(1)';
-            }}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="19" y1="12" x2="5" y2="12"></line>
-              <polyline points="12 19 5 12 12 5"></polyline>
-            </svg>
-          </button>
-          
-          <div style={{ width: '1px', height: '18px', background: 'rgba(255,255,255,0.12)', margin: '0 14px' }} />
-
-          <h2 style={{ 
-            margin: 0, 
-            fontSize: '15px', 
-            fontWeight: 800, 
-            color: '#FFFFFF',
-            letterSpacing: '-0.2px',
-            textTransform: 'uppercase'
-          }}>{genre?.name}</h2>
+      <div style={{ minHeight: '100vh', background: 'var(--bg-primary, #070708)', paddingTop: 'calc(84px + env(safe-area-inset-top, 0px))', paddingBottom: '32px' }}>
+        <CustomStyles />
+        
+        <div style={{ padding: '0 20px 16px', maxWidth: '800px', margin: '0 auto', textAlign: 'left' }}>
+          <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 950, color: '#fff', letterSpacing: '-0.03em', textTransform: 'uppercase' }}>
+            {genre?.name}
+          </h2>
         </div>
         
         <div style={{ 
-          padding: '24px 16px',
+          padding: '0 16px',
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
           gap: '12px',
-          paddingBottom: '120px'
+          maxWidth: '800px',
+          margin: '0 auto'
         }}>
           {loading ? Array(12).fill(0).map((_, i) => (
-            <div key={i} style={{ aspectRatio: '2/3', background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%)', borderRadius: '14px', border: DESIGN.border }} />
+            <div key={i} className="shimmer-placeholder" style={{ aspectRatio: '2/3', borderRadius: '12px' }} />
           )) :
-            genreContent.map((item, idx) => (
+            genreContent.map((item) => (
               <div 
                 key={item.id} 
-                className="genre-content-card"
+                className="editorial-poster-card tv-focusable"
                 onClick={() => onItemClick(item)} 
                 style={{ 
                   aspectRatio: '2/3', 
-                  borderRadius: '14px', 
+                  borderRadius: '12px', 
                   overflow: 'hidden', 
-                  background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 100%)', 
-                  border: DESIGN.border, 
-                  boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.05), 0 6px 16px rgba(0,0,0,0.4)',
                   position: 'relative',
-                  animationDelay: `${idx * 12}ms`
+                  cursor: 'pointer',
+                  border: '1px solid rgba(255, 255, 255, 0.05)',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
                 }}
               >
-                <img src={getPosterUrl(item.posterPath, 'medium')} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <img 
+                  src={getPosterUrl(item.posterPath, 'medium')} 
+                  alt="" 
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                  loading="lazy"
+                />
               </div>
             ))
           }
         </div>
-      </motion.div>
+      </div>
     );
   }
+
+  const heroItem = useMemo(() => {
+    if (activeTab === 'coming') return upcomingList[0] || null;
+    if (activeTab === 'categories') return trendingList[1] || trendingList[0] || null;
+    return trendingList[0] || null;
+  }, [activeTab, trendingList, upcomingList]);
+
+  const heroBadgeConfig = useMemo(() => {
+    if (activeTab === 'coming') {
+      return {
+        bg: 'rgba(255, 255, 255, 0.08)',
+        border: '1px solid rgba(255, 255, 255, 0.15)',
+        color: '#ffffff',
+        icon: <Calendar size={10} />,
+        label: t('coming_soon')
+      };
+    }
+    if (activeTab === 'categories') {
+      return {
+        bg: 'rgba(139, 92, 246, 0.2)',
+        border: '1px solid rgba(139, 92, 246, 0.4)',
+        color: '#c084fc',
+        icon: <Layers size={10} />,
+        label: t('categories')
+      };
+    }
+    return {
+      bg: 'rgba(229, 9, 20, 0.2)',
+      border: '1px solid rgba(229, 9, 20, 0.4)',
+      color: '#ff4d4d',
+      icon: <TrendingUp size={10} />,
+      label: t('trending')
+    };
+  }, [activeTab]);
+
+  const remainingTrendingList = useMemo(() => trendingList.slice(1), [trendingList]);
+
+  const formatReleaseDate = (item: any): string => {
+    const raw = item.releaseDate || item.release_date;
+    if (!raw) return '';
+    const d = new Date(raw);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
 
   return (
     <div style={{
       minHeight: '100vh',
-      background: '#09090b',
-      color: '#fff',
-      paddingTop: 'calc(68px + env(safe-area-inset-top, 0px))',
-      paddingBottom: '120px'
+      background: 'var(--bg-primary, #070708)',
+      color: 'var(--text-primary)',
+      paddingBottom: '32px',
+      overflowX: 'hidden'
     }}>
-      {/* Editorial Header (Compact & Mobile-friendly) */}
-      <div style={{
-        padding: '8px 16px 12px',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
-        marginBottom: '12px'
-      }}>
-        <h1 style={{ fontSize: '1.8rem', fontWeight: 900, letterSpacing: '-0.03em', margin: 0, lineHeight: 1.15 }}>New & Hot</h1>
+      <CustomStyles />
 
-        {/* Tab switchers in premium capsule design */}
-        <div style={{ display: 'flex', gap: '4px', marginTop: '10px', background: 'rgba(255,255,255,0.03)', padding: '4px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
-          {[
-            { id: 'everyone', label: "Everyone's Watching" },
-            { id: 'coming', label: 'Coming Soon' },
-            { id: 'categories', label: 'Categories' }
-          ].map((tab) => (
+      {/* Hero Banner — distinct per tab */}
+      {heroItem && (
+        <div
+          className="hero-banner-container"
+          style={{
+            position: 'relative',
+            width: '100%',
+            height: '56vh',
+            minHeight: '400px',
+            maxHeight: '600px',
+            overflow: 'hidden',
+            display: 'flex',
+            alignItems: 'flex-end',
+            backgroundImage: `linear-gradient(to top, var(--bg-primary, #070708) 0%, rgba(var(--bg-primary-rgb, 7,7,8), 0.6) 40%, transparent 100%)`,
+            boxShadow: '0 20px 30px rgba(0, 0, 0, 0.8)',
+            zIndex: 1
+          }}
+        >
+          <div style={{ position: 'absolute', inset: 0, zIndex: -1, transform: 'scale(1.02)', filter: 'brightness(0.7) contrast(1.1)' }}>
+            <img
+              src={getBackdropUrl(heroItem.backdropPath, 'original') || getPosterUrl(heroItem.posterPath, 'large')}
+              alt=""
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, var(--bg-primary, #070708) 0%, transparent 60%), linear-gradient(to top, var(--bg-primary, #070708) 0%, transparent 50%)' }} />
+          </div>
+          <div style={{ padding: '24px 20px', width: '100%', maxWidth: '800px', margin: '0 auto', textAlign: 'left' }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: heroBadgeConfig.bg, border: heroBadgeConfig.border, color: heroBadgeConfig.color, padding: '4px 10px', borderRadius: '20px', fontSize: '0.62rem', fontWeight: 900, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '12px' }}>
+              {heroBadgeConfig.icon}{heroBadgeConfig.label}
+            </div>
+            <h1 style={{ fontSize: 'clamp(1.8rem, 5vw, 2.8rem)', fontWeight: 950, letterSpacing: '-0.04em', margin: '0 0 8px 0', lineHeight: 1.1, textShadow: '0 4px 12px rgba(0,0,0,0.6)' }}>
+              {(heroItem as Movie).title || (heroItem as TVShow).name}
+            </h1>
+            <p style={{ fontSize: '0.85rem', color: 'rgba(255, 255, 255, 0.7)', lineHeight: '1.5', maxWidth: '520px', margin: '0 0 16px 0', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+              {heroItem.overview}
+            </p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => onItemClick(heroItem)} className="featured-play-btn tv-focusable" style={{ background: '#ffffff', color: '#000000', border: 'none', borderRadius: '12px', padding: '10px 20px', fontWeight: 900, fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', boxShadow: '0 4px 14px rgba(255,255,255,0.25)' }}>
+                <Play size={14} fill="#000" /> {t('watch_info')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tab bar */}
+      <div style={{ padding: '24px 20px 12px', maxWidth: '800px', margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+        <div style={{ display: 'flex', gap: '4px', background: 'rgba(255,255,255,0.03)', padding: '4px', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)' }}>
+          {tabLabels.map((tab) => (
             <button
               key={tab.id}
               onClick={() => { triggerHaptic('light'); setActiveTab(tab.id as any); }}
-              style={{
-                flex: 1,
-                height: '36px',
-                background: activeTab === tab.id ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
-                border: activeTab === tab.id ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid transparent',
-                color: activeTab === tab.id ? '#fff' : 'rgba(255,255,255,0.5)',
-                fontSize: '0.75rem',
-                fontWeight: activeTab === tab.id ? 850 : 600,
-                borderRadius: '12px',
-                cursor: 'pointer',
-                transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.02em',
-              }}
-              onMouseEnter={(e) => {
-                  if (activeTab !== tab.id) {
-                      e.currentTarget.style.color = '#fff';
-                      e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
-                  }
-              }}
-              onMouseLeave={(e) => {
-                  if (activeTab !== tab.id) {
-                      e.currentTarget.style.color = 'rgba(255,255,255,0.5)';
-                      e.currentTarget.style.background = 'transparent';
-                  }
-              }}
+              className={`browse-news-tab-btn${activeTab === tab.id ? ' active' : ''} tv-focusable`}
+              style={{ flex: 1, height: '36px', background: activeTab === tab.id ? 'rgba(255, 255, 255, 0.08)' : 'transparent', border: activeTab === tab.id ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid transparent', color: activeTab === tab.id ? '#fff' : 'rgba(255,255,255,0.45)', fontSize: '0.72rem', fontWeight: activeTab === tab.id ? 850 : 600, borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', textTransform: 'uppercase', letterSpacing: '0.04em', transition: 'all 0.2s' }}
             >
-              {tab.label}
+              {tab.icon}{tab.label}
             </button>
           ))}
         </div>
       </div>
 
-      <div style={{ padding: '4px 16px 24px' }}>
+      {/* Main Content Feed */}
+      <div style={{ padding: '0 20px', maxWidth: '800px', margin: '0 auto' }}>
         <AnimatePresence mode="wait">
+
+          {/* ── CATEGORIES TAB ── */}
           {activeTab === 'categories' ? (
-            <motion.div 
+            <motion.div
               key="categories"
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.98 }}
-              transition={{ ease: DESIGN.ease, duration: 0.4 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
               style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}
             >
-               {genresWithImages.map(genre => (
-                <div
+              {genresWithImages.map((genre) => (
+                <button
                   key={genre.id}
-                  className="news-category-card"
-                  onClick={() => { triggerHaptic('medium'); setSelectedGenre(genre.id); }}
-                  style={{ 
-                    aspectRatio: '1.7/1', 
-                    borderRadius: '20px', 
-                    position: 'relative', 
-                    overflow: 'hidden', 
-                    cursor: 'pointer', 
-                    background: '#121214',
-                    border: DESIGN.border,
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.3)'
-                  }}
+                  onClick={() => { triggerHaptic('medium'); onSelectedGenreChange(genre.id); }}
+                  className="genre-editorial-card tv-focusable"
+                  style={{ position: 'relative', aspectRatio: '16/9', borderRadius: '16px', border: '1px solid rgba(255, 255, 255, 0.08)', overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: '12px 16px', cursor: 'pointer', color: '#ffffff', outline: 'none', textAlign: 'left', width: '100%', boxSizing: 'border-box', background: 'var(--bg-card, #121214)' }}
                 >
-                  {/* Photo of a unique popular movie for this genre - Crisp and clear */}
-                  {genre.imagePath.startsWith('linear') ? (
-                    <div style={{ position: 'absolute', inset: 0, background: genre.imagePath }} />
-                  ) : (
-                    <img 
-                      src={genre.imagePath} 
-                      alt="" 
-                      style={{ 
-                        position: 'absolute', 
-                        inset: 0, 
-                        width: '100%', 
-                        height: '100%', 
-                        objectFit: 'cover',
-                        opacity: 1
-                      }} 
-                    />
+                  {genre.imagePath && (
+                    <img src={genre.imagePath} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 1, opacity: 0.5, transition: 'transform 0.4s ease' }} className="genre-card-bg" loading="lazy" />
                   )}
-                  
-                  {/* Smooth, subtle gradient at the bottom for text readability, keeping photos crisp and clear */}
-                  <div style={{
-                    position: 'absolute',
-                    inset: 0,
-                    background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.2) 50%, transparent 100%)',
-                  }} />
-
-                  <div style={{ 
-                    position: 'absolute', 
-                    inset: 0, 
-                    padding: '16px', 
-                    display: 'flex', 
-                    alignItems: 'flex-end',
-                  }}>
-                    <span style={{ fontWeight: 900, fontSize: '1rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#fff' }}>{genre.name}</span>
-                  </div>
-                </div>
+                  <div style={{ position: 'absolute', inset: 0, zIndex: 2, background: `linear-gradient(to top, rgba(var(--bg-primary-rgb, 7,7,8), 0.95) 0%, rgba(var(--bg-primary-rgb, 7,7,8), 0.3) 100%)` }} />
+                  <span style={{ position: 'relative', zIndex: 3, fontWeight: 900, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'inline-flex', alignItems: 'center' }}>
+                    {genre.name}
+                  </span>
+                </button>
               ))}
             </motion.div>
-          ) : (
+
+          /* ── COMING SOON TAB — Month-grouped calendar view ── */
+          ) : activeTab === 'coming' ? (
             <motion.div
-              key={activeTab}
+              key="coming"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
+              transition={{ duration: 0.25 }}
+              style={{ display: 'flex', flexDirection: 'column', gap: '0' }}
             >
-              {(() => {
-                const list = activeTab === 'everyone' ? trending : upcoming;
-                
-                return list.map((item, index) => (
-                  <div 
-                    key={item.id} 
-                    className="news-feed-card"
-                    style={{ 
-                      marginBottom: '32px', 
-                      background: 'rgba(255,255,255,0.015)', 
-                      borderRadius: '24px', 
-                      padding: '12px', 
-                      border: '1px solid rgba(255,255,255,0.03)',
-                      animationDelay: `${Math.min(index % 4 * 80, 240)}ms`
-                    }}
+              {upcomingByMonth.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '48px 0', color: 'rgba(255,255,255,0.35)', fontSize: '0.9rem' }}>
+                  No upcoming releases found
+                </div>
+              ) : (
+                upcomingByMonth.map((group) => (
+                  <div key={group.key}>
+                    {/* Month header */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '24px 0 14px', position: 'sticky', top: 'calc(60px + env(safe-area-inset-top, 0px))', background: 'var(--bg-primary, #070708)', zIndex: 5 }}>
+                      <span style={{ fontSize: '1rem', fontWeight: 950, color: '#fff', letterSpacing: '-0.02em', textTransform: 'uppercase' }}>{group.label}</span>
+                      <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.08)' }} />
+                      <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'rgba(255,255,255,0.35)', background: 'rgba(255,255,255,0.06)', padding: '3px 10px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                        {group.items.length} film{group.items.length !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+
+                    {/* Movies in this month */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+                      {group.items.map((item: any, idx: number) => {
+                        const isLast = idx === group.items.length - 1;
+                        const releaseDate = formatReleaseDate(item);
+                        return (
+                          <div
+                            key={item.id}
+                            className="seamless-news-row"
+                            style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', paddingBottom: '20px', paddingTop: '4px', borderBottom: isLast ? 'none' : '1px solid rgba(255, 255, 255, 0.05)', cursor: 'pointer' }}
+                            onClick={() => onItemClick(item)}
+                          >
+                            {/* Poster thumbnail */}
+                            <div style={{ flexShrink: 0, width: '80px', aspectRatio: '2/3', borderRadius: '10px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)', background: '#111', position: 'relative' }}>
+                              <img
+                                src={getPosterUrl(item.posterPath, 'medium')}
+                                alt={item.title}
+                                loading="lazy"
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                              />
+                            </div>
+
+                            {/* Info */}
+                            <div style={{ flex: 1, paddingTop: '4px' }}>
+                              {/* Release date badge */}
+                              {releaseDate && (
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: 'rgba(255, 255, 255, 0.08)', border: '1px solid rgba(255, 255, 255, 0.15)', color: '#ffffff', padding: '2px 8px', borderRadius: '6px', fontSize: '0.6rem', fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '6px' }}>
+                                  <Calendar size={9} />{releaseDate}
+                                </div>
+                              )}
+                              <h3 style={{ margin: '0 0 6px', fontSize: '0.95rem', fontWeight: 900, letterSpacing: '-0.02em', lineHeight: 1.25, color: '#fff' }}>
+                                {item.title}
+                              </h3>
+                              <p style={{ margin: 0, fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', lineHeight: '1.4', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                {item.overview || 'No description available.'}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))
+              )}
+            </motion.div>
+
+          /* ── TRENDING TAB — Editorial feed ── */
+          ) : (
+            <motion.div
+              key="everyone"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.25 }}
+              style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}
+            >
+              {remainingTrendingList.map((item, idx) => {
+                const isTV = (item as any).mediaType === 'tv' || !(item as any).title;
+                const isLast = idx === remainingTrendingList.length - 1;
+                return (
+                  <div
+                    key={item.id}
+                    className="seamless-news-row"
+                    style={{ display: 'flex', flexDirection: 'column', width: '100%', paddingBottom: '24px', borderBottom: isLast ? 'none' : '1px solid rgba(255, 255, 255, 0.06)', willChange: 'transform', transform: 'translate3d(0, 0, 0)' }}
                   >
-                    <div 
-                      onClick={() => onItemClick(item)} 
-                      className="news-media-box"
-                      style={{ 
-                        position: 'relative', 
-                        aspectRatio: '16/9', 
-                        borderRadius: '16px', 
-                        overflow: 'hidden', 
-                        background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%)',
-                        border: DESIGN.border,
-                        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
-                        width: '100%',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <img 
-                        src={getBackdropUrl(item.backdropPath, 'original') || getPosterUrl(item.posterPath, 'large')} 
-                        alt="" 
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                        loading="lazy"
-                      />
-                      
-                      {/* Premium White Badge */}
-                      <div style={{ 
-                        position: 'absolute', 
-                        top: '12px', 
-                        right: '12px', 
-                        background: '#ffffff', 
-                        color: '#000000',
-                        padding: '5px 10px', 
-                        borderRadius: '8px', 
-                        fontSize: '0.65rem', 
-                        fontWeight: 900,
-                        letterSpacing: '0.06em',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-                        textTransform: 'uppercase'
-                      }}>
-                        {activeTab === 'everyone' ? "EVERYONE'S WATCHING" : 'COMING SOON'}
+                    <div onClick={() => onItemClick(item)} className="news-media-box tv-focusable" style={{ position: 'relative', aspectRatio: '16/9', width: '100%', cursor: 'pointer', borderRadius: '14px', overflow: 'hidden' }}>
+                      <img src={getBackdropUrl(item.backdropPath, 'medium') || getPosterUrl(item.posterPath, 'large')} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />
+                      <div style={{ position: 'absolute', top: '12px', left: '12px', background: 'rgba(7, 7, 8, 0.85)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', padding: '5px 10px', borderRadius: '8px', fontSize: '0.6rem', fontWeight: 800, letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '5px', textTransform: 'uppercase' }}>
+                        {isTV ? <Tv size={10} /> : <Film size={10} />}
+                        {isTV ? t('tv_series') : t('movie')}
                       </div>
                     </div>
-                    
-                    <div style={{ 
-                      marginTop: '16px', 
-                      display: 'flex', 
-                      justifyContent: 'space-between', 
-                      alignItems: 'flex-start',
-                      padding: '0 4px',
-                      textAlign: 'left'
-                    }}>
+                    <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', textAlign: 'left' }}>
                       <div style={{ flex: 1, marginRight: '16px' }}>
-                        <h3 
-                          onClick={() => onItemClick(item)} 
-                          style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900, letterSpacing: '-0.02em', lineHeight: 1.25, cursor: 'pointer', color: '#fff' }}
-                        >
+                        <h3 onClick={() => onItemClick(item)} className="editorial-title-text" style={{ margin: 0, fontSize: '1.25rem', fontWeight: 900, letterSpacing: '-0.02em', lineHeight: 1.25, cursor: 'pointer', color: '#fff' }}>
                           {(item as Movie).title || (item as TVShow).name}
                         </h3>
-                        <p style={{ 
-                          margin: '8px 0 0', 
-                          fontSize: '0.85rem', 
-                          color: 'rgba(255, 255, 255, 0.55)', 
-                          lineHeight: '1.5', 
-                          display: '-webkit-box', 
-                          WebkitLineClamp: 2, 
-                          WebkitBoxOrient: 'vertical', 
-                          overflow: 'hidden',
-                          fontWeight: 400
-                        }}>
+                        <p style={{ margin: '8px 0 0', fontSize: '0.82rem', color: 'rgba(255, 255, 255, 0.6)', lineHeight: '1.5', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', fontWeight: 400 }}>
                           {item.overview}
                         </p>
                       </div>
-                      
+                      <button onClick={() => onItemClick(item)} className="tv-focusable" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, transition: 'all 0.2s', outline: 'none' }}>
+                        <Info size={16} />
+                      </button>
                     </div>
                   </div>
-                ));
-              })()}
+                );
+              })}
             </motion.div>
           )}
         </AnimatePresence>
@@ -459,3 +458,81 @@ export default function BrowseNewsPage({ trending, upcoming, onItemClick }: Brow
     </div>
   );
 }
+
+// Minimal, hardware-accelerated CSS animations and variables for high FPS
+const CustomStyles = React.memo(() => (
+  <style>{`
+    .seamless-news-row {
+      transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    
+    .news-media-box img {
+      transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .seamless-news-row:hover .news-media-box img {
+      transform: scale(1.02);
+    }
+
+    .editorial-title-text {
+      transition: color 0.2s;
+    }
+    .seamless-news-row:hover .editorial-title-text {
+      opacity: 0.9;
+    }
+
+    .genre-editorial-card {
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.3s;
+    }
+    .genre-editorial-card:hover {
+      transform: scale(1.02);
+      border-color: rgba(255,255,255,0.18);
+    }
+    .genre-editorial-card:hover .genre-card-bg {
+      transform: scale(1.05);
+    }
+
+    .editorial-poster-card {
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.3s;
+    }
+    .editorial-poster-card:hover {
+      transform: scale(1.05) translateY(-2px);
+      border-color: rgba(255,255,255,0.25);
+    }
+
+    /* TV focus states */
+    .tv-focusable:focus-visible {
+      outline: 2px solid #ffffff !important;
+      outline-offset: 2px;
+      transform: scale(1.02) !important;
+    }
+
+    /* Shimmer Effect */
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+    .shimmer-placeholder {
+      background: linear-gradient(90deg, var(--bg-primary, #121214) 25%, var(--bg-card, #1a1a1f) 50%, var(--bg-primary, #121214) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite linear;
+      border: 1px solid var(--border-color);
+    }
+
+    /* Small Screen Responsive Layouts (e.g. 360x750) */
+    @media (max-width: 400px), (max-height: 800px) {
+      .hero-banner-container {
+        height: 48vh !important;
+        min-height: 320px !important;
+      }
+      .featured-play-btn {
+        padding: 8px 16px !important;
+        font-size: 0.72rem !important;
+      }
+      .browse-news-tab-btn {
+        height: 32px !important;
+        font-size: 0.65rem !important;
+      }
+    }
+  `}</style>
+));
+CustomStyles.displayName = 'CustomStyles';

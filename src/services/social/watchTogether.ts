@@ -20,6 +20,7 @@ export interface PartyParticipant {
   name: string;
   avatar?: string;
   color: string;
+  is_host: boolean;
   joined_at: string;
 }
 
@@ -32,7 +33,9 @@ export type PartySyncEvent =
   | { type: 'sync_response'; time: number; playing: boolean; sender: string };
 
 // Generates a unique border color for each participant based on their index
-const PARTICIPANT_COLORS = ['#e50914', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+const PARTICIPANT_COLORS = ['#6366f1', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+
+const isGuest = () => localStorage.getItem('cinemovie_is_guest') === 'true';
 
 // --- Service ---
 
@@ -53,6 +56,9 @@ export const WatchTogetherService = {
     posterPath?: string,
     backdropPath?: string
   ): Promise<{ success: boolean; message: string }> {
+    if (isGuest()) {
+      return { success: false, message: 'Social features disabled in guest mode' };
+    }
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
@@ -121,10 +127,20 @@ export const WatchTogetherService = {
   // 3. Join a real-time sync channel for co-watching
   joinSyncChannel(
     sessionId: string,
-    currentUser: { id: string; name: string; avatar?: string },
+    currentUser: { id: string; name: string; avatar?: string; isHost?: boolean },
     onSyncEvent: (event: PartySyncEvent) => void,
     onPresenceChange: (participants: PartyParticipant[]) => void
   ): RealtimeChannel {
+    if (isGuest()) {
+      console.warn('[WatchTogether] Guest users cannot join sync channels.');
+      return {
+        on: function() { return this; },
+        subscribe: function(callback?: any) { if (callback) callback('SUBSCRIBED'); return this; },
+        track: async () => {},
+        send: () => {},
+        unsubscribe: () => {}
+      } as any;
+    }
     const channelName = `watch_party:${sessionId}`;
 
     const channel = supabase.channel(channelName, {
@@ -147,6 +163,7 @@ export const WatchTogetherService = {
         user_id: string;
         name: string;
         avatar?: string;
+        is_host?: boolean;
         joined_at: string;
       }>();
 
@@ -159,6 +176,7 @@ export const WatchTogetherService = {
             user_id: presence.user_id,
             name: presence.name,
             avatar: presence.avatar,
+            is_host: presence.is_host || false,
             color: PARTICIPANT_COLORS[colorIdx % PARTICIPANT_COLORS.length],
             joined_at: presence.joined_at
           });
@@ -176,6 +194,7 @@ export const WatchTogetherService = {
           user_id: currentUser.id,
           name: currentUser.name,
           avatar: currentUser.avatar,
+          is_host: currentUser.isHost || false,
           joined_at: new Date().toISOString()
         });
 

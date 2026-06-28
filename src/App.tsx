@@ -7,9 +7,10 @@ import ErrorBoundary from './components/common/ErrorBoundary';
 import { HeroSkeleton, ContentRowSkeleton } from './components/common/Skeletons';
 import OfflineScreen from './components/layout/OfflineScreen';
 import LoginPage from './components/features/auth/LoginPage';
+import OAuthOnboarding from './components/features/auth/OAuthOnboarding';
 import LoadingScreen from './components/layout/LoadingScreen'; 
 import { supabase } from './utils/supabase';
-import { removeFromMyList } from './services/myList';
+import { removeFromMyList } from './services/user/myList';
 import { useContent } from './hooks/useContent';
 import type { Movie, TVShow } from './types';
 import { COLORS } from './constants';
@@ -21,38 +22,96 @@ import BottomNav from './components/layout/BottomNav';
 import { SettingsService } from './services/settings';
 import DownloadCenter from './components/features/downloads/DownloadCenter';
 import { QueryClient, QueryClientProvider } from 'react-query';
+import { t } from './utils/i18n';
 import { FriendService } from './services/friends';
 import { WatchProgressService } from './services/progress';
 import { getTrending, getPosterUrl, getBackdropUrl, prewarmImages, getMovieDetails, getTVShowDetails } from './services/tmdb';
 
-// Lazy-loaded routes & modal features
-const CategoryExplorer = lazy(() => import('./components/features/home/CategoryExplorer'));
-const MovieDetails = lazy(() => import('./components/features/details/MovieDetails'));
-const TVShowDetails = lazy(() => import('./components/features/details/TVShowDetails'));
-const SearchOverlay = lazy(() => import('./components/features/search/SearchOverlay'));
-const SearchResults = lazy(() => import('./components/features/search/SearchResults'));
-const MyListPage = lazy(() => import('./components/features/mylist/MyListPage'));
-const BrowseNewsPage = lazy(() => import('./components/features/newandhot/BrowseNewsPage'));
+// Core feature components
+import CategoryExplorer from './components/features/home/CategoryExplorer';
+import MovieDetails from './components/features/details/MovieDetails';
+import TVShowDetails from './components/features/details/TVShowDetails';
+import SearchOverlay from './components/features/search/SearchOverlay';
+import SearchResults from './components/features/search/SearchResults';
+import MyListSubPage from './components/features/settings/settingpage/MyListSubPage';
+import BrowseNewsPage from './components/features/newandhot/BrowseNewsPage';
+import ActorPage from './components/features/details/ActorPage';
+
+// Lazy-loaded modal routes
 const WatchPartyRoomPage = lazy(() => import('./components/features/watchparty/WatchPartyRoomPage'));
-const ActorPage = lazy(() => import('./components/features/details/ActorPage'));
-const SettingsPage = lazy(() => import('./components/features/settings/SettingsPage'));
-const DownloadsPage = lazy(() => import('./components/features/downloads/DownloadsPage'));
+import SettingsPage from './components/features/settings/SettingsPage';
+import DownloadsPage from './components/features/downloads/DownloadsPage';
+const VideoPlayer = lazy(() => import('./components/features/player/VideoPlayer'));
+
+
+import { useTVNavigation } from './hooks/useTVNavigation';
 
 const queryClient = new QueryClient();
+
+function SimpleLoader() {
+  return (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      background: '#09090b',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 2000
+    }}>
+      <div style={{
+        width: '32px',
+        height: '32px',
+        border: '3px solid rgba(255,255,255,0.05)',
+        borderTop: '3px solid #ffffff',
+        borderRadius: '50%',
+        animation: 'spin 1s linear infinite'
+      }} />
+      <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        @keyframes fadeInOverlay {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+      `}</style>
+    </div>
+  );
+}
 
 type View = 'home' | 'movies' | 'tvshows' | 'newandhot' | 'mylist' | 'settings' | 'downloads';
 
 export default function App() {
+  useTVNavigation();
   const [currentView, setCurrentView] = useState<View>('home');
+  const [activeSettingsSubPage, setActiveSettingsSubPage] = useState<'streaming' | 'subtitles' | 'appearance' | 'account' | 'social' | 'statistics' | 'mylist' | null>(null);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [selectedNewsGenre, setSelectedNewsGenre] = useState<number | null>(null);
 
-  const [activeProfile, setActiveProfile] = useState<Profile | null>(ProfileService.getActiveProfile());
+  // Read the active profile once from localStorage so both state initializers
+  // below share the same parsed object — avoids double JSON parse on startup.
+  const _initialProfile = React.useMemo(() => ProfileService.getActiveProfile(), []);
+
+  const [activeProfile, setActiveProfile] = useState<Profile | null>(_initialProfile);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [showProfileSelector, setShowProfileSelector] = useState(!ProfileService.getActiveProfile());
+  const [showProfileSelector, setShowProfileSelector] = useState(!_initialProfile);
   const [minTimeDone, setMinTimeDone] = useState(false);
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [mediaPrefetched, setMediaPrefetched] = useState(false);
   const [prefetchedPosters, setPrefetchedPosters] = useState<string[]>([]);
+  
+  const [showPasswordRecovery, setShowPasswordRecovery] = useState(false);
+  const [recoveryPassword, setRecoveryPassword] = useState('');
+  const [recoveryConfirmPassword, setRecoveryConfirmPassword] = useState('');
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
+  const [recoveryError, setRecoveryError] = useState('');
+  const [recoveryMessage, setRecoveryMessage] = useState('');
+  const [isPassFocused, setIsPassFocused] = useState(false);
+  const [isConfirmFocused, setIsConfirmFocused] = useState(false);
   
   useEffect(() => {
     const prefetchLoginPosters = async () => {
@@ -87,17 +146,21 @@ export default function App() {
     // Initialize theme
     SettingsService.applyTheme(SettingsService.get('theme'));
 
-    // Lock global mobile screen orientation to portrait for native APK platforms
-    const initOrientation = async () => {
+    // Lock global mobile screen orientation to portrait and configure status bar for native APK platforms
+    const initNativeSettings = async () => {
       try {
         const { Capacitor } = await import('@capacitor/core');
         if (Capacitor.isNativePlatform()) {
           const { ScreenOrientation } = await import('@capacitor/screen-orientation');
           await (ScreenOrientation as any).lock({ orientation: 'portrait' }).catch(() => {});
+
+          const { StatusBar, Style } = await import('@capacitor/status-bar');
+          await StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
+          await StatusBar.setBackgroundColor({ color: '#0a0a0a' }).catch(() => {});
         }
       } catch (e) {}
     };
-    initOrientation();
+    initNativeSettings();
   }, []);
 
   useEffect(() => {
@@ -108,10 +171,18 @@ export default function App() {
     return () => window.removeEventListener('settingsChanged', handleSettingsChange);
   }, []);
 
-  const handleLogin = () => {
+  const handleLogin = useCallback(() => {
     // Auth listener handles state update
-  };
+  }, []);
   
+  const [isGuest, setIsGuest] = useState(localStorage.getItem('cinemovie_is_guest') === 'true');
+
+  const handleContinueAsGuest = useCallback(() => {
+    localStorage.setItem('cinemovie_is_guest', 'true');
+    setIsGuest(true);
+    triggerHaptic('medium');
+  }, []);
+
   const handleLogout = async () => {
     try {
         await supabase.auth.signOut();
@@ -119,6 +190,8 @@ export default function App() {
         console.error('Logout error:', error);
     }
     setIsAuthenticated(false);
+    setIsGuest(false);
+    localStorage.removeItem('cinemovie_is_guest');
     setActiveProfile(null);
     setShowProfileSelector(true);
     ProfileService.clearActiveProfile();
@@ -126,23 +199,42 @@ export default function App() {
   };
 
   useEffect(() => {
-    const timer = setTimeout(() => {
+    // Fast device check: Bypasses minimum loader gate delays if hardware has >= 4 logic cores
+    // or has a fast connection, so high-end phone users don't see the loading spinner at all.
+    const isFastDevice = (typeof navigator !== 'undefined') && (
+      (navigator.hardwareConcurrency && navigator.hardwareConcurrency >= 4) ||
+      ((navigator as any).connection && !['slow-2g', '2g', '3g'].includes((navigator as any).connection.effectiveType))
+    );
+
+    if (isFastDevice) {
       setMinTimeDone(true);
-    }, 1500);
-    return () => clearTimeout(timer);
+    } else {
+      const timer = setTimeout(() => {
+        setMinTimeDone(true);
+      }, 200); // Only keep the 200ms delay for slower devices to avoid layout flashes
+      return () => clearTimeout(timer);
+    }
   }, []);
+
+
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setIsAuthenticated(!!session);
+      setCurrentUser(session?.user || null);
       setSessionLoaded(true);
     });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       const isAuth = !!session;
       setIsAuthenticated(isAuth);
+      setCurrentUser(session?.user || null);
+      
+      if (event === 'PASSWORD_RECOVERY') {
+        setShowPasswordRecovery(true);
+      }
       
       if (!isAuth) {
         setShowProfileSelector(true);
@@ -152,33 +244,61 @@ export default function App() {
       }
     });
 
+    // Handle Capacitor deep link redirection for Google OAuth callbacks
+    const handleDeepLink = async () => {
+      try {
+        const { Capacitor } = await import('@capacitor/core');
+        if (Capacitor.isNativePlatform()) {
+          const { App: CapApp } = await import('@capacitor/app');
+          const { Browser } = await import('@capacitor/browser');
+          
+          CapApp.addListener('appUrlOpen', async (eventData: any) => {
+            console.log('[App] App opened with URL:', eventData.url);
+            
+            if (eventData.url.startsWith('cinemovie://auth-callback')) {
+              await Browser.close().catch(() => {});
+              
+              const urlObj = new URL(eventData.url.replace('#', '?'));
+              const accessToken = urlObj.searchParams.get('access_token');
+              const refreshToken = urlObj.searchParams.get('refresh_token');
+              
+              if (accessToken && refreshToken) {
+                console.log('[App] Setting session from deep link tokens...');
+                const { error } = await supabase.auth.setSession({
+                  access_token: accessToken,
+                  refresh_token: refreshToken
+                });
+                if (error) {
+                  console.error('[App] Failed to set session from deep link:', error.message);
+                } else {
+                  console.log('[App] Session set successfully!');
+                }
+              }
+            }
+          });
+        }
+      } catch (e) {
+        console.error('[App] Error in native deep link listener init:', e);
+      }
+    };
+    handleDeepLink();
+
     return () => subscription.unsubscribe();
   }, []);
 
 
 
 
-  const scrollPositions = React.useRef<Record<string, number>>({});
-  const currentViewRef = React.useRef(currentView);
 
-  useEffect(() => {
-    currentViewRef.current = currentView;
-  }, [currentView]);
-  
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const savedPosition = scrollPositions.current[currentView] || 0;
-      window.scrollTo({
-        top: savedPosition,
-        behavior: 'auto'
-      });
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [currentView]);
+
 
   const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
   const [selectedTVShow, setSelectedTVShow] = useState<TVShow | null>(null);
   const [selectedActor, setSelectedActor] = useState<number | null>(null);
+
+
+
+
 
   const [partyInvites, setPartyInvites] = useState<any[]>([]);
   const [activeInviteToast, setActiveInviteToast] = useState<any | null>(null);
@@ -253,7 +373,7 @@ export default function App() {
   useEffect(() => {
     const isPlayerActive = !!selectedMovie || !!selectedTVShow;
     
-    if (isAuthenticated && !isPlayerActive) {
+    if (isAuthenticated && !isPlayerActive && !isGuest) {
       fetchPartyInvites();
       const channel = supabase
         .channel('watch_party_invites')
@@ -282,10 +402,10 @@ export default function App() {
         )
         .subscribe();
  
-      // Backup polling fallback every 8 seconds to load invites dynamically without needing database publications setup
+      // Backup polling fallback every 60 seconds to load invites dynamically without needing database publications setup
       const pollInterval = setInterval(() => {
         fetchPartyInvites();
-      }, 8000);
+      }, 60000);
  
       return () => {
         supabase.removeChannel(channel);
@@ -294,7 +414,7 @@ export default function App() {
     }
   }, [isAuthenticated, fetchPartyInvites, selectedMovie, selectedTVShow]);
 
-  const handleDeclineInvite = async (invite: any) => {
+  const handleDeclineInvite = useCallback(async (invite: any) => {
     triggerHaptic('medium');
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -312,9 +432,10 @@ export default function App() {
       console.warn('Failed to decline invite notification:', err);
     }
     setActiveInviteToast(null);
-  };
+  }, [fetchPartyInvites]);
 
-  const handleAcceptInvite = async (invite: any) => {
+  const handleAcceptInvite = useCallback(async (invite: any) => {
+    if (localStorage.getItem('cinemovie_is_guest') === 'true') return;
     triggerHaptic('medium');
     const { item_id, media_type, session_id, item_title, is_host } = invite.data;
 
@@ -359,12 +480,12 @@ export default function App() {
         console.error(err);
       }
     }
-  };
+  }, [fetchPartyInvites]);
   
-  const handleJoinInviteClick = (invite: any) => {
+  const handleJoinInviteClick = useCallback((invite: any) => {
     setSelectedPartyInvite(invite);
     setActiveInviteToast(null);
-  };
+  }, []);
   
   const content = useContent(activeProfile?.id);
   const { 
@@ -377,6 +498,7 @@ export default function App() {
     loading, error,
     refreshMyList
   } = content;
+
 
   const { activity: friendActivity } = useFriends(); 
 
@@ -394,20 +516,25 @@ export default function App() {
     });
   }, []);
 
-  // Prefetch and prewarm critical home screen media assets
+  // Prefetch ONLY the critical hero backdrop images before revealing the app.
+  // Card poster images are loaded on-demand as rows render — no need to block startup on them.
   useEffect(() => {
-    if (sessionLoaded && (!isAuthenticated || !activeProfile)) {
+    if (!sessionLoaded) return; // Always wait for auth session first
+
+    if (!isAuthenticated) {
+      // Guest / not logged in — nothing to prefetch, just unblock immediately
       setMediaPrefetched(true);
       return;
     }
 
-    if (loading) return; // Wait for useContent to fetch the initial data rows
-
+    // Don't wait for the full content load — start as soon as the hero data arrives.
+    // If hero data isn't ready yet, the 400ms race timeout will release the gate anyway.
     const prefetchAssets = async () => {
       try {
         const urls: string[] = [];
         
-        // 1. Hero banner backdrops
+        // Only prefetch the two hero backdrop images — these are the only ones
+        // visible immediately and worth blocking on.
         if (heroMovie?.backdropPath) {
           urls.push(getBackdropUrl(heroMovie.backdropPath, 'large'));
         }
@@ -415,25 +542,13 @@ export default function App() {
           urls.push(getBackdropUrl(heroTVShow.backdropPath, 'large'));
         }
 
-        // 2. High priority movie card posters for instant, flicker-free rendering
-        trending.slice(0, 5).forEach(m => {
-          if (m.posterPath) urls.push(getPosterUrl(m.posterPath, 'medium'));
-        });
-        trendingTV.slice(0, 5).forEach(t => {
-          if (t.posterPath) urls.push(getPosterUrl(t.posterPath, 'medium'));
-        });
-        popular.slice(0, 3).forEach(m => {
-          if (m.posterPath) urls.push(getPosterUrl(m.posterPath, 'medium'));
-        });
-        continueWatching.slice(0, 3).forEach(m => {
-          if (m.posterPath) urls.push(getPosterUrl(m.posterPath, 'medium'));
-        });
-
-        // Race asset loads against a 2.5 second timeout to keep the app highly resilient
-        await Promise.race([
-          Promise.all(urls.map(url => preloadImage(url))),
-          new Promise(resolve => setTimeout(resolve, 2500))
-        ]);
+        if (urls.length > 0) {
+          // Race hero loads against a 400ms timeout — fast devices preload, slow ones just show quickly
+          await Promise.race([
+            Promise.all(urls.map(url => preloadImage(url))),
+            new Promise(resolve => setTimeout(resolve, 400))
+          ]);
+        }
       } catch (e) {
         console.error('Failed to prefetch entry dashboard images:', e);
       } finally {
@@ -442,7 +557,9 @@ export default function App() {
     };
 
     prefetchAssets();
-  }, [isAuthenticated, activeProfile, loading, heroMovie, heroTVShow, trending, trendingTV, popular, continueWatching, preloadImage, sessionLoaded]);
+  // Intentionally exclude full row arrays — only re-run when session or hero data changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, sessionLoaded, heroMovie?.backdropPath, heroTVShow?.backdropPath, preloadImage]);
 
   // Master startup controller
   useEffect(() => {
@@ -587,6 +704,17 @@ export default function App() {
     });
   }, [friendActivityItems, continueWatching]);
 
+  const mappedPartyInvites = useMemo(() => {
+    return partyInvites.map(invite => ({
+      id: invite.data.item_id,
+      title: invite.data.item_title,
+      posterPath: invite.data.poster_path,
+      backdropPath: invite.data.backdrop_path,
+      firstAirDate: invite.data.media_type === 'tv' ? 'tv' : undefined,
+      inviteData: invite
+    })) as any;
+  }, [partyInvites]);
+
   // Filtered continue watching progress and personalized top picks by mediaType for sub-menus
   const continueWatchingMovies = useMemo(() => {
     return continueWatching.filter(item => (item as any).title !== undefined || (item as any).mediaType === 'movie');
@@ -613,6 +741,24 @@ export default function App() {
   const [searchResults, setSearchResults] = useState<Movie[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  
+  const isOverlayActive = !!selectedMovie || !!selectedTVShow || !!selectedActor || !!selectedCategory || !!selectedPartyInvite || searchOpen || searchResultsOpen || downloadsOpen;
+  const lastScrollPosRef = React.useRef<number>(0);
+
+  useEffect(() => {
+    if (isOverlayActive) {
+      lastScrollPosRef.current = window.scrollY;
+    } else {
+      const savedPos = lastScrollPosRef.current;
+      const timer = setTimeout(() => {
+        window.scrollTo({
+          top: savedPos,
+          behavior: 'auto'
+        });
+      }, 30);
+      return () => clearTimeout(timer);
+    }
+  }, [isOverlayActive]);
   
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -648,32 +794,54 @@ export default function App() {
     const handleMovieClickEvent = (e: any) => handleMovieClick(e.detail);
     const handleTVShowClickEvent = (e: any) => handleTVShowClick(e.detail);
     const handleProfileChange = () => {
-      setActiveProfile(ProfileService.getActiveProfile());
-      content.reloadAll();
+      const nextProfile = ProfileService.getActiveProfile();
+      const prevProfile = activeProfile;
+      setActiveProfile(nextProfile);
+      if (!prevProfile || !nextProfile || prevProfile.id !== nextProfile.id) {
+        setTimeout(() => {
+          content.reloadAll();
+        }, 0);
+      }
     };
     
     const handleNavigateToDownloads = () => {
       setCurrentView('downloads');
     };
+
+    const handleNavigateToLogin = () => {
+      handleLogout();
+    };
     
+    const handleGenreBadgeClickEvent = (e: any) => {
+      const { name, id } = e.detail;
+      setSelectedMovie(null);
+      setSelectedTVShow(null);
+      setSelectedActor(null);
+      setSelectedCategory(null);
+      localStorage.setItem('cinemovie_preselected_genre', JSON.stringify({ name, id }));
+      setSearchOpen(true);
+    };
+
     window.addEventListener('movieClick', handleMovieClickEvent);
     window.addEventListener('tvShowClick', handleTVShowClickEvent);
     window.addEventListener('profileChanged', handleProfileChange);
     window.addEventListener('navigateToDownloads', handleNavigateToDownloads);
+    window.addEventListener('navigateToLogin', handleNavigateToLogin);
+    window.addEventListener('genreBadgeClick', handleGenreBadgeClickEvent);
     
     const setupNativeEvents = async () => {
       try {
         const { App: CapApp } = await import('@capacitor/app');
         
-        // Handle App state changes (returning from background ads)
+        // Handle App state changes (returning from background ads or screen unlock)
         await CapApp.addListener('appStateChange', ({ isActive }) => {
           if (isActive) {
             console.log('App became active - ensuring state consistency');
-            // If we are in the video player, we might want to ensure immersive mode is still on
-            const videoOverlay = document.querySelector('.video-player-overlay');
-            if (videoOverlay) {
-                // Logic to re-trigger immersion if needed can go here
-            }
+            // If the user resumes their app after lock/background, clear any hanging prefetch locks to prevent gray screen
+            setSessionLoaded(true);
+            setMediaPrefetched(true);
+            setMinTimeDone(true);
+            setIsLoading(false);
           }
         });
 
@@ -688,8 +856,8 @@ export default function App() {
           if (selectedTVShow) { setSelectedTVShow(null); return; }
           if (selectedActor) { setSelectedActor(null); return; }
           if (selectedCategory) { setSelectedCategory(null); return; }
+          if (searchResultsOpen) { setSearchResultsOpen(false); setSearchOpen(true); return; }
           if (searchOpen) { setSearchOpen(false); return; }
-          if (searchResultsOpen) { setSearchResultsOpen(false); return; }
 
           // Priority 2: Views
           if (showProfileSelector && activeProfile) {
@@ -724,9 +892,44 @@ export default function App() {
       window.removeEventListener('tvShowClick', handleTVShowClickEvent);
       window.removeEventListener('profileChanged', handleProfileChange);
       window.removeEventListener('navigateToDownloads', handleNavigateToDownloads);
+      window.removeEventListener('genreBadgeClick', handleGenreBadgeClickEvent);
       nativeCleanupPromise.then(cleanup => cleanup?.());
     };
   }, [selectedMovie, selectedTVShow, selectedActor, searchOpen, searchResultsOpen, currentView, showProfileSelector, activeProfile, content]);
+
+  const handleRecoverySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (recoveryPassword.length < 6) {
+      setRecoveryError(t('error_password_length'));
+      triggerHaptic('medium');
+      return;
+    }
+    if (recoveryPassword !== recoveryConfirmPassword) {
+      setRecoveryError(t('error_password_match'));
+      triggerHaptic('medium');
+      return;
+    }
+    setRecoveryLoading(true);
+    setRecoveryError('');
+    setRecoveryMessage('');
+    try {
+      const { error } = await supabase.auth.updateUser({ password: recoveryPassword });
+      if (error) throw error;
+      setRecoveryMessage(t('success_password_update'));
+      triggerHaptic('heavy');
+      setTimeout(() => {
+        setShowPasswordRecovery(false);
+        setRecoveryPassword('');
+        setRecoveryConfirmPassword('');
+        setRecoveryMessage('');
+      }, 2500);
+    } catch (err: any) {
+      setRecoveryError(err.message || t('error_password_failed'));
+      triggerHaptic('medium');
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (currentView === 'mylist') {
@@ -763,9 +966,10 @@ export default function App() {
 
   const handleNavClick = useCallback((view: View) => {
     triggerHaptic('light');
-    scrollPositions.current[currentViewRef.current] = window.scrollY;
     setCurrentView(view);
     setSearchResultsOpen(false);
+    setActiveSettingsSubPage(null);
+    setSelectedNewsGenre(null);
   }, []);
 
   const handleSurpriseMe = useCallback(() => {
@@ -814,10 +1018,6 @@ export default function App() {
     setHomeActiveTrendingTab(id as any);
   }, []);
 
-  if (!isOnline) {
-    return <OfflineScreen onRetry={() => window.location.reload()} />;
-  }
-
   const filterKids = useCallback(<T extends Movie | TVShow>(items: T[]): T[] => {
     if (!activeProfile?.isKids) return items;
     return items.filter(item => {
@@ -826,21 +1026,251 @@ export default function App() {
     });
   }, [activeProfile?.isKids]);
 
+  const isOAuthSetupIncomplete = isAuthenticated && currentUser && 
+    (currentUser.app_metadata?.provider === 'google' || currentUser.identities?.some((id: any) => id.provider === 'google')) && 
+    !currentUser.user_metadata?.setup_completed &&
+    !currentUser.identities?.some((id: any) => id.provider === 'email');
+
   return (
     <QueryClientProvider client={queryClient}>
       <ErrorBoundary>
+        {!isOnline && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            background: 'rgba(239, 68, 68, 0.9)',
+            backdropFilter: 'blur(10px)',
+            WebkitBackdropFilter: 'blur(10px)',
+            color: '#fff',
+            textAlign: 'center',
+            padding: '8px 12px',
+            paddingTop: 'calc(8px + env(safe-area-inset-top, 0px))',
+            fontSize: '0.8rem',
+            fontWeight: 800,
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+            animation: 'fadeIn 0.3s ease-out'
+          }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="1" y1="1" x2="23" y2="23"></line><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path><path d="M10.71 5.05A16 16 0 0 1 22.58 9"></path><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg>
+            <span>{t('offline_warning')}</span>
+          </div>
+        )}
         {isLoading ? (
           <LoadingScreen />
-        ) : !isAuthenticated ? (
-          <LoginPage onLogin={handleLogin} prefetchedPosters={prefetchedPosters} />
+        ) : showPasswordRecovery ? (
+          <div style={{
+            width: '100vw',
+            height: '100vh',
+            background: '#040405',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: '20px',
+            boxSizing: 'border-box',
+            overflow: 'hidden'
+          }}>
+            {/* Logo */}
+            <div style={{
+              marginBottom: '1rem',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              width: '100%',
+              maxWidth: '320px',
+              height: '80px',
+              position: 'relative',
+              userSelect: 'none',
+              pointerEvents: 'none',
+            }}>
+              <img
+                src="/cinemovie-logo.png"
+                alt="Cinemovie"
+                style={{
+                  height: '120px',
+                  objectFit: 'contain',
+                  filter: 'drop-shadow(0 4px 15px rgba(0,0,0,0.8))',
+                  pointerEvents: 'none',
+                  userSelect: 'none',
+                }}
+              />
+            </div>
+
+            {/* Content Container (Cardless, transparent, clean layout) */}
+            <div style={{
+              width: '100%',
+              maxWidth: '320px',
+              display: 'flex',
+              flexDirection: 'column',
+              padding: '1rem 0',
+              animation: 'fadeInScale 0.6s cubic-bezier(0.16, 1, 0.3, 1)',
+              boxSizing: 'border-box'
+            }}>
+              <h2 style={{
+                color: '#ffffff',
+                fontSize: '1.8rem',
+                fontWeight: 800,
+                marginBottom: '0.5rem',
+                textAlign: 'left',
+                letterSpacing: '-0.5px',
+                margin: '0 0 8px 0'
+              }}>
+                {t('reset_password')}
+              </h2>
+              
+              <p style={{
+                color: 'rgba(255, 255, 255, 0.5)',
+                fontSize: '0.88rem',
+                lineHeight: '1.4',
+                margin: '0 0 20px 0',
+                fontWeight: 500,
+                textAlign: 'left'
+              }}>
+                {t('reset_password_desc')}
+              </p>
+
+              {recoveryError && (
+                <div style={{
+                  width: '100%',
+                  background: 'rgba(255, 71, 87, 0.15)',
+                  color: '#ff6b6b',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  textAlign: 'center',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  marginBottom: '1.5rem',
+                  border: '1px solid rgba(255, 71, 87, 0.25)',
+                  boxSizing: 'border-box'
+                }}>{recoveryError}</div>
+              )}
+
+              {recoveryMessage && (
+                <div style={{
+                  width: '100%',
+                  background: 'rgba(46, 213, 115, 0.15)',
+                  color: '#2ed573',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  textAlign: 'center',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  marginBottom: '1.5rem',
+                  border: '1px solid rgba(46, 213, 115, 0.25)',
+                  boxSizing: 'border-box'
+                }}>{recoveryMessage}</div>
+              )}
+
+              <form onSubmit={handleRecoverySubmit} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
+                <input
+                  type="password"
+                  placeholder={t('new_password')}
+                  value={recoveryPassword}
+                  onChange={(e) => { setRecoveryPassword(e.target.value); setRecoveryError(''); }}
+                  onFocus={() => setIsPassFocused(true)}
+                  onBlur={() => setIsPassFocused(false)}
+                  disabled={recoveryLoading || !!recoveryMessage}
+                  style={{
+                    width: '100%',
+                    padding: '16px 20px',
+                    borderRadius: '8px',
+                    border: isPassFocused ? '1px solid #ffffff' : '1px solid rgba(255, 255, 255, 0.12)',
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    color: '#ffffff',
+                    fontSize: '1rem',
+                    fontWeight: 500,
+                    outline: 'none',
+                    transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                    boxShadow: isPassFocused ? '0 0 16px rgba(255, 255, 255, 0.15)' : 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
+
+                <input
+                  type="password"
+                  placeholder={t('confirm_password')}
+                  value={recoveryConfirmPassword}
+                  onChange={(e) => { setRecoveryConfirmPassword(e.target.value); setRecoveryError(''); }}
+                  onFocus={() => setIsConfirmFocused(true)}
+                  onBlur={() => setIsConfirmFocused(false)}
+                  disabled={recoveryLoading || !!recoveryMessage}
+                  style={{
+                    width: '100%',
+                    padding: '16px 20px',
+                    borderRadius: '8px',
+                    border: isConfirmFocused ? '1px solid #ffffff' : '1px solid rgba(255, 255, 255, 0.12)',
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    color: '#ffffff',
+                    fontSize: '1rem',
+                    fontWeight: 500,
+                    outline: 'none',
+                    transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                    boxShadow: isConfirmFocused ? '0 0 16px rgba(255, 255, 255, 0.15)' : 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
+
+                <button
+                  type="submit"
+                  disabled={recoveryLoading || !!recoveryMessage}
+                  style={{
+                    background: '#ffffff',
+                    color: '#000000',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '16px',
+                    fontSize: '1.1rem',
+                    fontWeight: 800,
+                    cursor: (recoveryLoading || !!recoveryMessage) ? 'not-allowed' : 'pointer',
+                    marginTop: '0.5rem',
+                    transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                    boxShadow: '0 8px 24px rgba(255, 255, 255, 0.15)',
+                    width: '100%',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  {recoveryLoading ? t('updating') : t('save_and_continue')}
+                </button>
+              </form>
+            </div>
+          </div>
+        ) : isOAuthSetupIncomplete ? (
+          <OAuthOnboarding 
+            currentUser={currentUser} 
+            onComplete={(updatedUser) => {
+              setCurrentUser(updatedUser);
+            }} 
+            onCancel={() => {
+              setCurrentUser(null);
+              setIsAuthenticated(false);
+            }} 
+          />
+        ) : (!isAuthenticated && !isGuest) ? (
+          <LoginPage onLogin={handleLogin} onContinueAsGuest={handleContinueAsGuest} prefetchedPosters={prefetchedPosters} />
         ) : (!activeProfile || showProfileSelector) ? (
           <ProfileSelector onProfileSelected={handleProfileSelected} />
         ) : (
-          <div style={{ width: '100%' }}>
-            <Suspense fallback={<LoadingScreen />}>
-              <div style={{ width: '100%', minHeight: '100vh', position: 'relative' }}>
+          <div style={{ width: '100%', height: '100vh', overflow: 'hidden', position: 'relative' }}>
+            <Suspense fallback={<SimpleLoader />}>
+              <div style={{ width: '100%', height: '100vh', overflow: 'hidden', position: 'relative' }}>
+                <div style={{ display: isOverlayActive ? 'none' : 'block', width: '100%', height: '100vh', overflow: 'hidden', position: 'relative' }}>
 
-              <div style={{ display: currentView === 'home' ? 'block' : 'none' }}>
+              {/* PERSISTENT CONTENT VIEWS — Wraps main screens to keep them alive and prevent unmount-remount lag */}
+              <div style={{
+                display: currentView === 'home' ? 'block' : 'none',
+                width: '100%',
+                height: '100vh',
+                overflowY: 'auto',
+                WebkitOverflowScrolling: 'touch',
+                position: 'absolute',
+                inset: 0,
+              }}>
                 <div style={{ 
                   minHeight: '100vh', 
                   background: COLORS.bgPrimary,
@@ -860,22 +1290,24 @@ export default function App() {
                   />
                   <div style={{ paddingTop: 0 }}>
                     {loading ? (
-                        <div style={{ paddingTop: '64px' }}>
-                          <HeroSkeleton />
-                          <ContentRowSkeleton />
-                          <ContentRowSkeleton />
-                        </div>
+                      <div style={{ paddingTop: '64px' }}>
+                        <HeroSkeleton />
+                        <ContentRowSkeleton />
+                        <ContentRowSkeleton />
+                      </div>
                     ) : (
-                        <>
-                          <Hero movie={heroMovie} onPlayClick={() => setSelectedMovie(heroMovie)} onInfoClick={() => setSelectedMovie(heroMovie)} />
-                          <div style={{ 
-                            position: 'relative', 
-                            marginTop: '-2rem', 
-                            zIndex: 10, 
-                            background: 'linear-gradient(to bottom, transparent 0%, #0a0a0a 10%)', 
-                            paddingTop: '2rem',
-                            overflowX: 'hidden' // Strictly contain rows from pushing viewport width
-                          }}>
+                      <>
+                        <Hero movie={heroMovie} onPlayClick={() => setSelectedMovie(heroMovie)} onInfoClick={() => setSelectedMovie(heroMovie)} />
+                        <div style={{ 
+                          position: 'relative', 
+                          marginTop: '-6rem', 
+                          zIndex: 10, 
+                          background: 'linear-gradient(to bottom, transparent 0%, rgba(var(--bg-primary-rgb, 10,10,10), 0.0) 5%, rgba(var(--bg-primary-rgb, 10,10,10), 0.5) 35%, var(--bg-primary) 65%)', 
+                          paddingTop: '6rem',
+                          overflowX: 'hidden',
+                          pointerEvents: 'none'
+                        }}>
+                          <div style={{ pointerEvents: 'auto' }}>
                             {partyInvites.length > 0 && (
                               <ContentRow 
                                 title={
@@ -886,33 +1318,27 @@ export default function App() {
                                       <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
                                       <path d="M16 3.13a4 4 0 0 1 0 7.75" />
                                     </svg>
-                                    <span>Watch with Friends</span>
+                                    <span>{t('watch_with_friends')}</span>
                                   </div>
                                 }
                                 isWide={true}
-                                movies={partyInvites.map(invite => ({
-                                  id: invite.data.item_id,
-                                  title: invite.data.item_title,
-                                  posterPath: invite.data.poster_path,
-                                  backdropPath: invite.data.backdrop_path,
-                                  firstAirDate: invite.data.media_type === 'tv' ? 'tv' : undefined,
-                                  inviteData: invite
-                                }))} 
+                                movies={mappedPartyInvites}
                                 onMovieClick={handlePartyInviteClick}
                               />
                             )}
                             {(continueWatching.length > 0 || friendActivityItems.length > 0) && (
                               <ContentRow 
-                                title={homeActiveProgressTab === 'continue' ? 'Continue' : "What We're Watching"}
+                                key={`progress-row-${homeActiveProgressTab}`}
+                                title={homeActiveProgressTab === 'continue' ? t('continue_watching') : t('what_were_watching')}
                                 movies={homeActiveProgressTab === 'continue' ? continueWatching : friendActivityItems} 
                                 onMovieClick={handleMovieClick} 
                                 onReaction={homeActiveProgressTab === 'friends' ? handleActivityReaction : undefined}
-                                onSeeAll={getSeeAllCallback('home-continue', homeActiveProgressTab === 'continue' ? 'Continue' : "What We're Watching", homeActiveProgressTab === 'continue' ? continueWatching : friendActivityItems)}
-                                tabs={[
-                                  { id: 'continue', label: 'Me' },
-                                  { id: 'friends', label: 'Friends' }
+                                onSeeAll={getSeeAllCallback('home-continue', homeActiveProgressTab === 'continue' ? t('continue_watching') : t('what_were_watching'), homeActiveProgressTab === 'continue' ? continueWatching : friendActivityItems)}
+                                tabs={isGuest ? undefined : [
+                                  { id: 'continue', label: t('me') || 'Me' },
+                                  { id: 'friends', label: t('friends') || 'Friends' }
                                 ]}
-                                activeTab={homeActiveProgressTab}
+                                activeTab={isGuest ? 'continue' : homeActiveProgressTab}
                                 onTabChange={handleProgressTabChange}
                               />
                             )}
@@ -920,13 +1346,13 @@ export default function App() {
                             <>
                             {(trending.length > 0 || trendingTV.length > 0) && (
                               <ContentRow 
-                                title="Trending"
+                                title={t('trending_now')}
                                 movies={homeActiveTrendingTab === 'movies' ? trending : trendingTV} 
                                 onMovieClick={homeActiveTrendingTab === 'movies' ? handleMovieClick : handleTVShowClick}
-                                onSeeAll={getSeeAllCallback('home-trending', 'Trending', homeActiveTrendingTab === 'movies' ? trending : trendingTV)}
+                                onSeeAll={getSeeAllCallback('home-trending', t('trending_now'), homeActiveTrendingTab === 'movies' ? trending : trendingTV)}
                                 tabs={[
-                                  { id: 'movies', label: 'Movies' },
-                                  { id: 'tv', label: 'TVShows' }
+                                  { id: 'movies', label: t('movies') },
+                                  { id: 'tv', label: t('series') }
                                 ]}
                                 activeTab={homeActiveTrendingTab}
                                 onTabChange={handleTrendingTabChange}
@@ -934,75 +1360,85 @@ export default function App() {
                             )}
                             {topPicks.length > 0 && (
                               <ContentRow 
-                                title="Top Picks for You" 
+                                title={t('top_picks_for_you')} 
                                 movies={topPicks} 
                                 onMovieClick={handleMovieClick} 
-                                onSeeAll={getSeeAllCallback('home-toppicks', 'Top Picks for You', topPicks)}
+                                onSeeAll={getSeeAllCallback('home-toppicks', t('top_picks_for_you'), topPicks)}
                               />
                             )}
                             {popular.length > 0 && ( 
                                 <ContentRow 
-                                  title="Popular Movies" 
+                                  title={t('popular_movies')} 
                                   movies={popular} 
                                   onMovieClick={handleMovieClick} 
-                                  onSeeAll={getSeeAllCallback('home-popular', 'Popular Movies', popular)}
+                                  onSeeAll={getSeeAllCallback('home-popular', t('popular_movies'), popular)}
                                 /> 
                              )}
                             {topRated.length > 0 && ( 
                                 <ContentRow 
-                                  title="Critically Acclaimed" 
+                                  title={t('top_rated')} 
                                   movies={topRated} 
                                   onMovieClick={handleMovieClick} 
-                                  onSeeAll={getSeeAllCallback('home-toprated', 'Critically Acclaimed', topRated)}
+                                  onSeeAll={getSeeAllCallback('home-toprated', t('top_rated'), topRated)}
                                 /> 
                              )}
                             {action.length > 0 && ( 
                                 <ContentRow 
-                                  title="Trending Action" 
+                                  title={t('trending_action')} 
                                   movies={action} 
                                   onMovieClick={handleMovieClick} 
-                                  onSeeAll={getSeeAllCallback('home-action', 'Trending Action', action)}
+                                  onSeeAll={getSeeAllCallback('home-action', t('trending_action'), action)}
                                 /> 
                              )}
                             {comedy.length > 0 && ( 
                                 <ContentRow 
-                                  title="Top Comedies" 
+                                  title={t('top_comedies')} 
                                   movies={comedy} 
                                   onMovieClick={handleMovieClick} 
-                                  onSeeAll={getSeeAllCallback('home-comedy', 'Top Comedies', comedy)}
+                                  onSeeAll={getSeeAllCallback('home-comedy', t('top_comedies'), comedy)}
                                 /> 
                              )}
                             {family.length > 0 && ( 
                                 <ContentRow 
-                                  title="Trending Family" 
+                                  title={t('trending_family')} 
                                   movies={family} 
                                   onMovieClick={handleMovieClick} 
-                                  onSeeAll={getSeeAllCallback('home-family', 'Trending Family', family)}
+                                  onSeeAll={getSeeAllCallback('home-family', t('trending_family'), family)}
                                 /> 
                              )}
                             
                             {recommendedGenres.map((genre, idx) => (
                               <ContentRow 
                                 key={`rec-genre-${genre.genreId}`}
-                                title={`Best of ${genre.name}`} 
+                                title={`${t('best_of')} ${genre.name}`} 
                                 movies={genre.items} 
                                 onMovieClick={handleMovieClick} 
-                                onSeeAll={getSeeAllCallback(`home-genre-${genre.genreId}`, `Best of ${genre.name}`, genre.items)}
+                                onSeeAll={getSeeAllCallback(`home-genre-${genre.genreId}`, `${t('best_of')} ${genre.name}`, genre.items)}
                               />
                             ))}
-
-                            {latestReleases.length > 0 && ( <ContentRow title="🎬 Already on VidSrc" movies={latestReleases} onMovieClick={handleMovieClick} /> )}
-                            {upcoming.length > 0 && filterKids(upcoming).length > 0 && ( <ContentRow title="Upcoming Releases" movies={filterKids(upcoming)} onMovieClick={handleMovieClick} /> )}
+ 
+                            {latestReleases.length > 0 && ( <ContentRow title={t('already_on_vidsrc')} movies={latestReleases} onMovieClick={handleMovieClick} /> )}
+                            {upcoming.length > 0 && filterKids(upcoming).length > 0 && ( <ContentRow title={t('upcoming_releases')} movies={filterKids(upcoming)} onMovieClick={handleMovieClick} /> )}
                             </>
                             )}
+ 
                           </div>
-                        </>
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>
               </div>
-
-              <div style={{ display: currentView === 'movies' ? 'block' : 'none' }}>
+ 
+              <div style={{
+                display: currentView === 'movies' ? 'block' : 'none',
+                width: '100%',
+                height: '100vh',
+                overflowY: 'auto',
+                WebkitOverflowScrolling: 'touch',
+                position: 'absolute',
+                inset: 0,
+              }}>
                 <div style={{ minHeight: '100vh', background: COLORS.bgPrimary, paddingBottom: 'calc(130px + env(safe-area-inset-bottom, 0px))' }}>
                   <Header 
                     onSearchOpen={() => setSearchOpen(true)} 
@@ -1018,23 +1454,32 @@ export default function App() {
                   />
                   <div style={{ paddingTop: 0 }}>
                     <Hero movie={heroMovie} onPlayClick={() => setSelectedMovie(heroMovie)} onInfoClick={() => setSelectedMovie(heroMovie)} onSurpriseMe={handleSurpriseMe} />
-                    <div style={{ position: 'relative', marginTop: '-2rem', zIndex: 10, background: 'linear-gradient(to bottom, transparent 0%, #0a0a0a 10%)', paddingTop: '2rem' }}>
-                      {continueWatchingMovies.length > 0 && ( <ContentRow title="Continue" movies={continueWatchingMovies} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-continue', 'Continue', continueWatchingMovies)} /> )}
-                      {topPicksMovies.length > 0 && ( <ContentRow title="Top Picks for You" movies={topPicksMovies} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-toppicks', 'Top Picks for You', topPicksMovies)} /> )}
-                      {trending.length > 0 && ( <ContentRow title="Trending Now" movies={trending} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-trending', 'Trending Now', trending)} /> )}
-                      {popular.length > 0 && ( <ContentRow title="Popular Movies" movies={popular} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-popular', 'Popular Movies', popular)} /> )}
-                      {topRated.length > 0 && ( <ContentRow title="Top Rated Movies" movies={topRated} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-toprated', 'Top Rated Movies', topRated)} /> )}
-                      {action.length > 0 && ( <ContentRow title="Trending Action" movies={action} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-action', 'Trending Action', action)} /> )}
-                      {comedy.length > 0 && ( <ContentRow title="Top Comedies" movies={comedy} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-comedy', 'Top Comedies', comedy)} /> )}
-                      {family.length > 0 && ( <ContentRow title="Family Hits" movies={family} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-family', 'Family Hits', family)} /> )}
-                      {upcoming.length > 0 && ( <ContentRow title="Upcoming Movies" movies={upcoming} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-upcoming', 'Upcoming Movies', upcoming)} /> )}
+                    <div style={{ position: 'relative', marginTop: '-6rem', zIndex: 10, background: 'linear-gradient(to bottom, transparent 0%, rgba(var(--bg-primary-rgb, 10,10,10), 0.0) 5%, rgba(var(--bg-primary-rgb, 10,10,10), 0.5) 35%, var(--bg-primary) 65%)', paddingTop: '6rem', pointerEvents: 'none' }}>
+                      <div style={{ pointerEvents: 'auto' }}>
+                        {topPicksMovies.length > 0 && ( <ContentRow title={t('top_picks_for_you')} movies={topPicksMovies} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-toppicks', t('top_picks_for_you'), topPicksMovies)} /> )}
+                        {trending.length > 0 && ( <ContentRow title={t('trending_now')} movies={trending} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-trending', t('trending_now'), trending)} /> )}
+                        {popular.length > 0 && ( <ContentRow title={t('popular_movies')} movies={popular} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-popular', t('popular_movies'), popular)} /> )}
+                        {topRated.length > 0 && ( <ContentRow title={t('top_rated')} movies={topRated} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-toprated', t('top_rated'), topRated)} /> )}
+                        {action.length > 0 && ( <ContentRow title={t('trending_action')} movies={action} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-action', t('trending_action'), action)} /> )}
+                        {comedy.length > 0 && ( <ContentRow title={t('top_comedies')} movies={comedy} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-comedy', t('top_comedies'), comedy)} /> )}
+                        {family.length > 0 && ( <ContentRow title={t('family_hits')} movies={family} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-family', t('family_hits'), family)} /> )}
+                        {upcoming.length > 0 && ( <ContentRow title={t('upcoming_movies')} movies={upcoming} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-upcoming', t('upcoming_movies'), upcoming)} /> )}
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-
-              {heroTVShow && (
-                <div style={{ display: currentView === 'tvshows' ? 'block' : 'none' }}>
+ 
+              <div style={{
+                display: currentView === 'tvshows' ? 'block' : 'none',
+                width: '100%',
+                height: '100vh',
+                overflowY: 'auto',
+                WebkitOverflowScrolling: 'touch',
+                position: 'absolute',
+                inset: 0,
+              }}>
+                {heroTVShow && (
                   <div style={{ minHeight: '100vh', background: COLORS.bgPrimary, paddingBottom: 'calc(130px + env(safe-area-inset-bottom, 0px))' }}>
                     <Header 
                       onSearchOpen={handleSearchOpen} 
@@ -1050,71 +1495,151 @@ export default function App() {
                     />
                     <div style={{ paddingTop: 0 }}>
                       <Hero movie={heroTVShow as any} onPlayClick={() => setSelectedTVShow(heroTVShow)} onInfoClick={() => setSelectedTVShow(heroTVShow)} />
-                      <div style={{ position: 'relative', marginTop: '-2rem', zIndex: 10, background: 'linear-gradient(to bottom, transparent 0%, #0a0a0a 10%)', paddingTop: '2rem' }}>
-                        {continueWatchingTV.length > 0 && ( <ContentRow title="Continue" movies={continueWatchingTV} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-continue', 'Continue', continueWatchingTV)} /> )}
-                        {topPicksTV.length > 0 && ( <ContentRow title="Top Picks for You" movies={topPicksTV} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-toppicks', 'Top Picks for You', topPicksTV)} /> )}
-                        {(trendingTV.length > 0) && ( <ContentRow title="Trending Series" movies={trendingTV as any} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-trending', 'Trending Series', trendingTV as any)} /> )}
-                        {popularTV.length > 0 && ( <ContentRow title="Most Popular" movies={popularTV} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-popular', 'Most Popular', popularTV)} /> )}
-                        {topRatedTV.length > 0 && ( <ContentRow title="Top Rated" movies={topRatedTV} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-toprated', 'Top Rated', topRatedTV)} /> )}
-                        {dramaTV.length > 0 && ( <ContentRow title="Trending Drama" movies={dramaTV as any} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-drama', 'Trending Drama', dramaTV as any)} /> )}
-                        {comedyTV.length > 0 && ( <ContentRow title="Comedy Favorites" movies={comedyTV as any} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-comedy', 'Comedy Favorites', comedyTV as any)} /> )}
+                      <div style={{ position: 'relative', marginTop: '-6rem', zIndex: 10, background: 'linear-gradient(to bottom, transparent 0%, rgba(var(--bg-primary-rgb, 10,10,10), 0.0) 5%, rgba(var(--bg-primary-rgb, 10,10,10), 0.5) 35%, var(--bg-primary) 65%)', paddingTop: '6rem', pointerEvents: 'none' }}>
+                        <div style={{ pointerEvents: 'auto' }}>
+                          {topPicksTV.length > 0 && ( <ContentRow title={t('top_picks_for_you')} movies={topPicksTV} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-toppicks', t('top_picks_for_you'), topPicksTV)} /> )}
+                          {(trendingTV.length > 0) && ( <ContentRow title={t('trending_now')} movies={trendingTV as any} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-trending', t('trending_now'), trendingTV as any)} /> )}
+                          {popularTV.length > 0 && ( <ContentRow title={t('popular_tv')} movies={popularTV} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-popular', t('popular_tv'), popularTV)} /> )}
+                          {topRatedTV.length > 0 && ( <ContentRow title={t('top_rated')} movies={topRatedTV} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-toprated', t('top_rated'), topRatedTV)} /> )}
+                          {dramaTV.length > 0 && ( <ContentRow title={t('trending_drama')} movies={dramaTV as any} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-drama', t('trending_drama'), dramaTV as any)} /> )}
+                          {comedyTV.length > 0 && ( <ContentRow title={t('comedy_favorites')} movies={comedyTV as any} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-comedy', t('comedy_favorites'), comedyTV as any)} /> )}
+                        </div>
                       </div>
                     </div>
                   </div>
+                )}
+              </div>
+ 
+              {/* OTHER DYNAMIC VIEWS — Mount/unmount normally to keep active DOM footprint optimal */}
+              {currentView === 'mylist' && (
+                <div style={{
+                  width: '100%',
+                  height: '100vh',
+                  overflowY: 'auto',
+                  WebkitOverflowScrolling: 'touch',
+                  position: 'absolute',
+                  inset: 0,
+                }}>
+                  <div style={{ minHeight: '100vh', background: COLORS.bgPrimary, paddingBottom: 'calc(160px + env(safe-area-inset-bottom, 0px))', paddingTop: 'calc(70px + env(safe-area-inset-top, 0px))' }}>
+                    <MyListSubPage isMobile={window.innerWidth < 768} sectionHeaderStyle={() => ({})} onMovieClick={handleMovieClick} />
+                  </div>
+                </div>
+              )}
+ 
+              {currentView === 'newandhot' && (
+                <div style={{
+                  width: '100%',
+                  height: '100vh',
+                  overflowY: 'auto',
+                  WebkitOverflowScrolling: 'touch',
+                  position: 'absolute',
+                  inset: 0,
+                }}>
+                  <div style={{ minHeight: '100vh', background: COLORS.bgPrimary, paddingBottom: 'calc(130px + env(safe-area-inset-bottom, 0px))' }}>
+                    <Header 
+                      onSearchOpen={handleSearchOpen} 
+                      onDownloadsOpen={handleDownloadsOpen}
+                      activeProfile={activeProfile} 
+                      onSwitchProfile={handleSwitchProfile} 
+                      hasActiveDownloads={hasActiveDownloads}
+                      currentView={currentView}
+                      onNavClick={handleNavClick}
+                      activeInviteToast={activeInviteToast}
+                      onAcceptInvite={handleJoinInviteClick}
+                      onDeclineInvite={handleDeclineInvite}
+                      activeNewsGenre={selectedNewsGenre}
+                      onBackNewsGenre={() => setSelectedNewsGenre(null)}
+                    />
+                    <BrowseNewsPage 
+                      trending={trending} 
+                      upcoming={upcoming} 
+                      onItemClick={(item: any) => { if (item.firstAirDate) { handleTVShowClick(item); } else { handleMovieClick(item); } }} 
+                      selectedGenre={selectedNewsGenre}
+                      onSelectedGenreChange={setSelectedNewsGenre}
+                    />
+                  </div>
+                </div>
+              )}
+ 
+              {currentView === 'settings' && (
+                <div style={{
+                  width: '100%',
+                  height: '100vh',
+                  overflowY: 'auto',
+                  WebkitOverflowScrolling: 'touch',
+                  position: 'absolute',
+                  inset: 0,
+                }}>
+                  <div style={{ minHeight: '100vh', background: COLORS.bgPrimary }}>
+                    {!showVersionHistory && (
+                      <Header 
+                        onSearchOpen={handleSearchOpen} 
+                        onDownloadsOpen={handleDownloadsOpen}
+                        activeProfile={activeProfile} 
+                        onSwitchProfile={handleSwitchProfile} 
+                        hasActiveDownloads={hasActiveDownloads}
+                        currentView={currentView}
+                        onNavClick={handleNavClick}
+                        activeInviteToast={activeInviteToast}
+                        onAcceptInvite={handleJoinInviteClick}
+                        onDeclineInvite={handleDeclineInvite}
+                        activeSettingsSubPage={activeSettingsSubPage}
+                        onBackSettingsSubPage={() => setActiveSettingsSubPage(null)}
+                      />
+                    )}
+                    <SettingsPage 
+                      isVisible={currentView === 'settings'}
+                      onNavigate={setCurrentView} 
+                      heroBackground={heroMovie} 
+                      activeProfile={activeProfile} 
+                      onSwitchProfile={handleSwitchProfile} 
+                      onLogout={handleLogout}
+                      activeSubPage={activeSettingsSubPage}
+                      onActiveSubPageChange={setActiveSettingsSubPage}
+                      showVersionHistory={showVersionHistory}
+                      onShowVersionHistoryChange={setShowVersionHistory}
+                      onMovieClick={handleMovieClick}
+                    />
+                  </div>
+                </div>
+              )}
+              {currentView === 'downloads' && (
+                <div style={{
+                  width: '100%',
+                  height: '100vh',
+                  overflowY: 'auto',
+                  WebkitOverflowScrolling: 'touch',
+                  position: 'absolute',
+                  inset: 0,
+                }}>
+                  <DownloadsPage onNavigate={setCurrentView} />
                 </div>
               )}
 
-              <div style={{ display: currentView === 'mylist' ? 'block' : 'none' }}>
-                <div style={{ minHeight: '100vh', background: COLORS.bgPrimary, paddingBottom: 'calc(130px + env(safe-area-inset-bottom, 0px))', paddingTop: 'calc(24px + env(safe-area-inset-top, 0px))' }}>
-                  <MyListPage movies={myList as any} onMovieClick={handleMovieClick} onRemove={handleRemoveFromList} onRefresh={refreshMyList} />
+              <BottomNav currentView={currentView} onNavClick={handleNavClick} onSearchOpen={handleSearchOpen} activeProfile={activeProfile} />
                 </div>
-              </div>
 
-              <div style={{ display: currentView === 'newandhot' ? 'block' : 'none' }}>
-                <div style={{ minHeight: '100vh', background: COLORS.bgPrimary, paddingBottom: 'calc(130px + env(safe-area-inset-bottom, 0px))' }}>
-                  <Header 
-                    onSearchOpen={handleSearchOpen} 
-                    onDownloadsOpen={handleDownloadsOpen}
-                    activeProfile={activeProfile} 
-                    onSwitchProfile={handleSwitchProfile} 
-                    hasActiveDownloads={hasActiveDownloads}
-                    currentView={currentView}
-                    onNavClick={handleNavClick}
-                    activeInviteToast={activeInviteToast}
-                    onAcceptInvite={handleJoinInviteClick}
-                    onDeclineInvite={handleDeclineInvite}
-                  />
-                  <BrowseNewsPage trending={trending} upcoming={upcoming} onItemClick={(item: any) => { if (item.firstAirDate) { handleTVShowClick(item); } else { handleMovieClick(item); } }} />
-                </div>
-              </div>
-
-              <div style={{ display: currentView === 'settings' ? 'block' : 'none' }}>
-                <div style={{ minHeight: '100vh', background: COLORS.bgPrimary }}>
-                  <Header 
-                    onSearchOpen={handleSearchOpen} 
-                    onDownloadsOpen={handleDownloadsOpen}
-                    activeProfile={activeProfile} 
-                    onSwitchProfile={handleSwitchProfile} 
-                    hasActiveDownloads={hasActiveDownloads}
-                    currentView={currentView}
-                    onNavClick={handleNavClick}
-                    activeInviteToast={activeInviteToast}
-                    onAcceptInvite={handleJoinInviteClick}
-                    onDeclineInvite={handleDeclineInvite}
-                  />
-                  <SettingsPage onNavigate={setCurrentView} heroBackground={heroMovie} activeProfile={activeProfile} onSwitchProfile={handleSwitchProfile} onLogout={handleLogout} />
-                </div>
-              </div>
-
-              <div style={{ display: currentView === 'downloads' ? 'block' : 'none' }}>
-                <DownloadsPage onNavigate={setCurrentView} />
-              </div>
-
-              <BottomNav currentView={currentView} onNavClick={handleNavClick} />
 
               {searchOpen && ( <SearchOverlay onClose={() => setSearchOpen(false)} onMovieClick={handleMovieClick} onShowResults={handleShowSearchResults} /> )}
-              {searchResultsOpen && ( <SearchResults query={searchQuery} results={searchResults} loading={searchLoading} onMovieClick={handleMovieClick} onClose={() => setSearchResultsOpen(false)} /> )}
+              {searchResultsOpen && ( <SearchResults query={searchQuery} results={searchResults} loading={searchLoading} onMovieClick={handleMovieClick} onClose={() => { setSearchResultsOpen(false); setSearchOpen(true); }} /> )}
               <DownloadCenter isOpen={downloadsOpen} onClose={() => setDownloadsOpen(false)} onItemClick={(item: any) => { if (item.firstAirDate || item.name) { handleTVShowClick(item); } else { handleMovieClick(item); } }} />
+              <AnimatePresence>
+                {selectedCategory && (
+                  <CategoryExplorer
+                    title={selectedCategory.title}
+                    movies={selectedCategory.movies}
+                    onClose={() => setSelectedCategory(null)}
+                    onMovieClick={(movie) => {
+                      if ((movie as any).firstAirDate || (movie as any).name) {
+                        handleTVShowClick(movie as any);
+                      } else {
+                        handleMovieClick(movie as any);
+                      }
+                    }}
+                  />
+                )}
+              </AnimatePresence>
+
               {selectedMovie && ( <MovieDetails movie={selectedMovie} onClose={() => { setSelectedMovie(null); content.refreshContinueWatching(); }} onListUpdate={content.refreshMyList} onActorClick={(id) => setSelectedActor(id)} /> )}
               {selectedTVShow && ( <TVShowDetails show={selectedTVShow} onClose={() => { setSelectedTVShow(null); content.refreshContinueWatching(); }} onListUpdate={content.refreshMyList} onActorClick={(id) => setSelectedActor(id)} /> )}
               {selectedPartyInvite && (
@@ -1145,23 +1670,6 @@ export default function App() {
                   }}
                 />
               )}
-              
-              <AnimatePresence>
-                {selectedCategory && (
-                  <CategoryExplorer
-                    title={selectedCategory.title}
-                    movies={selectedCategory.movies}
-                    onClose={() => setSelectedCategory(null)}
-                    onMovieClick={(movie) => {
-                      if ((movie as any).firstAirDate || (movie as any).name) {
-                        handleTVShowClick(movie as any);
-                      } else {
-                        handleMovieClick(movie as any);
-                      }
-                    }}
-                  />
-                )}
-              </AnimatePresence>
             </div>
           </Suspense>
         </div>

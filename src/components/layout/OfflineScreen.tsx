@@ -66,6 +66,7 @@ export default function OfflineScreen({ onRetry }: OfflineScreenProps) {
         
         <button
           onClick={onRetry}
+          className="offline-screen-btn"
           style={{
             width: '100%',
             padding: '1rem 2rem',
@@ -79,8 +80,6 @@ export default function OfflineScreen({ onRetry }: OfflineScreenProps) {
             transition: 'all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)',
             boxShadow: '0 8px 24px rgba(255, 255, 255, 0.15)',
           }}
-          onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02) translateY(-2px)'}
-          onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1) translateY(0)'}
         >
           Try Again
         </button>

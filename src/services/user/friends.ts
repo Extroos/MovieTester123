@@ -94,14 +94,25 @@ export const FriendService = {
       const senderIds = data.map(r => r.sender_id);
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('user_id, name, avatar')
-        .in('user_id', senderIds);
+        .select('user_id, name, avatar, created_at')
+        .in('user_id', senderIds)
+        .order('created_at', { ascending: true });
+
+      // Group profiles by user_id to pick the oldest (primary) profile
+      const primaryByUser: { [userId: string]: any } = {};
+      profiles?.forEach(p => {
+        if (!primaryByUser[p.user_id]) {
+          primaryByUser[p.user_id] = p;
+        }
+      });
 
       // Map profiles to requests
       return data.map(req => {
-        const profile = profiles?.find(p => p.user_id === req.sender_id);
+        const profile = primaryByUser[req.sender_id];
         return {
-          ...req,
+          id: req.id,
+          sender_id: req.sender_id,
+          created_at: req.created_at,
           senderName: profile?.name || 'Unknown User',
           senderAvatar: profile?.avatar
         };
@@ -163,16 +174,16 @@ export const FriendService = {
 
       const friendIds = friendsData.map(f => f.friend_id);
 
-      // Fetch "Main" profile for each friend (simplification: just take the first one found)
-      // In a real app, users might select a "Social Profile"
+      // Fetch "Main" (oldest) profile for each friend ordered by created_at ascending
       const { data: profiles, error: profileError } = await supabase
         .from('profiles')
-        .select('user_id, id, name, avatar')
-        .in('user_id', friendIds);
+        .select('user_id, id, name, avatar, created_at')
+        .in('user_id', friendIds)
+        .order('created_at', { ascending: true });
 
       if (profileError) throw profileError;
 
-      // Deduplicate: 1 profile per user
+      // Deduplicate: oldest profile per user
       const uniqueFriends: Friend[] = [];
       const seenUsers = new Set();
 
@@ -193,6 +204,164 @@ export const FriendService = {
     } catch (e) {
       console.error('Error fetching friends:', e);
       return [];
+    }
+  },
+
+  // Get Outgoing (Sent) Requests
+  async getOutgoingRequests(): Promise<any[]> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return [];
+
+      const { data, error } = await supabase
+        .from('friend_requests')
+        .select('id, receiver_id, created_at')
+        .eq('sender_id', user.id)
+        .eq('status', 'pending');
+
+      if (error) throw error;
+      if (!data || data.length === 0) return [];
+
+      const receiverIds = data.map(r => r.receiver_id);
+      const { data: profiles, error: profileError } = await supabase
+        .from('profiles')
+        .select('user_id, id, name, avatar, created_at')
+        .in('user_id', receiverIds)
+        .order('created_at', { ascending: true });
+
+      if (profileError) throw profileError;
+
+      const primaryByUser: { [userId: string]: any } = {};
+      profiles?.forEach(p => {
+        if (!primaryByUser[p.user_id]) {
+          primaryByUser[p.user_id] = p;
+        }
+      });
+
+      return data.map(req => {
+        const profile = primaryByUser[req.receiver_id];
+        return {
+          id: req.id,
+          receiverId: req.receiver_id,
+          createdAt: req.created_at,
+          receiverName: profile?.name || 'Unknown User',
+          receiverAvatar: profile?.avatar
+        };
+      });
+    } catch (e) {
+      console.error('Error fetching outgoing requests:', e);
+      return [];
+    }
+  },
+
+  // Cancel Outgoing Friend Request
+  async cancelRequest(requestId: string): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('friend_requests')
+        .delete()
+        .eq('id', requestId);
+      if (error) throw error;
+      return true;
+    } catch (e) {
+      console.error('Error canceling request:', e);
+      return false;
+    }
+  },
+
+  // Decline Received Friend Request
+  async declineRequest(requestId: string): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('friend_requests')
+        .delete()
+        .eq('id', requestId);
+      if (error) throw error;
+      return true;
+    } catch (e) {
+      console.error('Error declining request:', e);
+      return false;
+    }
+  },
+
+  // Search profiles matching a query but ONLY return them if that matching profile is the primary account owner (oldest profile)
+  async searchUsersByAccountName(query: string): Promise<any[]> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.warn("[FriendService] Search failed: user is not authenticated.");
+        return [];
+      }
+
+      console.log(`[FriendService] Initiating search for query: "${query}" (logged in as: ${user.id})`);
+
+      // Find profiles matching the search query
+      const { data: matchingProfiles, error } = await supabase
+        .from('profiles')
+        .select('id, user_id, name, avatar, created_at')
+        .ilike('name', `%${query}%`);
+
+      if (error) {
+        console.error("[FriendService] Supabase profile matching error:", error);
+        throw error;
+      }
+
+      console.log("[FriendService] Profiles matching query in DB:", matchingProfiles);
+      if (!matchingProfiles || matchingProfiles.length === 0) return [];
+
+      // Filter out our own profile results
+      const foreignProfiles = matchingProfiles.filter(p => p.user_id !== user.id);
+      console.log("[FriendService] Foreign profiles (excluding self):", foreignProfiles);
+      if (foreignProfiles.length === 0) return [];
+
+      const userIds = Array.from(new Set(foreignProfiles.map(p => p.user_id)));
+
+      // Fetch all profiles for these users sorted by created_at to find the primary ones
+      const { data: allUserProfiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, user_id, name, avatar, created_at')
+        .in('user_id', userIds)
+        .order('created_at', { ascending: true });
+
+      if (profilesError) {
+        console.error("[FriendService] Supabase oldest profile fetch error:", profilesError);
+        throw profilesError;
+      }
+
+      console.log("[FriendService] All profiles for matched users:", allUserProfiles);
+      if (!allUserProfiles) return [];
+
+      // Map each user_id to their oldest profile
+      const primaryByUser: { [userId: string]: any } = {};
+      allUserProfiles.forEach(p => {
+        if (!primaryByUser[p.user_id]) {
+          primaryByUser[p.user_id] = p;
+        }
+      });
+
+      // Filter foreignProfiles: a matched profile is valid ONLY if it is the primary profile of that user
+      const results: any[] = [];
+      const seenUserIds = new Set<string>();
+
+      foreignProfiles.forEach(matchedProfile => {
+        const primaryProfile = primaryByUser[matchedProfile.user_id];
+        if (primaryProfile && primaryProfile.id === matchedProfile.id) {
+          if (!seenUserIds.has(matchedProfile.user_id)) {
+            seenUserIds.add(matchedProfile.user_id);
+            results.push({
+              userId: matchedProfile.user_id,
+              name: matchedProfile.name,
+              avatar: matchedProfile.avatar
+            });
+          }
+        }
+      });
+
+      console.log("[FriendService] Final resolved search results (primary profiles only):", results);
+      return results;
+    } catch (e: any) {
+      console.error('Error searching users by account name:', e);
+      throw e;
     }
   },
 

@@ -2,9 +2,16 @@ export interface AppSettings {
   minimalHome: boolean;
   autoNext: boolean;
   debugMode: boolean;
-  theme: 'dark' | 'light' | 'amoled';
+  theme: 'dark' | 'amoled';
   hostControlsOnly: boolean;
   autoJoinParty: boolean;
+  hapticsEnabled: boolean;
+  hapticsIntensity: 'light' | 'medium' | 'heavy';
+  subtitleSize: 'small' | 'medium' | 'large' | 'xlarge';
+  subtitleColor: string;
+  subtitleBgOpacity: number;
+  mirrorPriority: 'local' | 'online';
+  appLanguage: 'en' | 'fr' | 'es' | 'de' | 'it' | 'pt' | 'ru';
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -14,6 +21,13 @@ const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   hostControlsOnly: false,
   autoJoinParty: false,
+  hapticsEnabled: false,
+  hapticsIntensity: 'medium',
+  subtitleSize: 'medium',
+  subtitleColor: '#ffffff',
+  subtitleBgOpacity: 0.3,
+  mirrorPriority: 'online',
+  appLanguage: 'en',
 };
 
 const STORAGE_KEY = 'watchmovie_settings_v1';
@@ -28,15 +42,18 @@ export class SettingsService {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         this.settings = { ...DEFAULT_SETTINGS, ...JSON.parse(stored) };
+        if ((this.settings.theme as any) === 'light') {
+          this.settings.theme = 'dark';
+        }
       } else {
         // Migration from old keys
         this.settings = {
+          ...DEFAULT_SETTINGS,
           minimalHome: localStorage.getItem('settings_minimal_home') === 'true',
           autoNext: localStorage.getItem('settings_auto_next') !== 'false',
           debugMode: localStorage.getItem('settings_debug_mode') === 'true',
           theme: 'dark',
-          hostControlsOnly: false,
-          autoJoinParty: false,
+          hapticsEnabled: localStorage.getItem('settings_haptics_enabled') === 'true',
         };
         this.save();
       }
@@ -66,21 +83,9 @@ export class SettingsService {
   }
 
   static applyTheme(theme: AppSettings['theme']): void {
-    const root = document.documentElement;
     const body = document.body;
-    
-    if (theme === 'amoled') {
-      body.style.backgroundColor = '#000000';
-      root.style.setProperty('--bg-primary', '#000000');
-    } else if (theme === 'light') {
-      body.style.backgroundColor = '#ffffff';
-      root.style.setProperty('--bg-primary', '#ffffff');
-    } else {
-      body.style.backgroundColor = '#0a0a0a';
-      root.style.setProperty('--bg-primary', '#0a0a0a');
-    }
-    
     body.setAttribute('data-theme', theme);
+    body.style.removeProperty('background-color');
   }
 
   private static save(): void {

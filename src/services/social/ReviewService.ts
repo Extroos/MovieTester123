@@ -16,8 +16,14 @@ export interface Review {
   is_liked: boolean;
 }
 
+const isGuest = () => localStorage.getItem('cinemovie_is_guest') === 'true';
+
 export const ReviewService = {
   async submitReview(itemId: string, content: string, rating: number, spoiler: boolean = false): Promise<boolean> {
+    if (isGuest()) {
+      alert('Review submission requires a signed-in account. Please register or log in.');
+      return false;
+    }
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return false;
@@ -45,6 +51,9 @@ export const ReviewService = {
   },
 
   async submitRating(itemId: string, rating: number): Promise<boolean> {
+    if (isGuest()) {
+      return false;
+    }
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return false;
@@ -67,13 +76,12 @@ export const ReviewService = {
 
   async getReviews(itemId: string): Promise<Review[]> {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = isGuest() ? { data: { user: null } } : await supabase.auth.getUser();
       
       const { data, error } = await supabase
         .from('reviews')
         .select(`
           *,
-          profiles ( name, avatar ),
           likes:review_likes ( count )
         `)
         .eq('item_id', itemId)
@@ -81,6 +89,27 @@ export const ReviewService = {
 
       if (error) throw error;
       if (!data) return [];
+
+      const userIds = Array.from(new Set(data.map(r => r.user_id).filter(Boolean)));
+      const profilesMap: Record<string, { name: string; avatar: string }> = {};
+
+      if (userIds.length > 0) {
+        const { data: profilesData } = await supabase
+          .from('profiles')
+          .select('user_id, name, avatar')
+          .in('user_id', userIds);
+
+        if (profilesData) {
+          profilesData.forEach(p => {
+            if (p.user_id && !profilesMap[p.user_id]) {
+              profilesMap[p.user_id] = {
+                name: p.name,
+                avatar: p.avatar
+              };
+            }
+          });
+        }
+      }
 
       // If user is logged in, check if they liked each review
       let userLikes: string[] = [];
@@ -94,6 +123,7 @@ export const ReviewService = {
 
       return data.map(r => ({
         ...r,
+        profiles: profilesMap[r.user_id] || { name: 'CineMovie User', avatar: 'https://upload.wikimedia.org/wikipedia/commons/0/0b/Netflix-avatar.png' },
         likes_count: r.likes?.[0]?.count || 0,
         is_liked: userLikes.includes(r.id)
       }));
@@ -104,6 +134,10 @@ export const ReviewService = {
   },
 
   async toggleReviewLike(reviewId: string): Promise<{ success: boolean; liked: boolean }> {
+    if (isGuest()) {
+      alert('Liking reviews requires a signed-in account.');
+      return { success: false, liked: false };
+    }
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return { success: false, liked: false };
@@ -159,4 +193,3 @@ export const ReviewService = {
     }
   }
 };
-

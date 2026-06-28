@@ -9,6 +9,9 @@
   };
 
   // 2. Suppress blocking dialogs from embedded players
+  window.originalAlert = window.alert;
+  window.originalConfirm = window.confirm;
+  window.originalPrompt = window.prompt;
   window.alert = () => { console.debug('[AdBlocker] Blocked alert'); };
   window.confirm = () => { console.debug('[AdBlocker] Blocked confirm'); return true; };
   window.prompt = () => { console.debug('[AdBlocker] Blocked prompt'); return null; };

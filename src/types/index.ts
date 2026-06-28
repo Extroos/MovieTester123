@@ -17,8 +17,13 @@ export interface Movie {
   adult?: boolean;
   popularity?: number;
   imdbId?: string;
+  status?: string;
+  budget?: number;
+  revenue?: number;
+  originalLanguage?: string;
+  inTheaters?: boolean;
   // Screenscape source tracking
-  _source?: 'tmdb' | 'vidsrc';
+  _source?: 'tmdb' | 'vidsrc' | 'kmmovies' | 'animesalt';
   _sourceUrl?: string;
 }
 
@@ -40,8 +45,11 @@ export interface TVShow {
   episodeRunTime?: number[];
   originCountry?: string[];
   imdbId?: string;
+  lastAirDate?: string;
+  networks?: { name: string; id: number }[];
+  originalLanguage?: string;
   // Screenscape source tracking
-  _source?: 'tmdb' | 'vidsrc';
+  _source?: 'tmdb' | 'vidsrc' | 'kmmovies' | 'animesalt';
   _sourceUrl?: string;
 }
 

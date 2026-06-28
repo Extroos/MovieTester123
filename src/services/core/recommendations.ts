@@ -1,6 +1,6 @@
 import { Movie, TVShow } from '../../types';
 import { WatchProgressService } from '../user/progress';
-import { getPopular, getPopularTV, getTrending, getTrendingTV } from '../api/tmdb';
+import { getPopular, getPopularTV, getTrending, getTrendingTV, getTrendingByGenre } from '../api/tmdb';
 
 interface UserProfile {
   favoriteGenres: Record<number, number>; // genreId -> weight
@@ -13,7 +13,7 @@ export const RecommendationService = {
    * Build a user profile based on history and "My List"
    */
   async buildProfile(): Promise<UserProfile> {
-    const progress = WatchProgressService.getAll();
+    const progress = await WatchProgressService.getAll();
     const history = Object.values(progress);
     
     const profile: UserProfile = {
@@ -23,7 +23,7 @@ export const RecommendationService = {
     };
 
     history.forEach(item => {
-      profile.viewedItems.add(item.id);
+      profile.viewedItems.add(Number(item.id));
       
       // Weight genres: more recent = higher weight
       const genres = (item.data as any).genres || [];
@@ -94,8 +94,6 @@ export const RecommendationService = {
       .map(([id]) => parseInt(id, 10));
 
     if (sortedGenres.length === 0) return [];
-
-    const { getTrendingByGenre } = await import('../api/tmdb');
     
     const genreRecs = await Promise.all(sortedGenres.map(async (genreId) => {
       // Fetch fresh trending items for this genre

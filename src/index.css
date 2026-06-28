@@ -5,12 +5,47 @@
 /* Globals from App.tsx */
 :root {
   --brand-red: #ffffff;
+  
+  /* Dark Theme variables (default) */
+  --color-primary: #FFFFFF;
+  --color-primary-hover: #F3F4F6;
+  --color-primary-dark: #E5E7EB;
+  --bg-primary: #0a0a0a;
+  --bg-primary-rgb: 10, 10, 10;
+  --bg-secondary: #000000;
+  --bg-card: #1a1a1a;
+  --bg-card-hover: #2a2a2a;
+  --text-primary: #FFFFFF;
+  --text-secondary: #D2D2D2;
+  --text-muted: #808080;
+  --border-color: #333333;
+  --overlay-color: rgba(0, 0, 0, 0.7);
 }
+
+/* Amoled Theme Override */
+body[data-theme="amoled"] {
+  --color-primary: #FFFFFF;
+  --color-primary-hover: #F3F4F6;
+  --color-primary-dark: #E5E7EB;
+  --bg-primary: #000000;
+  --bg-primary-rgb: 0, 0, 0;
+  --bg-secondary: #000000;
+  --bg-card: #0d0d0d;
+  --bg-card-hover: #151515;
+  --text-primary: #FFFFFF;
+  --text-secondary: #D2D2D2;
+  --text-muted: #666666;
+  --border-color: #1c1c1e;
+  --overlay-color: rgba(0, 0, 0, 0.85);
+}
+
+
 
 html,
 body {
-  background: #0a0a0a;
-  scroll-behavior: smooth;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  scroll-behavior: auto;
   min-height: 100%;
   width: 100%;
   margin: 0;
@@ -19,8 +54,8 @@ body {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   touch-action: auto;
-  -ms-overflow-style: none;  /* IE and Edge */
-  scrollbar-width: none;  /* Firefox */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 /* Auto-hide BottomNav layout when high-performance full-viewport video overlay is active */
@@ -60,15 +95,19 @@ img {
   -webkit-user-select: none;
 }
 
-/* Hide scrollbars globally on all elements */
-*::-webkit-scrollbar,
-::-webkit-scrollbar {
+/* Hide scrollbars on main viewports and scrollable elements */
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+#root::-webkit-scrollbar,
+.no-scrollbar::-webkit-scrollbar,
+.hide-scrollbar::-webkit-scrollbar {
   display: none !important;
   width: 0 !important;
   height: 0 !important;
+  background: transparent !important;
 }
 
-* {
+html, body, #root, .no-scrollbar, .hide-scrollbar {
   -ms-overflow-style: none !important;
   scrollbar-width: none !important;
 }
@@ -94,6 +133,10 @@ img {
   touch-action: pan-x pan-y;
   overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 @media (hover: none) {
@@ -314,14 +357,10 @@ img {
 
 /* Row containers: smooth GPU-composited opacity fade-in instead of expensive layout shifts */
 .content-row-container {
-  opacity: 0;
+  opacity: 1;
   content-visibility: auto;
   contain-intrinsic-size: auto 280px;
   transition: opacity 0.25s ease-out;
-}
-
-.content-row-container.is-visible {
-  opacity: 1;
 }
 
 /* Highly performant media queries instead of JS layout calculations */
@@ -344,6 +383,11 @@ img {
   border-radius: 12px;
   overflow: hidden;
   position: relative;
+  /* PERF FIX: Removed permanent will-change — each will-change allocates a
+     dedicated GPU compositor layer. With 20+ cards on screen this eats VRAM.
+     The browser auto-promotes during active transition anyway. */
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 /* Desktop hover only — touch devices get no hover flicker */
@@ -401,11 +445,9 @@ img {
   opacity: 1;
 }
 
-/* Glassmorphic floating control bar */
+/* Player control bar — PERF: No backdrop-filter, solid dark background instead */
 .cinematic-controls-bar {
-  background: rgba(15, 15, 15, 0.65);
-  backdrop-filter: blur(24px) saturate(180%) brightness(1.1);
-  -webkit-backdrop-filter: blur(24px) saturate(180%) brightness(1.1);
+  background: rgba(12, 12, 12, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 20px;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6),
@@ -482,7 +524,7 @@ img {
   transform: translate(-50%, -50%) scale(1);
 }
 
-/* Settings flyout panel */
+/* Settings flyout panel — PERF: Solid background, no backdrop-filter */
 .settings-flyout-panel {
   position: absolute;
   top: 0;
@@ -490,9 +532,7 @@ img {
   bottom: 0;
   width: 380px;
   max-width: 100%;
-  background: rgba(10, 10, 10, 0.75);
-  backdrop-filter: blur(40px) saturate(200%) brightness(0.9);
-  -webkit-backdrop-filter: blur(40px) saturate(200%) brightness(0.9);
+  background: rgba(10, 10, 10, 0.98);
   border-left: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: -20px 0 60px rgba(0, 0, 0, 0.8);
   z-index: 10020;
@@ -510,9 +550,7 @@ img {
 .settings-flyout-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.6);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1);
@@ -524,16 +562,14 @@ img {
   pointer-events: auto;
 }
 
-/* Cinematic Server Selection tabs */
+/* Cinematic Server Selection tabs — PERF: No backdrop-filter */
 .provider-tabs-bar {
   display: flex;
   gap: 8px;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(30, 30, 30, 0.95);
   border: 1px solid rgba(255, 255, 255, 0.06);
   padding: 4px;
   border-radius: 30px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
 }
 
 .provider-tab-btn {
@@ -629,6 +665,88 @@ video::cue {
   to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 
+
+/* Video Player Server Switcher Loading Screen Layout */
+.player-server-loader {
+  position: absolute;
+  inset: 0;
+  z-index: 10050;
+  background: #000000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 32px 16px 24px 16px;
+  box-sizing: border-box;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.player-server-loader-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.player-server-loader-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.player-server-loader-text {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+}
+
+.player-server-loader-cancel {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 10px 24px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  outline: none;
+}
+
+.player-server-loader-cancel:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.player-server-loader-cancel:active {
+  transform: scale(0.96);
+}
+
+/* Landscape optimization for small screen heights (e.g. 750x360 rotated) */
+@media (max-height: 420px) {
+  .player-server-loader {
+    padding: 16px 16px 16px 16px;
+  }
+  .player-server-loader-content {
+    gap: 8px;
+  }
+  .player-server-loader-spinner {
+    width: 24px;
+    height: 24px;
+    border-width: 2px;
+  }
+  .player-server-loader-text {
+    font-size: 0.8rem;
+  }
+  .player-server-loader-cancel {
+    padding: 6px 20px;
+    font-size: 0.7rem;
+  }
+}
+
 /* Small Viewport Media Queries (e.g. 360px phones) */
 @media (max-width: 380px) {
   .cinemovie-header {
@@ -662,10 +780,14 @@ video::cue {
   }
 }
 
+/* PERF FIX (Fix 5): Removed permanent will-change from all card classes.
+   will-change:transform allocates a dedicated GPU layer per element.
+   With 20+ cards visible simultaneously this wastes significant VRAM.
+   The browser still promotes the layer automatically during active transitions. */
+
 /* Category Grid & Genre content cards */
 .news-category-card {
   transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease, box-shadow 0.25s ease;
-  will-change: transform;
 }
 @media (hover: hover) and (pointer: fine) {
   .news-category-card:hover {
@@ -680,7 +802,6 @@ video::cue {
 .genre-content-card {
   transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease;
   animation: cardReveal 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
-  will-change: transform;
 }
 @media (hover: hover) and (pointer: fine) {
   .genre-content-card:hover {
@@ -695,7 +816,6 @@ video::cue {
 /* News media content box */
 .news-media-box {
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.3s ease, box-shadow 0.3s ease;
-  will-change: transform;
 }
 @media (hover: hover) and (pointer: fine) {
   .news-media-box:hover {
@@ -708,7 +828,6 @@ video::cue {
 /* My List page cards styling */
 .mylist-card {
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  will-change: transform;
 }
 @media (hover: hover) and (pointer: fine) {
   .mylist-card:hover {
@@ -723,7 +842,6 @@ video::cue {
 /* Offline Downloads page card hover states */
 .download-card {
   transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  will-change: transform;
 }
 @media (hover: hover) and (pointer: fine) {
   .download-card:hover {
@@ -734,7 +852,6 @@ video::cue {
 /* Search Suggestion Result Rows styling */
 .search-result-row {
   transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease, background 0.25s ease;
-  will-change: transform;
 }
 @media (hover: hover) and (pointer: fine) {
   .search-result-row:hover {
@@ -747,7 +864,6 @@ video::cue {
 /* Search Grid item cards styling */
 .search-grid-card {
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  will-change: transform;
 }
 @media (hover: hover) and (pointer: fine) {
   .search-grid-card:hover {
@@ -758,5 +874,876 @@ video::cue {
   transform: scale(0.97) translate3d(0,0,0);
 }
 
+/* Responsive Movie Card Hover */
+.responsive-movie-card {
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (hover: hover) and (pointer: fine) {
+  .responsive-movie-card:hover {
+    transform: scale(1.05) translateY(-5px) translate3d(0,0,0);
+  }
+}
 
+/* Cast Section Actor Avatar Hover */
+.cast-actor-avatar-container {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+  transform: translate3d(0,0,0);
+}
+@media (hover: hover) and (pointer: fine) {
+  .cast-actor-avatar-container:hover {
+    transform: scale(1.06) translate3d(0,0,0);
+    border-color: rgba(255, 255, 255, 0.18) !important;
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.15), 0 12px 30px rgba(0,0,0,0.6) !important;
+  }
+}
+.cast-actor-avatar-container:active {
+  transform: scale(0.96) translate3d(0,0,0);
+}
+
+/* Video Gallery Thumbnail Card Hover */
+.video-gallery-card-inner {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+  transform: translate3d(0,0,0);
+}
+@media (hover: hover) and (pointer: fine) {
+  .video-gallery-card-inner:hover {
+    transform: scale(1.03) translate3d(0,0,0);
+    border-color: rgba(255, 255, 255, 0.18) !important;
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.15), 0 8px 20px rgba(0, 0, 0, 0.5) !important;
+  }
+}
+.video-gallery-card-inner:active {
+  transform: scale(0.96) translate3d(0,0,0);
+}
+
+/* Actor Page Filmography Card Hover */
+.actor-credit-card-inner {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+  transform: translate3d(0,0,0);
+}
+@media (hover: hover) and (pointer: fine) {
+  .actor-credit-card-inner:hover {
+    transform: scale(1.04) translate3d(0,0,0);
+    border-color: rgba(255, 255, 255, 0.18) !important;
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.15), 0 8px 20px rgba(0, 0, 0, 0.5) !important;
+  }
+}
+.actor-credit-card-inner:active {
+  transform: scale(0.96) translate3d(0,0,0);
+}
+
+/* See All Button Hover */
+.see-all-btn {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), background 0.25s ease;
+  will-change: transform;
+}
+@media (hover: hover) and (pointer: fine) {
+  .see-all-btn:hover {
+    transform: scale(1.03) translate3d(0,0,0);
+    background: rgba(255, 255, 255, 0.08) !important;
+  }
+}
+
+/* Server selector option buttons inside dialog popovers */
+.stream-selector-btn {
+  transition: all 0.2s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .stream-selector-btn:not(:disabled):hover {
+    background: rgba(255, 255, 255, 0.06) !important;
+    border-color: rgba(255, 255, 255, 0.15) !important;
+  }
+}
+
+/* Hero primary CTA button */
+.hero-action-btn-primary {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (hover: hover) and (pointer: fine) {
+  .hero-action-btn-primary:hover {
+    transform: scale(1.03) translate3d(0,0,0);
+    box-shadow: 0 8px 24px rgba(255,255,255,0.2) !important;
+  }
+}
+
+/* Hero secondary CTA button */
+.hero-action-btn-secondary {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (hover: hover) and (pointer: fine) {
+  .hero-action-btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.15) !important;
+    transform: scale(1.02) translate3d(0,0,0);
+  }
+}
+
+/* Hero circular button (Info) */
+.hero-action-btn-circle {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (hover: hover) and (pointer: fine) {
+  .hero-action-btn-circle:hover {
+    background: rgba(255, 255, 255, 0.15) !important;
+    transform: scale(1.08) translate3d(0,0,0);
+  }
+}
+
+/* Search results back button */
+.search-overlay-back-btn {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .search-overlay-back-btn:hover {
+    opacity: 1 !important;
+    transform: scale(1.05) translate3d(0,0,0);
+  }
+}
+
+/* Search overlay filter toggle button */
+.search-overlay-filter-btn {
+  transition: all 0.2s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .search-overlay-filter-btn:not(.active):hover {
+    opacity: 1 !important;
+  }
+}
+
+/* Search suggestions/vibes tag button */
+.search-overlay-tag-btn {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (hover: hover) and (pointer: fine) {
+  .search-overlay-tag-btn:not(.active):hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+  }
+}
+
+/* Browse news back button */
+.browse-news-back-btn {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .browse-news-back-btn:hover {
+    opacity: 1 !important;
+    transform: scale(1.08) translate3d(0,0,0);
+  }
+}
+
+/* Browse news tab switcher button */
+.browse-news-tab-btn {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (hover: hover) and (pointer: fine) {
+  .browse-news-tab-btn:not(.active):hover {
+    color: #fff !important;
+    background: rgba(255,255,255,0.03) !important;
+  }
+}
+
+/* =============================================
+   Phase 3 Optimized UI classes (Stabilization)
+   ============================================= */
+
+/* Watch History Item card hover */
+.watch-history-item-inner {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
+}
+@media (hover: hover) and (pointer: fine) {
+  .watch-history-item-inner:hover {
+    transform: scale(1.05) translate3d(0, 0, 0);
+    border-color: rgba(255, 255, 255, 0.18) !important;
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.15), 0 8px 20px rgba(0, 0, 0, 0.5) !important;
+  }
+}
+.watch-history-item-inner:active {
+  transform: scale(0.98) translate3d(0, 0, 0);
+}
+
+/* General buttons in Guest Lock Modal and Login */
+.guest-lock-modal-btn-cancel,
+.review-modal-btn-cancel {
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (hover: hover) and (pointer: fine) {
+  .guest-lock-modal-btn-cancel:hover,
+  .review-modal-btn-cancel:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+    border-color: rgba(255, 255, 255, 0.25) !important;
+  }
+}
+.guest-lock-modal-btn-cancel:active,
+.review-modal-btn-cancel:active {
+  transform: scale(0.96) translate3d(0, 0, 0);
+}
+
+.guest-lock-modal-btn-login,
+.review-modal-btn-submit {
+  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (hover: hover) and (pointer: fine) {
+  .guest-lock-modal-btn-login:hover,
+  .review-modal-btn-submit:hover {
+    opacity: 0.9;
+  }
+}
+.guest-lock-modal-btn-login:active,
+.review-modal-btn-submit:active {
+  transform: scale(0.96) translate3d(0, 0, 0);
+}
+
+/* Optimized Login Input (eliminates React focus state-induced re-renders) */
+.login-input-optimized {
+  width: 100%;
+  padding: 16px 20px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 500;
+  outline: none;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.login-input-optimized:focus {
+  border: 1px solid #ffffff;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.25);
+}
+
+/* Submit and Toggle buttons inside LoginPage */
+.login-btn-submit {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (hover: hover) and (pointer: fine) {
+  .login-btn-submit:hover {
+    background: #f3f4f6 !important;
+    transform: scale(1.01) translate3d(0, 0, 0);
+  }
+}
+.login-btn-submit:active {
+  transform: scale(0.98) translate3d(0, 0, 0);
+}
+
+.login-btn-toggle {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (hover: hover) and (pointer: fine) {
+  .login-btn-toggle:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+  }
+}
+.login-btn-toggle:active {
+  transform: scale(0.96) translate3d(0, 0, 0);
+}
+
+.login-btn-guest {
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .login-btn-guest:hover {
+    color: #fff !important;
+  }
+}
+.login-btn-guest:active {
+  transform: scale(0.95);
+}
+
+/* Version Changelog Back Button hover */
+.changelog-back-btn {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .changelog-back-btn:hover {
+    opacity: 1 !important;
+  }
+}
+.changelog-back-btn:active {
+  transform: scale(0.92);
+}
+
+/* Download Center Components */
+.download-close-btn {
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .download-close-btn:hover {
+    background: rgba(255, 255, 255, 0.12) !important;
+  }
+}
+.download-close-btn:active {
+  transform: scale(0.92);
+}
+
+.download-item-container {
+  transition: all 0.2s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .download-item-container:hover {
+    background: rgba(255, 255, 255, 0.06) !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+}
+.download-item-container:active {
+  transform: scale(0.99) translate3d(0, 0, 0);
+}
+
+.download-item-delete-btn {
+  transition: all 0.2s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .download-item-delete-btn:hover {
+    color: #ef4444 !important;
+    background: rgba(239, 68, 68, 0.1) !important;
+  }
+}
+.download-item-delete-btn:active {
+  transform: scale(0.88);
+}
+
+/* Watch Party Room Page buttons */
+.watch-party-close-btn {
+  transition: all 0.2s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .watch-party-close-btn:hover {
+    background: rgba(255, 255, 255, 0.12) !important;
+    border-color: rgba(255, 255, 255, 0.2) !important;
+  }
+}
+.watch-party-close-btn:active {
+  transform: scale(0.9);
+}
+
+.watch-party-reinvite-btn {
+  transition: all 0.2s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .watch-party-reinvite-btn:not(:disabled):hover {
+    background: rgba(255, 255, 255, 0.12) !important;
+  }
+}
+.watch-party-reinvite-btn:active {
+  transform: scale(0.94);
+}
+
+.watch-party-btn-primary {
+  transition: all 0.2s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .watch-party-btn-primary:hover {
+    transform: scale(1.02) translate3d(0, 0, 0);
+    box-shadow: 0 8px 24px rgba(255, 255, 255, 0.2) !important;
+  }
+}
+.watch-party-btn-primary:active {
+  transform: scale(0.97) translate3d(0, 0, 0);
+}
+
+.watch-party-btn-secondary {
+  transition: all 0.2s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .watch-party-btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: #ffffff !important;
+  }
+}
+.watch-party-btn-secondary:active {
+  transform: scale(0.97) translate3d(0, 0, 0);
+}
+
+/* Review modal stars, textareas, and likes */
+.review-modal-star-btn {
+  transition: all 0.2s ease;
+}
+.review-modal-star-btn:active {
+  transform: scale(0.85);
+}
+
+.review-modal-textarea {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  color: #fff;
+  padding: 14px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  resize: none;
+  outline: none;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.review-modal-textarea:focus {
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.1);
+}
+
+.review-section-like-btn {
+  transition: all 0.2s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .review-section-like-btn:hover {
+    background: rgba(255, 255, 255, 0.12) !important;
+    border-color: rgba(255, 255, 255, 0.2) !important;
+  }
+}
+.review-section-like-btn:active {
+  transform: scale(0.94);
+}
+
+/* Offline Screen Action Button */
+.offline-screen-btn {
+  transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@media (hover: hover) and (pointer: fine) {
+  .offline-screen-btn:hover {
+    transform: scale(1.02) translateY(-2px) translate3d(0, 0, 0);
+  }
+}
+.offline-screen-btn:active {
+  transform: scale(0.97) translateY(0) translate3d(0, 0, 0);
+}
+
+/* Shimmer placeholder effects */
+.skeleton-shimmer {
+  background-color: rgba(255, 255, 255, 0.03);
+  background-image: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.05) 50%, rgba(255, 255, 255, 0) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+}
+
+/* =============================================
+   Phase 4 Optimized UI classes (Stabilization)
+   ============================================= */
+
+/* Header Nav Buttons */
+.cinemovie-header-nav-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 550;
+  cursor: pointer;
+  padding: 5px 12px;
+  transition: all 0.2s ease;
+  outline: none;
+  letter-spacing: 0.1px;
+}
+.cinemovie-header-nav-btn.active {
+  background: var(--bg-card-hover) !important;
+  border: 1px solid var(--border-color) !important;
+  color: var(--text-primary) !important;
+  font-weight: 800;
+}
+@media (hover: hover) and (pointer: fine) {
+  .cinemovie-header-nav-btn:not(.active):hover {
+    color: var(--text-primary) !important;
+    background: var(--bg-card) !important;
+  }
+}
+
+/* Header Action Buttons */
+.cinemovie-header-search-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+  opacity: 0.9;
+  outline: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .cinemovie-header-search-btn:hover {
+    opacity: 1 !important;
+    transform: scale(1.05) translate3d(0,0,0);
+  }
+}
+.cinemovie-header-search-btn:active {
+  transform: scale(0.95) translate3d(0,0,0);
+}
+
+.cinemovie-header-profile-btn {
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  cursor: pointer;
+  padding: 0;
+  overflow: hidden;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  outline: none;
+  margin-left: 4px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .cinemovie-header-profile-btn:hover {
+    transform: scale(1.05) translate3d(0,0,0);
+  }
+}
+.cinemovie-header-profile-btn:active {
+  transform: scale(0.95) translate3d(0,0,0);
+}
+
+/* Header Invite Toast Buttons */
+.cinemovie-header-invite-join {
+  background: #ffffff;
+  color: #000000;
+  border: none;
+  border-radius: 16px;
+  padding: 5px 12px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(255,255,255,0.18);
+  white-space: nowrap;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .cinemovie-header-invite-join:hover {
+    transform: scale(1.05) translate3d(0,0,0);
+  }
+}
+.cinemovie-header-invite-join:active {
+  transform: scale(0.96) translate3d(0,0,0);
+}
+
+.cinemovie-header-invite-decline {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 4px 10px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (hover: hover) and (pointer: fine) {
+  .cinemovie-header-invite-decline:hover {
+    background: rgba(255, 255, 255, 0.12) !important;
+    color: #ffffff !important;
+  }
+}
+.cinemovie-header-invite-decline:active {
+  transform: scale(0.96) translate3d(0,0,0);
+}
+
+/* Settings Version Label */
+.settings-version-label {
+  margin: 4px 0 0;
+  opacity: 0.5;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  display: inline-block;
+  transition: opacity 0.2s;
+}
+@media (hover: hover) and (pointer: fine) {
+  .settings-version-label:hover {
+    opacity: 0.9 !important;
+  }
+}
+
+/* Settings Profile Switcher Button */
+.settings-profile-switch-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+@media (hover: hover) and (pointer: fine) {
+  .settings-profile-switch-btn:hover {
+    background: rgba(255, 255, 255, 0.06) !important;
+  }
+}
+.settings-profile-switch-btn:active {
+  transform: scale(0.96) translate3d(0,0,0);
+}
+
+/* Settings Navigation Card */
+.settings-nav-card {
+  margin-top: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  transition: all 0.2s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .settings-nav-card:hover {
+    border-color: rgba(255, 255, 255, 0.2) !important;
+    background: rgba(255, 255, 255, 0.07) !important;
+  }
+}
+.settings-nav-card:active {
+  transform: scale(0.99) translate3d(0,0,0);
+}
+
+/* Settings Sidebar Category buttons */
+.settings-category-btn {
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+@media (hover: hover) and (pointer: fine) {
+  .settings-category-btn:not(.active):hover {
+    color: #ffffff !important;
+    background: rgba(255, 255, 255, 0.03) !important;
+  }
+}
+.settings-category-btn:active {
+  transform: scale(0.96) translate3d(0,0,0);
+}
+
+/* Settings Action Buttons (Clear/Danger/Logout) */
+.settings-btn-clear {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-transform: uppercase;
+}
+@media (hover: hover) and (pointer: fine) {
+  .settings-btn-clear:hover {
+    background: rgba(255, 255, 255, 0.06) !important;
+  }
+}
+.settings-btn-clear:active {
+  transform: scale(0.95);
+}
+
+.settings-btn-danger {
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #ef4444;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+@media (hover: hover) and (pointer: fine) {
+  .settings-btn-danger:hover {
+    background: rgba(239, 68, 68, 0.1) !important;
+  }
+}
+.settings-btn-danger:active {
+  transform: scale(0.95);
+}
+
+.settings-btn-logout {
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  transition: all 0.2s;
+}
+.settings-btn-logout:active {
+  transform: scale(0.96) translate3d(0,0,0);
+}
+
+/* Settings Row with hover (eliminates SettingRow re-render overhead) */
+.settings-row {
+  border-bottom: '1px solid rgba(255, 255, 255, 0.05)';
+  transition: all 0.2s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .settings-row:hover {
+    background: rgba(255, 255, 255, 0.02) !important;
+  }
+}
+
+.avatar-picker-close-btn {
+  background: rgba(255,255,255,0.1); 
+  border: none; 
+  color: #fff; 
+  width: 44px; 
+  height: 44px; 
+  borderRadius: 50%; 
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+@media (hover: hover) and (pointer: fine) {
+  .avatar-picker-close-btn:hover {
+    background: rgba(255,255,255,0.2) !important;
+  }
+}
+.avatar-picker-close-btn:active {
+  transform: scale(0.9);
+}
+
+/* Content Row Reaction Emoji button */
+.content-row-reaction-btn {
+  transition: transform 0.15s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .content-row-reaction-btn:hover {
+    transform: scale(1.15) translate3d(0,0,0);
+  }
+}
+.content-row-reaction-btn:active {
+  transform: scale(0.9) translate3d(0,0,0);
+}
+
+/* Profile Selector Setup Refresh button */
+.profile-refresh-btn {
+  transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@media (hover: hover) and (pointer: fine) {
+  .profile-refresh-btn:hover {
+    transform: scale(1.02) translateY(-2px) translate3d(0, 0, 0);
+  }
+}
+.profile-refresh-btn:active {
+  transform: scale(0.97) translateY(0) translate3d(0, 0, 0);
+}
+
+/* ── TVShowDetails: Episode card row hover ── */
+.ep-card-row {
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .ep-card-row:hover {
+    background: rgba(255, 255, 255, 0.03) !important;
+    border-color: rgba(255, 255, 255, 0.08) !important;
+  }
+}
+.ep-card-row:active {
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* ── TVShowDetails: Download button (white) hover ── */
+.ep-dl-btn {
+  transition: background 0.15s ease, color 0.15s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .ep-dl-btn:hover {
+    background: rgba(255, 255, 255, 0.12) !important;
+    color: #fff !important;
+  }
+}
+.ep-dl-btn:active {
+  transform: scale(0.93) translate3d(0, 0, 0);
+}
+
+/* ── TVShowDetails: Watch-offline (green play) button hover ── */
+.ep-offline-play-btn {
+  transition: background 0.15s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .ep-offline-play-btn:hover {
+    background: rgba(34, 197, 94, 0.22) !important;
+  }
+}
+.ep-offline-play-btn:active {
+  transform: scale(0.92) translate3d(0, 0, 0);
+}
+
+/* ── TVShowDetails: Stream selector option card hover ── */
+.stream-option-btn {
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .stream-option-btn:not(:disabled):hover {
+    background: rgba(255, 255, 255, 0.06) !important;
+    border-color: rgba(255, 255, 255, 0.15) !important;
+  }
+}
+.stream-option-btn:active {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* ── TVShowDetails: Season picker item hover ── */
+.season-picker-item {
+  transition: background 0.13s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .season-picker-item:hover {
+    background: rgba(255, 255, 255, 0.05) !important;
+  }
+}
+.season-picker-item:active {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* ── TVShowDetails: Batch download row item hover ── */
+.batch-ep-row {
+  transition: background 0.13s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .batch-ep-row:not([data-locked="true"]):hover {
+    background: rgba(255, 255, 255, 0.04) !important;
+  }
+}
+
+/* ── Settings Profile Login Button (Guest mode stable style) ── */
+.settings-profile-login-btn {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  color: #ffffff !important;
+  border-radius: 12px !important;
+  font-size: 0.8rem !important;
+  font-weight: 800 !important;
+  cursor: pointer !important;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  will-change: transform !important;
+  transform: translate3d(0, 0, 0) !important;
+}
+@media (hover: hover) and (pointer: fine) {
+  .settings-profile-login-btn:hover {
+    transform: scale(1.02) translate3d(0,0,0) !important;
+    background: rgba(255, 255, 255, 0.15) !important;
+    border-color: rgba(255, 255, 255, 0.3) !important;
+  }
+}
+.settings-profile-login-btn:active {
+  transform: scale(0.97) translate3d(0,0,0) !important;
+}
 

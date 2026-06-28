@@ -143,6 +143,7 @@ export default function ReviewSection({ itemId, type }: ReviewSectionProps) {
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button
                   onClick={() => handleToggleLike(review.id)}
+                  className="review-section-like-btn"
                   style={{
                     display: 'flex',
                     alignItems: 'center',

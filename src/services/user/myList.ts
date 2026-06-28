@@ -7,10 +7,31 @@ export interface MyListItem extends Movie, TVShow {
   mediaType?: 'movie' | 'tv';
 }
 
+const isGuest = () => localStorage.getItem('cinemovie_is_guest') === 'true';
+
+function getLocalMyList(profileId: string): MyListItem[] {
+  try {
+    const raw = localStorage.getItem(`cinemovie_guest_mylist_${profileId}`);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveLocalMyList(profileId: string, list: MyListItem[]) {
+  localStorage.setItem(`cinemovie_guest_mylist_${profileId}`, JSON.stringify(list));
+}
+
 export async function getMyList(): Promise<MyListItem[]> {
   try {
     const profile = ProfileService.getActiveProfile();
     if (!profile) return [];
+
+    if (isGuest()) {
+      return getLocalMyList(profile.id);
+    }
 
     const { data, error } = await supabase
       .from('my_list')
@@ -43,6 +64,18 @@ export async function addToMyList(item: Movie | TVShow): Promise<boolean> {
     if (!profile) return false;
 
     const type = (item as any).title ? 'movie' : 'tv';
+
+    if (isGuest()) {
+      const list = getLocalMyList(profile.id);
+      if (list.some(i => i.id === item.id && i.mediaType === type)) return true;
+      list.push({
+        ...item,
+        mediaType: type,
+        status: 'plan_to_watch'
+      } as any);
+      saveLocalMyList(profile.id, list);
+      return true;
+    }
     
     // Inject status into the serialized JSON data
     const itemData = {
@@ -75,6 +108,17 @@ export async function updateListItemStatus(itemId: number, type: 'movie' | 'tv',
   try {
     const profile = ProfileService.getActiveProfile();
     if (!profile) return false;
+
+    if (isGuest()) {
+      const list = getLocalMyList(profile.id);
+      const index = list.findIndex(i => i.id === itemId && i.mediaType === type);
+      if (index !== -1) {
+        list[index].status = status as any;
+        saveLocalMyList(profile.id, list);
+        return true;
+      }
+      return false;
+    }
 
     // Fetch existing item JSON data first to preserve metadata
     const { data: itemRow, error: fetchError } = await supabase
@@ -119,6 +163,13 @@ export async function removeFromMyList(itemId: number, type: 'movie' | 'tv'): Pr
     const profile = ProfileService.getActiveProfile();
     if (!profile) return false;
 
+    if (isGuest()) {
+      const list = getLocalMyList(profile.id);
+      const filtered = list.filter(i => !(i.id === itemId && i.mediaType === type));
+      saveLocalMyList(profile.id, filtered);
+      return true;
+    }
+
     const { error } = await supabase
       .from('my_list')
       .delete()
@@ -141,6 +192,11 @@ export async function isInMyList(itemId: number, type: 'movie' | 'tv'): Promise<
   try {
     const profile = ProfileService.getActiveProfile();
     if (!profile) return false;
+
+    if (isGuest()) {
+      const list = getLocalMyList(profile.id);
+      return list.some(i => i.id === itemId && i.mediaType === type);
+    }
 
     const { data, error } = await supabase
       .from('my_list')
@@ -165,6 +221,11 @@ export async function clearMyList(): Promise<boolean> {
   try {
     const profile = ProfileService.getActiveProfile();
     if (!profile) return false;
+
+    if (isGuest()) {
+      saveLocalMyList(profile.id, []);
+      return true;
+    }
 
     const { error } = await supabase
       .from('my_list')

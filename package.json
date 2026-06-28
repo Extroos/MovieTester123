@@ -1,13 +1,14 @@
 {
-  "name": "watch-movie",
+  "name": "CineMovie",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.6.5",
   "type": "module",
   "scripts": {
     "dev": "concurrently \"vite\" \"node server.js\"",
     "build": "vite build",
     "preview": "vite preview",
-    "build:apk": "npm run build && npx cap sync && cd android && gradlew assembleDebug"
+    "build:apk": "npm run build && npx cap sync && cd android && gradlew assembleDebug",
+    "build:apk-release": "npm run build && npx cap sync && cd android && gradlew assembleRelease"
   },
   "dependencies": {
     "@capacitor-community/keep-awake": "^8.0.0",

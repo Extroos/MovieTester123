@@ -16,8 +16,39 @@ const ACTIVE_PROFILE_KEY = 'watchmovie_active_profile_id';
 const DEFAULT_AVATAR = 'https://upload.wikimedia.org/wikipedia/commons/0/0b/Netflix-avatar.png'; // Fallback
 const TOTAL_LOCAL_AVATARS = 67;
 
+const getLocalGuestProfiles = (): Profile[] => {
+  try {
+    const data = localStorage.getItem('cinemovie_guest_profiles');
+    if (!data) return [];
+    const parsed = JSON.parse(data);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+};
+
+const saveLocalGuestProfiles = (profiles: Profile[]) => {
+  localStorage.setItem('cinemovie_guest_profiles', JSON.stringify(profiles));
+};
+
 export const ProfileService = {
   async getProfiles(): Promise<Profile[]> {
+    if (localStorage.getItem('cinemovie_is_guest') === 'true') {
+      const profiles = getLocalGuestProfiles();
+      let modified = false;
+      const updated = profiles.map((p, idx) => {
+        if (idx === 0 && p.name !== 'Guest') {
+          p.name = 'Guest';
+          modified = true;
+        }
+        return p;
+      });
+      if (modified) {
+        saveLocalGuestProfiles(updated);
+      }
+      return updated;
+    }
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return [];
@@ -56,7 +87,17 @@ export const ProfileService = {
 
   getActiveProfile(): Profile | null {
     const stored = localStorage.getItem('watchmovie_active_profile_cache');
-    return stored ? JSON.parse(stored) : null;
+    if (!stored) return null;
+    try {
+      const parsed = JSON.parse(stored);
+      if (localStorage.getItem('cinemovie_is_guest') === 'true' && parsed && parsed.name !== 'Guest') {
+        parsed.name = 'Guest';
+        localStorage.setItem('watchmovie_active_profile_cache', JSON.stringify(parsed));
+      }
+      return parsed;
+    } catch (e) {
+      return null;
+    }
   },
 
   setActiveProfile(id: string, profileData?: Profile) {
@@ -74,6 +115,26 @@ export const ProfileService = {
   },
 
   async addProfile(name: string, isKids: boolean, customAvatarUrl?: string): Promise<Profile | null> {
+    if (localStorage.getItem('cinemovie_is_guest') === 'true') {
+      let avatar = customAvatarUrl;
+      if (!avatar) {
+        const randomId = Math.floor(Math.random() * TOTAL_LOCAL_AVATARS) + 1;
+        avatar = `/avatars/avatar-${randomId}.jpg`;
+      }
+      const localProfiles = getLocalGuestProfiles();
+      const newProfile: Profile = {
+        id: Math.random().toString(36).substr(2, 9),
+        name,
+        avatar,
+        isKids,
+        autoplay: true,
+        haptics: true
+      };
+      localProfiles.push(newProfile);
+      saveLocalGuestProfiles(localProfiles);
+      return newProfile;
+    }
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('No user logged in');
@@ -145,6 +206,23 @@ export const ProfileService = {
   },
 
   async updateProfile(id: string, updates: Partial<Profile>): Promise<boolean> {
+      // Optimistically update cache and dispatch event for immediate UI updates
+      const current = this.getActiveProfile();
+      if (current && current.id === id) {
+          this.setActiveProfile(id, { ...current, ...updates });
+      }
+
+      if (localStorage.getItem('cinemovie_is_guest') === 'true') {
+          const localProfiles = getLocalGuestProfiles();
+          const index = localProfiles.findIndex(p => p.id === id);
+          if (index !== -1) {
+              localProfiles[index] = { ...localProfiles[index], ...updates };
+              saveLocalGuestProfiles(localProfiles);
+              return true;
+          }
+          return false;
+      }
+
       try {
           const dbUpdates: any = {};
           if (updates.name !== undefined) dbUpdates.name = updates.name;
@@ -194,6 +272,12 @@ export const ProfileService = {
   },
 
   async uploadAvatar(file: File): Promise<string | null> {
+    if (localStorage.getItem('cinemovie_is_guest') === 'true') {
+      // Local avatars only for guests, no uploads supported, return a local data URL if needed
+      // but standard is to just choose from gallery. We'll return null to let upload fail or return local url
+      return null;
+    }
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
@@ -220,6 +304,17 @@ export const ProfileService = {
   },
 
   async deleteProfile(id: string): Promise<boolean> {
+    try {
+      localStorage.removeItem(`cinemovie_guest_progress_${id}`);
+    } catch (e) {}
+
+    if (localStorage.getItem('cinemovie_is_guest') === 'true') {
+        const localProfiles = getLocalGuestProfiles();
+        const filtered = localProfiles.filter(p => p.id !== id);
+        saveLocalGuestProfiles(filtered);
+        return true;
+    }
+
     try {
       const { error } = await supabase
         .from('profiles')

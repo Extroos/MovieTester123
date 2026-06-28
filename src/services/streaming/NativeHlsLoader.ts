@@ -30,7 +30,10 @@ function getHeadersForUrl(url: string): Record<string, string> {
       const urlObj = new URL(url);
       const ref = urlObj.searchParams.get('origin_referer');
       if (ref) {
-        const origin = ref.replace(/\/$/, '');
+        let origin = ref.replace(/\/$/, '');
+        try {
+          origin = new URL(ref).origin;
+        } catch (_) {}
         lastReferer = ref;
         lastOrigin = origin;
         return {
@@ -44,7 +47,10 @@ function getHeadersForUrl(url: string): Record<string, string> {
       const match = url.match(/[?&]origin_referer=([^&]+)/);
       if (match) {
         const ref = decodeURIComponent(match[1]);
-        const origin = ref.replace(/\/$/, '');
+        let origin = ref.replace(/\/$/, '');
+        try {
+          origin = new URL(ref).origin;
+        } catch (_) {}
         lastReferer = ref;
         lastOrigin = origin;
         return {
@@ -78,6 +84,16 @@ function getHeadersForUrl(url: string): Record<string, string> {
       'User-Agent': ua,
       'Referer': 'https://cloudnestra.com/',
       'Origin': 'https://cloudnestra.com',
+      'Accept': '*/*',
+    };
+  }
+  if (url.includes('vidsrc.wtf')) {
+    const ref = lastReferer || 'https://vidsrc.wtf/';
+    const origin = lastOrigin || 'https://vidsrc.wtf';
+    return {
+      'User-Agent': ua,
+      'Referer': ref,
+      'Origin': origin,
       'Accept': '*/*',
     };
   }
@@ -119,7 +135,11 @@ function getHeadersForUrl(url: string): Record<string, string> {
 
 /** Convert a base64 string to an ArrayBuffer */
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
-  const binary = atob(base64);
+  let cleanBase64 = base64;
+  if (base64 && base64.includes(';base64,')) {
+    cleanBase64 = base64.split(';base64,')[1];
+  }
+  const binary = atob(cleanBase64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i);
@@ -171,6 +191,15 @@ export function buildNativeHlsLoader(defaultLoader: any) {
       this.callbacks = callbacks;
 
       const { url } = context;
+      let requestUrl = url;
+      
+      if (url.includes('vodvidl.site') || url.includes('vidlink')) {
+        const cloudProxy = 'https://cinemovie-proxy.abderrahmanchakkouri.workers.dev';
+        const referer = 'https://vidlink.pro/';
+        const origin = 'https://vidlink.pro';
+        requestUrl = `${cloudProxy}/local-proxy?url=${encodeURIComponent(url)}&referer=${encodeURIComponent(referer)}&origin=${encodeURIComponent(origin)}`;
+      }
+
       const headers = getHeadersForUrl(url);
       const isBinary = context.responseType === 'arraybuffer';
 
@@ -178,7 +207,7 @@ export function buildNativeHlsLoader(defaultLoader: any) {
 
       try {
         const response = await CapacitorHttp.get({
-          url,
+          url: requestUrl,
           headers,
           // responseType 'blob' returns base64 on Android native, which we
           // convert to ArrayBuffer for HLS.js binary requests (segments, keys)
@@ -211,7 +240,12 @@ export function buildNativeHlsLoader(defaultLoader: any) {
 
         // Convert base64 blob → ArrayBuffer for binary HLS content
         if (isBinary && typeof data === 'string') {
-          data = base64ToArrayBuffer(data);
+          let cleanBase64 = data;
+          if (data.includes(';base64,')) {
+            cleanBase64 = data.split(';base64,')[1];
+          }
+          const base64Response = await fetch(`data:application/octet-stream;base64,${cleanBase64}`);
+          data = await base64Response.arrayBuffer();
         }
 
         this.stats.loaded = typeof data === 'string' ? data.length : (data as ArrayBuffer).byteLength;

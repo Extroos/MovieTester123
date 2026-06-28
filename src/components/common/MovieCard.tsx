@@ -22,11 +22,7 @@ const MovieCard = React.memo(function MovieCard({ movie, onClick }: MovieCardPro
         WebkitUserSelect: 'none',
         // Reveal animation on mount - Optimized to avoid blur during transition
         animation: 'revealCard 0.5s cubic-bezier(0.16, 1, 0.3, 1) both',
-        transition: 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-        willChange: 'transform, opacity',
       }}
-      onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05) translateY(-5px)'}
-      onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1) translateY(0)'}
     >
       {/* Poster */}
       <div style={{
@@ -89,9 +85,7 @@ const MovieCard = React.memo(function MovieCard({ movie, onClick }: MovieCardPro
             position: 'absolute',
             top: '8px',
             right: '8px',
-            background: 'rgba(15, 15, 15, 0.65)',
-            backdropFilter: 'blur(8px) saturate(180%)',
-            WebkitBackdropFilter: 'blur(8px) saturate(180%)',
+            background: 'rgba(15, 15, 15, 0.9)',
             padding: '5px 9px',
             borderRadius: '10px',
             border: '1px solid rgba(255, 255, 255, 0.15)',

@@ -4,7 +4,22 @@
  */
 
 import type { Movie, TVShow } from '../../types';
-import type { KMMovie, SaltAnime } from './screenscape';
+
+export interface KMMovie {
+  id?: string;
+  title: string;
+  quality?: string;
+  image?: string;
+  url: string;
+}
+
+export interface SaltAnime {
+  rank?: number;
+  title: string;
+  image?: string;
+  url: string;
+  type?: 'movie' | 'series' | string;
+}
 
 // ===== TITLE NORMALIZATION =====
 

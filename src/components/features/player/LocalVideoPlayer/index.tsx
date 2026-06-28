@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Hls from 'hls.js';
 import { buildNativeHlsLoader } from '../../../../services/NativeHlsLoader';
@@ -6,17 +6,20 @@ import { buildNativeHlsLoader } from '../../../../services/NativeHlsLoader';
 import { WatchProgressService } from '../../../../services/progress';
 import type { Movie, TVShow } from '../../../../types';
 import { getLocalServerUrl } from '../../../../services/LocalStreamService';
-import { useOfflineDownloader } from './useOfflineDownloader';
+import { useOfflineDownloader } from '../../downloads/useOfflineDownloader';
 import { usePlayerGestures } from './usePlayerGestures';
 import { PlayerSettings } from './PlayerSettings';
 import { PlayerControls } from './PlayerControls';
-import { Capacitor } from '@capacitor/core';
-import { scrapeVidlinkStream, scrapeVidsrcFallback, scrapeVidifyStream, scrapeVidsrcPmStream } from '../../../../services/ClientScraperService';
+import { Capacitor, registerPlugin } from '@capacitor/core';
+const NativeStreamingEngine = registerPlugin<any>('NativeStreamingEngine');
+import { scrapeVidlinkStream, scrapeVidsrcFallback, scrapeVidifyStream, scrapeVidsrcPmStream, scrapeWtfStream } from '../../../../services/ClientScraperService';
 import { WatchTogetherService, type PartyParticipant, type PartySyncEvent } from '../../../../services/watchTogether';
 import { supabase } from '../../../../services/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { ProfileService } from '../../../../services/profiles';
 import { SettingsService } from '../../../../services/settings';
+
+const IS_MOBILE_DEVICE = typeof window !== 'undefined' && /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
 const formatTime = (seconds: number) => {
   if (!seconds || isNaN(seconds)) return "0:00";
@@ -34,6 +37,15 @@ const getSubtitleProxyUrl = (trackUrl: string): string => {
     return `${localServer}/local-proxy?url=${encodeURIComponent(trackUrl)}&referer=${encodeURIComponent('https://vidlink.pro/')}&origin=${encodeURIComponent('https://vidlink.pro')}`;
   }
   return `/proxy?url=${encodeURIComponent(trackUrl)}&referer=${encodeURIComponent('https://vidlink.pro/')}`;
+};
+
+const getStandardResolutionHeight = (height: number): number => {
+  if (height <= 360) return 360;
+  if (height <= 480) return 480;
+  if (height <= 720) return 720;
+  if (height <= 1080) return 1080;
+  if (height <= 1440) return 1440;
+  return 2160;
 };
 
 interface LocalVideoPlayerProps {
@@ -71,6 +83,10 @@ interface LocalVideoPlayerProps {
   remotePlayerRef: React.RefObject<any>;
   remotePlayerControllerRef: React.RefObject<any>;
   startTime?: number;
+  onTracksChange?: (tracks: any[]) => void;
+  onSubtitleStyleChange?: (style: { size: string, color: string, opacity: number }) => void;
+  onSubtitleDelayChange?: (delay: number) => void;
+  subtitleDelay?: number;
 }
 
 export default function LocalVideoPlayer({
@@ -101,31 +117,51 @@ export default function LocalVideoPlayer({
   startTime,
   isPartyMode = false,
   partySessionId = null,
-  isPartyHost = false
+  isPartyHost = false,
+  onTracksChange,
+  onSubtitleStyleChange,
+  onSubtitleDelayChange
 }: LocalVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [showControls, setShowControls] = useState(true);
+  const showControlsRef = useRef(showControls);
+  useEffect(() => {
+    showControlsRef.current = showControls;
+  }, [showControls]);
   const controlsTimeout = useRef<NodeJS.Timeout | null>(null);
   const lastMouseTapTimeRef = useRef<number>(0);
   const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const progressRef = useRef<{time: number, duration: number}>({time: 0, duration: 0});
   const hlsRef = useRef<Hls | null>(null);
+  const iframeStartTimeRef = useRef<number>(startTime || 0);
+  const iframeLastTickRef = useRef<number>(Date.now());
+  // Throttle timeupdate → setCurrentTime calls to avoid excessive re-renders on mobile
+  const lastTimeUpdateStateRef = useRef<number>(0);
   
   // Dynamic stream / server selector states
   const [currentSrc, setCurrentSrc] = useState(src);
-  const [selectedServer, setSelectedServer] = useState<'vidlink-pro' | 'vidsrc-pm' | 'universal'>('vidlink-pro');
+  const [selectedServer, setSelectedServer] = useState<'vidlink-pro' | 'test-server' | 'vidsrc-sbs' | 'vidsrc-wtf-1' | 'vidsrc-wtf-2' | 'vidsrc-wtf-3' | 'vidsrc-wtf-4' | 'vidsrc-pk' | 'vidsrc-fyi'>(() => {
+    return (localStorage.getItem('selected_server') as any) || 'vidlink-pro';
+  });
   const selectedServerRef = useRef(selectedServer);
   useEffect(() => {
     selectedServerRef.current = selectedServer;
   }, [selectedServer]);
+
+  // Autofocus player container for D-Pad keyboard inputs
+  useEffect(() => {
+    if (containerRef.current) {
+      containerRef.current.focus();
+    }
+  }, []);
 
   const [isSwitchingServer, setIsSwitchingServer] = useState(false);
   const [connectingServerName, setConnectingServerName] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const pendingSeekTimeRef = useRef<number | null>(null);
   const serverSwitchAbortControllerRef = useRef<AbortController | null>(null);
-  const [useNativeLoader, setUseNativeLoader] = useState(false);
+  const [useNativeLoader, setUseNativeLoader] = useState(Capacitor.isNativePlatform());
 
   // Premium In-Player Toast state
   const [playerToast, setPlayerToast] = useState<{ message: string; isError?: boolean } | null>(null);
@@ -135,16 +171,29 @@ export default function LocalVideoPlayer({
 
   // --- Real-Time Co-Watching State ---
   const [partyParticipants, setPartyParticipants] = useState<PartyParticipant[]>([]);
+  
+  const isGuestModeActive = localStorage.getItem('cinemovie_is_guest') === 'true';
+
+
   const partyChannelRef = useRef<RealtimeChannel | null>(null);
   const isRemoteSyncRef = useRef(false); // Prevents echo loops when receiving remote sync events
   const ignoreNextSeekedRef = useRef(false); // Prevents echo loops on received seeks/playback commands
 
+  // Reset selected server to vidlink-pro on mount to ensure it's always the default
+  useEffect(() => {
+    setSelectedServer('vidlink-pro');
+    try {
+      localStorage.setItem('selected_server', 'vidlink-pro');
+    } catch (e) {}
+  }, []);
+
   // Join the real-time sync channel when in party mode
   useEffect(() => {
-    if (!isPartyMode || !partySessionId) return;
+    if (!isPartyMode || !partySessionId || isGuestModeActive) return;
 
     let cancelled = false;
     let handleVisibilityChange: (() => void) | null = null;
+    let syncInterval: NodeJS.Timeout | null = null;
 
     const joinChannel = async () => {
       try {
@@ -162,7 +211,8 @@ export default function LocalVideoPlayer({
           {
             id: user.id,
             name: displayName,
-            avatar: displayAvatar
+            avatar: displayAvatar,
+            isHost: isPartyHost
           },
           // onSyncEvent — apply remote playback commands
           (event: PartySyncEvent) => {
@@ -265,6 +315,13 @@ export default function LocalVideoPlayer({
 
         // Announce and request sync state 800ms after joining/connecting
         setTimeout(requestWatchPartySync, 800);
+
+        // Guest periodic drift sync check interval (polls host time every 8 seconds)
+        syncInterval = setInterval(() => {
+          if (!isPartyHost && videoRef.current && !videoRef.current.paused) {
+            requestWatchPartySync();
+          }
+        }, 8000);
       } catch (err) {
         console.error('[LocalVideoPlayer] Failed to join watch party channel:', err);
       }
@@ -276,6 +333,9 @@ export default function LocalVideoPlayer({
       cancelled = true;
       if (handleVisibilityChange) {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
+      if (syncInterval) {
+        clearInterval(syncInterval);
       }
       WatchTogetherService.leaveChannel(partyChannelRef.current);
       partyChannelRef.current = null;
@@ -289,6 +349,35 @@ export default function LocalVideoPlayer({
       return () => clearTimeout(timer);
     }
   }, [playerToast]);
+
+  // Refocus parent window/container when controls hide in iframe fallback mode,
+  // so that the next user click/tap inside the iframe will trigger a blur event and show controls.
+  useEffect(() => {
+    if ((iframeFallback || !!embedServer) && !showControls) {
+      window.focus();
+      if (containerRef.current) {
+        containerRef.current.focus();
+      }
+    }
+  }, [showControls, iframeFallback, embedServer]);
+
+  // Listen for focus moving to the iframe player (window blur event)
+  useEffect(() => {
+    if (!(iframeFallback || !!embedServer)) return;
+
+    const handleWindowBlur = () => {
+      setTimeout(() => {
+        if (document.activeElement && document.activeElement.tagName === 'IFRAME') {
+          setShowControls(true);
+        }
+      }, 100);
+    };
+
+    window.addEventListener('blur', handleWindowBlur);
+    return () => {
+      window.removeEventListener('blur', handleWindowBlur);
+    };
+  }, [iframeFallback, embedServer]);
 
   const {
     isDownloading,
@@ -312,10 +401,38 @@ export default function LocalVideoPlayer({
     setUseNativeLoader(false);
   }, [currentSrc]);
 
+  useEffect(() => {
+    const handleProgressMessage = (event: MessageEvent) => {
+      if (!event.origin.includes('vidsrc.wtf')) return;
+      if (event.data?.type === "MEDIA_DATA") {
+        const mediaData = event.data.data;
+        if (mediaData && mediaData.progress && item) {
+          const watched = parseFloat(mediaData.progress.watched);
+          const duration = parseFloat(mediaData.progress.duration);
+          if (!isNaN(watched) && !isNaN(duration) && duration > 0) {
+            console.log(`[Player WTF Progress] Synced progress: ${watched}/${duration}`);
+            WatchProgressService.saveProgress(item, watched, duration, season, episode);
+          }
+        }
+      }
+    };
+
+    window.addEventListener("message", handleProgressMessage);
+    return () => window.removeEventListener("message", handleProgressMessage);
+  }, [item, season, episode]);
+
   const SERVER_DISPLAY_NAMES: Record<string, string> = {
     'vidlink-pro': 'Vidlink Pro',
+    'test-server': 'Test Server',
     'vidsrc-pm': 'VidSrc PM (.m3u8)',
-    'universal': 'Universal Player (.m3u8)'
+    'universal': 'Universal Player (.m3u8)',
+    'vidsrc-sbs': 'VidSrc SBS',
+    'vidsrc-wtf-1': 'VidSrc WTF (Multi Server)',
+    'vidsrc-wtf-2': 'VidSrc WTF (Multi Language)',
+    'vidsrc-wtf-3': 'VidSrc WTF (Multi Embed)',
+    'vidsrc-wtf-4': 'VidSrc WTF (Premium)',
+    'vidsrc-pk': 'VidSrc PK',
+    'vidsrc-fyi': 'VidSrc FYI'
   };
 
 
@@ -330,10 +447,10 @@ export default function LocalVideoPlayer({
     setShowSettings(true);
   };
 
-  const handleServerChange = async (serverId: 'vidlink-pro' | 'vidsrc-pm' | 'universal') => {
+  const handleServerChange = async (serverId: 'vidlink-pro' | 'vidsrc-sbs' | 'vidsrc-wtf-1' | 'vidsrc-wtf-2' | 'vidsrc-wtf-3' | 'vidsrc-wtf-4' | 'vidsrc-pk' | 'vidsrc-fyi' | 'test-server') => {
 
-    if (isOfflineMode) {
-      setPlayerToast({ message: 'You are watching in offline mode. Server switching is not available.', isError: true });
+    if (isOfflineMode || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+      setPlayerToast({ message: 'You are offline. Server switching is not available.', isError: true });
       return;
     }
 
@@ -344,16 +461,37 @@ export default function LocalVideoPlayer({
     const controller = new AbortController();
     serverSwitchAbortControllerRef.current = controller;
 
+    const timeoutId = setTimeout(() => {
+      console.warn(`[LocalVideoPlayer] Server switch to ${serverId} timed out. Aborting.`);
+      controller.abort();
+    }, 8000);
+
+    const iframeServers = ['vidsrc-wtf-1', 'vidsrc-wtf-3', 'vidsrc-wtf-4'];
+    if (iframeServers.includes(serverId)) {
+      import('../../../../utils/haptics').then(m => m.triggerHaptic('medium'));
+      setSelectedServer(serverId);
+      setIframeFallback(true);
+      setEmbedServer(serverId);
+      setIsSwitchingServer(false);
+      setIsInitialLoading(false);
+      setShowSettings(false);
+      return;
+    }
+
     import('../../../../utils/haptics').then(m => m.triggerHaptic('medium'));
     setSelectedServer(serverId);
+    try {
+      localStorage.setItem('selected_server', serverId);
+    } catch(e) {}
     setIframeFallback(false);
     setEmbedServer(null);
 
 
     setIsSwitchingServer(true);
-    setIsInitialLoading(true);
     setConnectingServerName(SERVER_DISPLAY_NAMES[serverId] || serverId);
     setServerError(null);
+    setVidlinkDiagnostics(null);
+    setTestServerDiagnostics(null);
     setShowSettings(false);
     setCurrentSrc("");
 
@@ -395,32 +533,133 @@ export default function LocalVideoPlayer({
 
       // On native mobile, all three scrapers run directly from the phone.
       // Segment Referer headers are injected natively by NativeHlsLoader — cloudnestra CDN is bypassed.
-      if (Capacitor.isNativePlatform()) {
+      if (Capacitor.isNativePlatform() && (serverId === 'vidlink-pro' || (serverId as any) === 'vidsrc-pm' || serverId === 'vidsrc-sbs' || serverId === 'vidsrc-wtf-2' || serverId === 'vidsrc-pk' || serverId === 'vidsrc-fyi' || serverId === 'test-server')) {
         console.log(`[LocalVideoPlayer] Client-side server switch on native mobile: Resolving ${serverId} for ${tmdbId}...`);
         try {
-          if (serverId === 'vidlink-pro') {
-            data = await scrapeVidlinkStream(String(tmdbId), type, season, episode, 'https://vidlink.pro');
-            setVidlinkDiagnostics("Success: resolved stream sources successfully.");
-          } else if (serverId === 'vidsrc-pm') {
-            const imdbId = (item as any)?.imdbId || (item as any)?.imdb_id;
-            const idToUse = (type === 'movie' && imdbId) ? imdbId : String(tmdbId);
-            data = await scrapeVidsrcPmStream(idToUse, type, season, episode);
-          } else if (serverId === 'universal') {
+          if (serverId === 'test-server') {
+            const res = await NativeStreamingEngine.resolveStreams({
+              tmdbId: String(tmdbId),
+              type: type,
+              season: season || 1,
+              episode: episode || 1,
+              localServer: localServer
+            });
+            const sources = res.sources || [];
+            if (sources.length === 0) {
+              const errStr = res.errors && res.errors.length > 0 ? res.errors.join(' | ') : "No streams resolved by test-server";
+              setTestServerDiagnostics(`Failed: ${errStr}. Raw: ${JSON.stringify(res)}`);
+              throw new Error(errStr);
+            }
+            setTestServerDiagnostics(`Success: resolved ${sources.length} sources.`);
+
+            let proxyPort = 8000;
             try {
-              console.log("[LocalVideoPlayer] Universal server: trying Client VidSrc scraper...");
-              const imdbId = (item as any)?.imdbId || (item as any)?.imdb_id;
-              const idToUse = (type === 'movie' && imdbId) ? imdbId : String(tmdbId);
-              data = await scrapeVidsrcFallback(idToUse, type === 'tv', season, episode);
-            } catch (vidsrcErr) {
-              console.warn("[LocalVideoPlayer] Client VidSrc failed, trying Client Vidify scraper...", vidsrcErr);
-              data = await scrapeVidifyStream(String(tmdbId), type === 'tv', season, episode);
+              const portRes = await NativeStreamingEngine.getProxyPort();
+              if (portRes && portRes.port) {
+                proxyPort = portRes.port;
+              }
+            } catch (e) {
+              console.warn('[LocalVideoPlayer] Failed to get dynamic proxy port, fallback to 8000', e);
+            }
+            
+            data = {
+              sources: sources.map((src: any) => {
+                const referer = src.headers?.Referer || src.headers?.referer || '';
+                const origin = src.headers?.Origin || src.headers?.origin || '';
+                const pcHost = Capacitor.isNativePlatform() ? 'localhost' : (() => {
+                  let host = 'localhost';
+                  try {
+                    const urlObj = new URL(localServer);
+                    host = urlObj.hostname;
+                  } catch (e) {
+                    if (localServer.includes('://')) {
+                      host = localServer.split('://')[1].split(':')[0];
+                    }
+                  }
+                  return host;
+                })();
+                // Hls.js/Html5 Video requires proxy wrapping to pass custom headers on segment loads
+                const proxiedUrl = `http://${pcHost}:${proxyPort}/local-proxy?url=${encodeURIComponent(src.url)}&referer=${encodeURIComponent(referer)}&origin=${encodeURIComponent(origin)}`;
+                return {
+                  url: proxiedUrl,
+                  quality: src.quality || 'auto',
+                  isM3U8: src.isM3U8 || src.url.includes('.m3u8')
+                };
+              }),
+              subtitles: res.subtitles || []
+            };
+          } else if (serverId === 'vidlink-pro') {
+            if (Capacitor.isNativePlatform()) {
+              console.log(`[LocalVideoPlayer] Resolving Vidlink S${season}E${episode} natively on Android...`);
+              const nativeRes = await NativeStreamingEngine.resolveVidlink({
+                tmdbId: String(tmdbId),
+                imdbId: (item as any)?.imdbId || (item as any)?.imdb_id || '',
+                type: type,
+                season: season,
+                episode: episode
+              });
+              data = {
+                sources: (nativeRes.sources || []).map((s: any) => ({
+                  url: s.url,
+                  quality: s.quality || 'auto',
+                  isM3U8: s.isM3U8
+                })),
+                subtitles: (nativeRes.subtitles || []).map((s: any) => ({
+                  url: s.url,
+                  lang: s.lang || 'Unknown',
+                  isBackup: !!s.isBackup
+                }))
+              };
+            } else {
+              data = await scrapeVidlinkStream(String(tmdbId), type, season, episode, 'https://vidlink.pro');
+            }
+            setVidlinkDiagnostics("Success: resolved stream sources successfully.");
+          } else if ((serverId as any) === 'vidsrc-pm') {
+            data = await scrapeVidsrcPmStream(String(tmdbId), type, season, episode);
+          } else if (serverId === 'vidsrc-wtf-2') {
+            const result = await scrapeWtfStream(String(tmdbId), 'wtf-2', null, isTV, season, episode);
+            if (result && result.ok && result.data && Array.isArray(result.data.streams)) {
+              const streams = result.data.streams.map((stream: any, idx: number) => {
+                const ref = stream.headers?.Referer || 'https://vidsrc.wtf/';
+                const delimiter = stream.url.includes('?') ? '&' : '?';
+                const markedUrl = `${stream.url}${delimiter}origin_referer=${encodeURIComponent(ref)}`;
+                return {
+                  url: markedUrl,
+                  quality: stream.language || `Stream ${idx + 1}`,
+                  isM3U8: stream.type === 'hls' || stream.url.includes('.m3u8')
+                };
+              });
+              data = { sources: streams, subtitles: [] };
+            } else {
+              throw new Error(result?.error || "Resolution returned empty streams");
+            }
+          } else {
+            // vidsrc-sbs, vidsrc-pk, vidsrc-fyi: all use wtf-1 decryption natively
+            const result = await scrapeWtfStream(String(tmdbId), 'wtf-1', null, isTV, season, episode);
+            if (result && result.ok && result.data && result.data.stream) {
+              const streamUrl = result.data.stream.url;
+              const ref = 'https://vidsrc.wtf/';
+              const delimiter = streamUrl.includes('?') ? '&' : '?';
+              const markedUrl = `${streamUrl}${delimiter}origin_referer=${encodeURIComponent(ref)}`;
+              data = {
+                sources: [{
+                  url: markedUrl,
+                  quality: 'auto',
+                  isM3U8: true
+                }],
+                subtitles: []
+              };
+            } else {
+              throw new Error(result?.error || "Resolution returned empty stream");
             }
           }
-
         } catch (scrapingErr: any) {
           console.warn(`[LocalVideoPlayer] Native client resolution error for ${serverId}:`, scrapingErr.message);
-          if (serverId === 'vidlink-pro') {
+          if (serverId === 'vidlink-pro' && !vidlinkDiagnostics) {
             setVidlinkDiagnostics(scrapingErr.message);
+          }
+          if (serverId === 'test-server' && !testServerDiagnostics) {
+            setTestServerDiagnostics(scrapingErr.message);
           }
           throw scrapingErr;
         }
@@ -429,11 +668,16 @@ export default function LocalVideoPlayer({
           bestSource = data.sources[0].url;
           setAvailableSources(data.sources);
           setServerAvailableSources(prev => ({ ...prev, [serverId]: data.sources }));
-          if (!data.sources[0].isM3U8) {
-            const directQualities = data.sources.map((s: any, idx: number) => ({
-              height: parseInt(s.quality) || 1080,
-              index: idx
-            }));
+          if (data.sources.length > 1 || !data.sources[0].isM3U8) {
+            const directQualities = data.sources.map((s: any, idx: number) => {
+              const isHeight = !isNaN(parseInt(s.quality));
+              const normHeight = isHeight ? getStandardResolutionHeight(parseInt(s.quality)) : undefined;
+              return {
+                height: normHeight,
+                label: isHeight ? `${normHeight}p` : (s.quality || `Source ${idx + 1}`),
+                index: idx
+              };
+            });
             setQualities(directQualities);
             setServerQualities(prev => ({ ...prev, [serverId]: directQualities }));
             setCurrentQuality(0);
@@ -448,7 +692,7 @@ export default function LocalVideoPlayer({
 
       } else {
         // On web/desktop, route through the Express server proxy.
-        let watchUrl = `${localServer}/meta/tmdb/watch/${tmdbId}?type=${type}&server=${serverId === 'universal' ? 'auto' : serverId}&title=${encodeURIComponent(titleToUse)}`;
+        let watchUrl = `${localServer}/meta/tmdb/watch/${tmdbId}?type=${type}&server=${serverId}&title=${encodeURIComponent(titleToUse)}`;
         if (isTV) {
           watchUrl += `&s=${season}&e=${episode}`;
         }
@@ -475,11 +719,16 @@ export default function LocalVideoPlayer({
           if (data.sources && Array.isArray(data.sources) && data.sources.length > 0) {
             setAvailableSources(data.sources);
             setServerAvailableSources(prev => ({ ...prev, [serverId]: data.sources }));
-            if (!data.sources[0].isM3U8) {
-              const directQualities = data.sources.map((s: any, idx: number) => ({
-                height: parseInt(s.quality) || 1080,
-                index: idx
-              }));
+            if (data.sources.length > 1 || !data.sources[0].isM3U8) {
+              const directQualities = data.sources.map((s: any, idx: number) => {
+                const isHeight = !isNaN(parseInt(s.quality));
+                const normHeight = isHeight ? getStandardResolutionHeight(parseInt(s.quality)) : undefined;
+                return {
+                  height: normHeight,
+                  label: isHeight ? `${normHeight}p` : (s.quality || `Source ${idx + 1}`),
+                  index: idx
+                };
+              });
               setQualities(directQualities);
               setServerQualities(prev => ({ ...prev, [serverId]: directQualities }));
               setCurrentQuality(0);
@@ -515,18 +764,46 @@ export default function LocalVideoPlayer({
         throw new Error('No streaming sources found. The server may be temporarily unavailable.');
       }
 
-      console.log('[LocalVideoPlayer] Successfully resolved server stream:', bestSource);
-      setCurrentSrc(bestSource);
+      let finalSrc = bestSource;
+      const isExternal = bestSource.startsWith('http') && !bestSource.includes('localhost') && !bestSource.includes('127.0.0.1') && !bestSource.includes('local-proxy');
+      
+      if (isExternal) {
+        let refToUse = 'https://vidlink.pro/';
+        let origToUse = 'https://vidlink.pro';
+        try {
+          const parsed = new URL(bestSource);
+          const origRef = parsed.searchParams.get('origin_referer') || parsed.searchParams.get('referer');
+          if (origRef) {
+            refToUse = origRef;
+            const parsedRef = new URL(origRef);
+            origToUse = parsedRef.origin;
+          }
+        } catch (e) {}
+
+        if (Capacitor.isNativePlatform()) {
+          // Standalone mobile APK routes through Cloud Proxy to inject headers and bypass CORS/referer blocks
+          const cloudProxy = 'https://cinemovie-proxy.abderrahmanchakkouri.workers.dev';
+          finalSrc = `${cloudProxy}/local-proxy?url=${encodeURIComponent(bestSource)}&referer=${encodeURIComponent(refToUse)}&origin=${encodeURIComponent(origToUse)}`;
+        } else {
+          // PC Web routes through local Node server proxy
+          const localServer = getLocalServerUrl();
+          finalSrc = `${localServer}/local-proxy?url=${encodeURIComponent(bestSource)}&referer=${encodeURIComponent(refToUse)}&origin=${encodeURIComponent(origToUse)}`;
+        }
+      }
+
+      console.log('[LocalVideoPlayer] Successfully resolved server stream:', finalSrc);
+      setCurrentSrc(finalSrc);
       if (onSourceChange) {
-        onSourceChange(bestSource);
+        onSourceChange(finalSrc);
       }
       
       if (data.subtitles && Array.isArray(data.subtitles) && data.subtitles.length > 0) {
         const newTracks = data.subtitles.map((sub: any) => ({
           file: sub.url,
-          label: sub.lang || 'Unknown',
+          label: sub.label || sub.lang || 'Unknown',
           kind: 'subtitles',
-          default: (sub.lang || '').toLowerCase().includes('english')
+          default: (sub.lang || '').toLowerCase().includes('english') && !sub.isBackup,
+          isBackup: !!sub.isBackup
         }));
         const defaultIndex = newTracks.findIndex((t: any) => t.default);
         setServerSubtitleTracks(prev => ({
@@ -538,7 +815,7 @@ export default function LocalVideoPlayer({
           [serverId]: defaultIndex !== -1 ? defaultIndex : -1
         }));
       } else {
-        const imdbId = (item as any)?.imdbId;
+        const imdbId = (item as any)?.imdbId || (item as any)?.imdb_id;
         if (type === 'movie' && imdbId) {
           try {
             console.log('[LocalVideoPlayer] Server returned empty subtitles. Fetching YTS subtitles automatically...');
@@ -571,19 +848,31 @@ export default function LocalVideoPlayer({
         }
       }
       
-      setShowSettings(false);
+      if (serverId === 'vidsrc-wtf-2') {
+        setSettingsTab('quality');
+        setShowSettings(true);
+      } else {
+        setShowSettings(false);
+      }
       resetControlsTimeout();
     } catch (err: any) {
       if (err.name === 'AbortError') {
-        console.log('[LocalVideoPlayer] Server switch fetch aborted.');
-        return;
+        console.warn('[LocalVideoPlayer] Server switch fetch timed out or was aborted.');
+        const msg = 'Connection timed out. The streaming server is taking too long to respond.';
+        setServerError(msg);
+        if (serverId === 'vidlink-pro') setVidlinkDiagnostics(msg);
+      } else {
+        console.error('[LocalVideoPlayer] Failed to switch server:', err);
+        setServerError(err.message || 'Resolution failed. Please try another server.');
+        if (serverId === 'vidlink-pro' && !vidlinkDiagnostics) setVidlinkDiagnostics(err.message || 'Resolution failed.');
+        if (serverId === 'test-server' && !testServerDiagnostics) setTestServerDiagnostics(err.message || 'Resolution failed.');
       }
-      console.error('[LocalVideoPlayer] Failed to switch server:', err);
-      setServerError(err.message || 'Resolution failed. Please try another server.');
+      setSettingsTab('servers');
       setShowSettings(true);
       setIsInitialLoading(false);
       setIsSwitchingServer(false);
     } finally {
+      clearTimeout(timeoutId);
       if (!controller.signal.aborted) {
         setIsSwitchingServer(false);
         setConnectingServerName(null);
@@ -592,9 +881,12 @@ export default function LocalVideoPlayer({
   };
 
   const triggerAutoFailover = () => {
-    if (isOfflineMode) return;
-    const servers: ('vidlink-pro' | 'vidsrc-pm' | 'universal')[] = ['vidlink-pro', 'vidsrc-pm', 'universal'];
-    const currentIndex = servers.indexOf(selectedServer);
+    if (isOfflineMode || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+      setPlayerToast({ message: 'Playback failed. You are currently offline.', isError: true });
+      return;
+    }
+    const servers: ('vidlink-pro' | 'vidsrc-sbs' | 'vidsrc-wtf-1' | 'vidsrc-wtf-2' | 'vidsrc-wtf-3' | 'vidsrc-wtf-4' | 'vidsrc-pk' | 'vidsrc-fyi')[] = ['vidlink-pro', 'vidsrc-wtf-2', 'vidsrc-sbs', 'vidsrc-pk', 'vidsrc-fyi'];
+    const currentIndex = servers.indexOf(selectedServer as any);
     const nextIndex = currentIndex + 1;
     if (nextIndex < servers.length) {
       const nextServer = servers[nextIndex];
@@ -611,6 +903,15 @@ export default function LocalVideoPlayer({
         isError: true
       });
       console.log('[LocalVideoPlayer] Playback auto-failover: All servers exhausted. Triggering iframeFallback.');
+      
+      if (item && videoRef.current) {
+        const finalTime = videoRef.current.currentTime;
+        const finalDuration = videoRef.current.duration;
+        if (finalTime > 0 && finalDuration > 0) {
+          WatchProgressService.saveProgress(item, finalTime, finalDuration, season, episode);
+        }
+      }
+
       setIframeFallback(true);
     }
   };
@@ -626,34 +927,75 @@ export default function LocalVideoPlayer({
   const [subtitleError, setSubtitleError] = useState<string | null>(null);
   const [lastAttemptedTrack, setLastAttemptedTrack] = useState<{ file: string; label: string; kind: string; default?: boolean } | null>(null);
   const [vidlinkDiagnostics, setVidlinkDiagnostics] = useState<string | null>(null);
+  const [testServerDiagnostics, setTestServerDiagnostics] = useState<string | null>(null);
 
   // Server subtitle settings memory
   const [serverSubtitleTracks, setServerSubtitleTracks] = useState<Record<string, { file: string; label: string; kind: string; default?: boolean }[]>>({
     'vidlink-pro': [],
     'vidsrc-pm': [],
-    'universal': []
+    'universal': [],
+    'vidsrc-sbs': [],
+    'vidsrc-wtf-1': [],
+    'vidsrc-wtf-2': [],
+    'vidsrc-wtf-3': [],
+    'vidsrc-wtf-4': [],
+    'vidsrc-pk': [],
+    'vidsrc-fyi': [],
+    'test-server': []
   });
   const [serverActiveTrackIndices, setServerActiveTrackIndices] = useState<Record<string, number>>({
     'vidlink-pro': -1,
     'vidsrc-pm': -1,
-    'universal': -1
+    'universal': -1,
+    'vidsrc-sbs': -1,
+    'vidsrc-wtf-1': -1,
+    'vidsrc-wtf-2': -1,
+    'vidsrc-wtf-3': -1,
+    'vidsrc-wtf-4': -1,
+    'vidsrc-pk': -1,
+    'vidsrc-fyi': -1,
+    'test-server': -1
   });
 
   // Server qualities and sources memory
   const [serverQualities, setServerQualities] = useState<Record<string, {height: number, index: number}[]>>({
     'vidlink-pro': [],
     'vidsrc-pm': [],
-    'universal': []
+    'universal': [],
+    'vidsrc-sbs': [],
+    'vidsrc-wtf-1': [],
+    'vidsrc-wtf-2': [],
+    'vidsrc-wtf-3': [],
+    'vidsrc-wtf-4': [],
+    'vidsrc-pk': [],
+    'vidsrc-fyi': [],
+    'test-server': []
   });
   const [serverCurrentQuality, setServerCurrentQuality] = useState<Record<string, number>>({
     'vidlink-pro': -1,
     'vidsrc-pm': -1,
-    'universal': -1
+    'universal': -1,
+    'vidsrc-sbs': -1,
+    'vidsrc-wtf-1': -1,
+    'vidsrc-wtf-2': -1,
+    'vidsrc-wtf-3': -1,
+    'vidsrc-wtf-4': -1,
+    'vidsrc-pk': -1,
+    'vidsrc-fyi': -1,
+    'test-server': -1
   });
   const [serverAvailableSources, setServerAvailableSources] = useState<Record<string, {url: string; quality: string; isM3U8: boolean}[]>>({
     'vidlink-pro': [],
     'vidsrc-pm': [],
-    'universal': []
+    'universal': [],
+    'vidsrc-sbs': [],
+    'vidsrc-wtf-1': [],
+    'vidsrc-wtf-2': [],
+    'vidsrc-wtf-3': [],
+    'vidsrc-wtf-4': [],
+    'vidsrc-pk': [],
+    'vidsrc-fyi': [],
+    'test-server': []
   });
 
   // Synchronize server-isolated settings to local active states on server switch
@@ -668,11 +1010,142 @@ export default function LocalVideoPlayer({
 
 
   // Subtitle styling customizations
-  const [subtitleSize, setSubtitleSize] = useState<'small' | 'normal' | 'large' | 'xlarge'>('normal');
-  const [subtitleColor, setSubtitleColor] = useState<string>('#ffffff');
-  const [subtitleBgOpacity, setSubtitleBgOpacity] = useState<number>(0.6);
-  const [subtitleDelay, setSubtitleDelay] = useState<number>(0);
-  const [subtitlePosition, setSubtitlePosition] = useState<number>(-40);
+  const [subtitleSize, setSubtitleSize] = useState<'small' | 'normal' | 'large' | 'xlarge'>(() => {
+    const s = SettingsService.get('subtitleSize');
+    if (s === 'medium') return 'normal';
+    return (s as any) || 'normal';
+  });
+  const [subtitleColor, setSubtitleColor] = useState<string>(
+    () => SettingsService.get('subtitleColor') || '#ffffff'
+  );
+  const [subtitleBgOpacity, setSubtitleBgOpacity] = useState<number>(
+    () => {
+      const v = SettingsService.get('subtitleBgOpacity');
+      return v !== undefined ? v : 0.6;
+    }
+  );
+  const [subtitleDelay, setSubtitleDelay] = useState<number>(
+    () => {
+      const saved = localStorage.getItem('cinemovie_subtitle_delay');
+      return saved !== null ? parseFloat(saved) : 0;
+    }
+  );
+  const [subtitlePosition, setSubtitlePosition] = useState<number>(
+    () => {
+      const saved = localStorage.getItem('cinemovie_subtitle_position');
+      return saved !== null ? parseFloat(saved) : -40;
+    }
+  );
+
+  useEffect(() => {
+    const handleSettingsChange = (e: any) => {
+      const { key, value } = e.detail || {};
+      if (key === 'subtitleSize') {
+        setSubtitleSize(value === 'medium' ? 'normal' : value);
+      } else if (key === 'subtitleColor') {
+        setSubtitleColor(value);
+      } else if (key === 'subtitleBgOpacity') {
+        setSubtitleBgOpacity(value);
+      }
+    };
+    window.addEventListener('settingsChanged', handleSettingsChange);
+    return () => window.removeEventListener('settingsChanged', handleSettingsChange);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('cinemovie_subtitle_size', subtitleSize);
+    const settingsVal = subtitleSize === 'normal' ? 'medium' : subtitleSize;
+    if (SettingsService.get('subtitleSize') !== settingsVal) {
+      SettingsService.set('subtitleSize', settingsVal as any);
+    }
+  }, [subtitleSize]);
+
+  useEffect(() => {
+    localStorage.setItem('cinemovie_subtitle_color', subtitleColor);
+    if (SettingsService.get('subtitleColor') !== subtitleColor) {
+      SettingsService.set('subtitleColor', subtitleColor);
+    }
+  }, [subtitleColor]);
+
+  useEffect(() => {
+    localStorage.setItem('cinemovie_subtitle_bg_opacity', String(subtitleBgOpacity));
+    if (SettingsService.get('subtitleBgOpacity') !== subtitleBgOpacity) {
+      SettingsService.set('subtitleBgOpacity', subtitleBgOpacity);
+    }
+  }, [subtitleBgOpacity]);
+
+  useEffect(() => {
+    localStorage.setItem('cinemovie_subtitle_delay', String(subtitleDelay));
+  }, [subtitleDelay]);
+
+  useEffect(() => {
+    localStorage.setItem('cinemovie_subtitle_position', String(subtitlePosition));
+  }, [subtitlePosition]);
+
+  const forceSubtitleRedraw = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    const trackElement = video.querySelector('track');
+    const track = trackElement ? trackElement.track : null;
+    if (track) {
+      const currentMode = track.mode;
+      track.mode = 'hidden';
+      requestAnimationFrame(() => {
+        if (videoRef.current) {
+          track.mode = currentMode;
+        }
+      });
+    }
+    if (video.textTracks && video.textTracks.length > 0) {
+      for (let i = 0; i < video.textTracks.length; i++) {
+        const textTrack = video.textTracks[i];
+        if (textTrack.mode === 'showing') {
+          textTrack.mode = 'hidden';
+          (function(t) {
+            requestAnimationFrame(() => {
+              t.mode = 'showing';
+            });
+          })(textTrack);
+        }
+      }
+    }
+  };
+
+  // Synchronize CSS custom properties to documentElement so video::cue can resolve them globally
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty('--subtitle-bg-opacity', String(subtitleBgOpacity));
+    root.style.setProperty('--subtitle-color', subtitleColor);
+    root.style.setProperty('--subtitle-font-size', 
+      subtitleSize === 'small' ? '0.9rem' : 
+      subtitleSize === 'normal' ? '1.1rem' : 
+      subtitleSize === 'large' ? '1.3rem' : '1.6rem'
+    );
+    root.style.setProperty('--subtitle-position', `${subtitlePosition - (showControls ? 85 : 0)}px`);
+    // Only force subtitle redraw when actual subtitle style settings change,
+    // not when showControls toggles — the redraw is expensive on Android WebView.
+  }, [subtitleBgOpacity, subtitleColor, subtitleSize, subtitlePosition, showControls]);
+
+  // Separate effect for subtitle redraw only when subtitle *style* props change
+  useEffect(() => {
+    forceSubtitleRedraw();
+  }, [subtitleBgOpacity, subtitleColor, subtitleSize, subtitlePosition]);
+
+  useEffect(() => {
+    if (onSubtitleStyleChange) {
+      onSubtitleStyleChange({
+        size: subtitleSize,
+        color: subtitleColor,
+        opacity: subtitleBgOpacity
+      });
+    }
+  }, [subtitleSize, subtitleColor, subtitleBgOpacity, onSubtitleStyleChange]);
+
+  useEffect(() => {
+    if (onSubtitleDelayChange) {
+      onSubtitleDelayChange(subtitleDelay);
+    }
+  }, [subtitleDelay, onSubtitleDelayChange]);
 
   const applySubtitleDelay = (delay: number) => {
     const video = videoRef.current;
@@ -705,30 +1178,122 @@ export default function LocalVideoPlayer({
 
   useEffect(() => {
     const initTracks = async () => {
+      const servers: ('vidlink-pro' | 'test-server' | 'vidsrc-sbs' | 'vidsrc-wtf-1' | 'vidsrc-wtf-2' | 'vidsrc-wtf-3' | 'vidsrc-wtf-4' | 'vidsrc-pk' | 'vidsrc-fyi')[] = [
+        'vidlink-pro', 'test-server', 'vidsrc-sbs', 'vidsrc-wtf-1', 'vidsrc-wtf-2', 'vidsrc-wtf-3', 'vidsrc-wtf-4', 'vidsrc-pk', 'vidsrc-fyi'
+      ];
       if (tracks && tracks.length > 0) {
         const defaultIndex = tracks.findIndex(t => t.default);
+        const tracksObj: Record<string, typeof tracks> = {};
+        const indicesObj: Record<string, number> = {};
+        servers.forEach(s => {
+          tracksObj[s] = tracks;
+          indicesObj[s] = defaultIndex !== -1 ? defaultIndex : -1;
+        });
         setServerSubtitleTracks(prev => ({
           ...prev,
-          'vidlink-pro': tracks
+          ...tracksObj
         }));
         setServerActiveTrackIndices(prev => ({
           ...prev,
-          'vidlink-pro': defaultIndex !== -1 ? defaultIndex : -1
+          ...indicesObj
         }));
       } else {
+        const tracksObj: Record<string, any[]> = {};
+        const indicesObj: Record<string, number> = {};
+        servers.forEach(s => {
+          tracksObj[s] = [];
+          indicesObj[s] = -1;
+        });
         setServerSubtitleTracks(prev => ({
           ...prev,
-          'vidlink-pro': []
+          ...tracksObj
         }));
         setServerActiveTrackIndices(prev => ({
           ...prev,
-          'vidlink-pro': -1
+          ...indicesObj
         }));
       }
     };
     
     initTracks();
   }, [tracks]);
+
+  const getLangCodeForSearch = (preferredSub: string): string => {
+    const normalized = preferredSub.toLowerCase().trim();
+    const directMatch = LANGUAGES.find(l => l.code === normalized || l.name.toLowerCase() === normalized);
+    if (directMatch) return directMatch.code;
+    const subMatch = LANGUAGES.find(l => normalized.includes(l.name.toLowerCase()) || l.name.toLowerCase().includes(normalized));
+    if (subMatch) return subMatch.code;
+    if (normalized.startsWith('en')) return 'en';
+    if (normalized.startsWith('es') || normalized.includes('span')) return 'es';
+    if (normalized.startsWith('fr') || normalized.includes('fren')) return 'fr';
+    if (normalized.startsWith('ar')) return 'ar';
+    if (normalized.startsWith('pt') || normalized.includes('port')) return 'pt';
+    if (normalized.startsWith('de') || normalized.includes('germ')) return 'de';
+    if (normalized.startsWith('it') || normalized.includes('ital')) return 'it';
+    if (normalized.startsWith('ru') || normalized.includes('russ')) return 'ru';
+    if (normalized.startsWith('zh') || normalized.includes('chin')) return 'zh';
+    if (normalized.startsWith('tr') || normalized.includes('turk')) return 'tr';
+    return 'en';
+  };
+
+  const autoSearchAttemptedRef = useRef<Record<string, boolean>>({});
+
+  // Auto-apply saved preferred subtitle or search it online
+  useEffect(() => {
+    const preferredSub = localStorage.getItem('cinemovie_preferred_subtitle_lang');
+    if (!preferredSub || preferredSub === 'none') return;
+
+    if (localTracks.length > 0) {
+      const preferredIndex = localTracks.findIndex(t => 
+        t.label && (
+          t.label.toLowerCase() === preferredSub.toLowerCase() ||
+          t.label.toLowerCase().includes(preferredSub.toLowerCase()) ||
+          preferredSub.toLowerCase().includes(t.label.toLowerCase()) ||
+          (preferredSub.toLowerCase() === 'en' && t.label.toLowerCase().startsWith('en')) ||
+          (preferredSub.toLowerCase().startsWith('en') && t.label.toLowerCase() === 'english')
+        )
+      );
+
+      if (preferredIndex !== -1) {
+        if (preferredIndex !== activeTrackIndex) {
+          console.log(`[LocalVideoPlayer] Automatically selecting preferred subtitle track: ${localTracks[preferredIndex].label}`);
+          handleTrackSelect(preferredIndex);
+        }
+        return; // Found and selected a local track, no need to query online
+      }
+    }
+
+    if (!isOfflineMode) {
+      const autoSearchKey = `${item?.id}_${preferredSub}`;
+      if (autoSearchAttemptedRef.current[autoSearchKey]) return;
+      autoSearchAttemptedRef.current[autoSearchKey] = true;
+
+      console.log(`[LocalVideoPlayer] Preferred subtitle "${preferredSub}" not found in local tracks or local tracks is empty. Triggering online search...`);
+      const searchLangCode = getLangCodeForSearch(preferredSub);
+      
+      const isTV = !!season || !!episode;
+      let provider: 'yify' | 'opensubtitles' | 'subdl' = 'yify';
+      if (isTV) {
+        provider = subdlKey.trim() ? 'subdl' : 'opensubtitles';
+      } else {
+        provider = subdlKey.trim() ? 'subdl' : 'yify';
+      }
+
+      setSearchLang(searchLangCode);
+      setOnlineProvider(provider);
+
+      handleOnlineSubtitleSearch(provider, searchLangCode).then((results) => {
+        if (results && Array.isArray(results) && results.length > 0) {
+          // Auto-download the first/best subtitle result
+          console.log(`[LocalVideoPlayer] Auto-downloading best matching online subtitle from ${provider}:`, results[0]);
+          handleOnlineSubtitleDownload(results[0], provider, searchLangCode);
+        } else {
+          console.log(`[LocalVideoPlayer] No online subtitles found automatically for: ${preferredSub}`);
+        }
+      });
+    }
+  }, [localTracks]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -929,7 +1494,7 @@ export default function LocalVideoPlayer({
       
       if (provider === 'yify') {
         if (isTV) throw new Error('YIFY Subtitles only supports movies. Please use OpenSubtitles for TV shows.');
-        const imdbId = (item as any)?.imdbId;
+        const imdbId = (item as any)?.imdbId || (item as any)?.imdb_id;
         if (!imdbId) throw new Error('IMDb ID not found for this movie.');
         
         const localServer = getLocalServerUrl();
@@ -951,10 +1516,11 @@ export default function LocalVideoPlayer({
         if (filtered.length === 0) {
           setOnlineSearchError(`No subtitles found on YIFY for language: ${langName}`);
         }
+        return filtered;
       } else if (provider === 'subdl') {
         if (!subdlKey.trim()) throw new Error('SubDL API Key is required.');
         const localServer = getLocalServerUrl();
-        const imdbId = (item as any)?.imdbId;
+        const imdbId = (item as any)?.imdbId || (item as any)?.imdb_id;
         
         const queryParams = new URLSearchParams({
           title: (item as any)?.title || (item as any)?.name || '',
@@ -978,6 +1544,7 @@ export default function LocalVideoPlayer({
         if (data.length === 0) {
           setOnlineSearchError(`No subtitles found on SubDL for this language.`);
         }
+        return data;
       } else {
         if (!apiKey.trim()) throw new Error('OpenSubtitles API Key is required.');
         const localServer = getLocalServerUrl();
@@ -1019,10 +1586,12 @@ export default function LocalVideoPlayer({
         if (data.length === 0) {
           setOnlineSearchError(`No subtitles found on OpenSubtitles.`);
         }
+        return data;
       }
     } catch (e: any) {
       console.error('[LocalVideoPlayer] Online subtitle search error:', e);
       setOnlineSearchError(e.message || 'An error occurred while searching.');
+      return [];
     } finally {
       setSearchingSubs(false);
     }
@@ -1052,17 +1621,19 @@ export default function LocalVideoPlayer({
     handleOnlineSubtitleSearch(provider, langCode);
   };
 
-  const handleOnlineSubtitleDownload = async (sub: any) => {
+  const handleOnlineSubtitleDownload = async (sub: any, providerOverride?: 'yify' | 'opensubtitles' | 'subdl', langOverride?: string) => {
     setSearchingSubs(true);
     setOnlineSearchError(null);
     try {
       const localServer = getLocalServerUrl();
       let downloadUrl = '';
       let headers: Record<string, string> = {};
+      const provider = providerOverride || onlineProvider;
+      const targetLang = langOverride || searchLang;
       
-      if (onlineProvider === 'yify') {
+      if (provider === 'yify') {
         downloadUrl = `${localServer}/movies/yts-subtitles/download?link=${encodeURIComponent(sub.link)}`;
-      } else if (onlineProvider === 'subdl') {
+      } else if (provider === 'subdl') {
         if (!subdlKey.trim()) throw new Error('SubDL API Key is required.');
         downloadUrl = `${localServer}/subtitles/subdl/download?link=${encodeURIComponent(sub.link)}`;
         headers = { 'x-api-key': subdlKey.trim() };
@@ -1096,9 +1667,9 @@ export default function LocalVideoPlayer({
       const blob = new Blob([vttContent], { type: 'text/vtt' });
       const objectUrl = URL.createObjectURL(blob);
       
-      const langObj = LANGUAGES.find(l => l.code === searchLang);
+      const langObj = LANGUAGES.find(l => l.code === targetLang);
       const langLabel = langObj ? langObj.name : 'Online';
-      const providerLabel = onlineProvider === 'yify' ? 'YIFY' : onlineProvider === 'subdl' ? 'SubDL' : 'OpenSubs';
+      const providerLabel = provider === 'yify' ? 'YIFY' : provider === 'subdl' ? 'SubDL' : 'OpenSubs';
       const label = `${langLabel} (Online - ${providerLabel})`;
       
       const newTrack = {
@@ -1108,14 +1679,28 @@ export default function LocalVideoPlayer({
         default: true
       };
       
-      setServerSubtitleTracks(prev => ({
-        ...prev,
-        [selectedServer]: [...(prev[selectedServer] || []), newTrack]
-      }));
+      let newTracksList: any[] = [];
+      setServerSubtitleTracks(prev => {
+        const list = [...(prev[selectedServer] || []), newTrack];
+        newTracksList = list;
+        return {
+          ...prev,
+          [selectedServer]: list
+        };
+      });
+      const nextIndex = newTracksList.length - 1;
       setServerActiveTrackIndices(prev => ({
         ...prev,
-        [selectedServer]: (serverSubtitleTracks[selectedServer] || []).length
+        [selectedServer]: nextIndex
       }));
+      
+      if (onTracksChange) {
+        const tracksForCast = newTracksList.map((t, idx) => ({
+          ...t,
+          default: idx === nextIndex
+        }));
+        onTracksChange(tracksForCast);
+      }
       
       setIsSearchingOnline(false);
       setShowSettings(false);
@@ -1129,15 +1714,35 @@ export default function LocalVideoPlayer({
   };
 
   const seekedOnStartRef = useRef(false);
-  const isHls = currentSrc.includes('.m3u8') || currentSrc.startsWith('blob:') || isOfflineMode;
+  const currentTimeRef = useRef(currentTime);
+  const durationRef = useRef(duration);
+  const isHls = currentSrc.includes('.m3u8') || 
+                currentSrc.includes('type=m3u8') || 
+                ((selectedServer === 'vidlink-pro' || selectedServer === 'test-server' || selectedServer === 'vidsrc-sbs' || selectedServer === 'vidsrc-wtf-2' || selectedServer === 'vidsrc-pk' || selectedServer === 'vidsrc-fyi') && 
+                  !currentSrc.includes('type=mp4') && 
+                  !currentSrc.includes('.mp4')) || 
+                ((currentSrc.includes('vodvidl.site') || currentSrc.includes('vidlink') || currentSrc.includes('vidsrc') || currentSrc.includes('cloudnestra') || currentSrc.includes('brightpath') || currentSrc.includes('yonderunyielding') || currentSrc.includes('unctuousundertow')) && 
+                  !currentSrc.includes('type=mp4') && 
+                  !currentSrc.includes('.mp4')) || 
+                (isOfflineMode && !currentSrc.includes('type=mp4') && !currentSrc.startsWith('blob:') && !currentSrc.includes('.mp4'));
+
+  console.log('[LocalVideoPlayer] HLS Format Check:', {
+    isHls,
+    currentSrc,
+    selectedServer,
+    isOfflineMode
+  });
   const isDraggingRef = useRef(false);
   const isSeekingRef = useRef(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
 
   const checkControlAllowed = (): boolean => {
     if (isPartyMode && SettingsService.get('hostControlsOnly') && !isPartyHost) {
-      setPlayerToast({ message: 'Playback controls are locked by the host', isError: true });
-      return false;
+      const isHostPresent = partyParticipants.some(p => p.is_host);
+      if (isHostPresent) {
+        setPlayerToast({ message: 'Playback controls are locked by the host', isError: true });
+        return false;
+      }
     }
     return true;
   };
@@ -1149,7 +1754,7 @@ export default function LocalVideoPlayer({
     let nextPlayingState = false;
     if (castConnected && remotePlayerControllerRef.current) {
         remotePlayerControllerRef.current.playPause();
-        nextPlayingState = !remotePlayerRef.current.isPaused;
+        nextPlayingState = !playing;
         setPlaying(nextPlayingState);
     } else if (videoRef.current) {
         if (videoRef.current.paused) {
@@ -1160,6 +1765,7 @@ export default function LocalVideoPlayer({
             videoRef.current.pause();
             nextPlayingState = false;
             setPlaying(false);
+            setBuffering(false);
         }
     } else {
         return;
@@ -1243,7 +1849,7 @@ export default function LocalVideoPlayer({
     import('../../../../utils/haptics').then(m => m.triggerHaptic('light'));
 
     if (!document.fullscreenElement) {
-      containerRef.current.requestFullscreen().catch(() => {});
+      containerRef.current.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
     } else {
       document.exitFullscreen().catch(() => {});
     }
@@ -1253,6 +1859,9 @@ export default function LocalVideoPlayer({
   const resetControlsTimeout = () => {
     if (controlsTimeout.current) clearTimeout(controlsTimeout.current);
     setShowControls(true);
+    // FIX: Do NOT call setCurrentTime here. It caused a full React re-render
+    // on every mouse move (30-60x/sec) during playback. The progress bar
+    // is updated by the timeupdate event handler which throttles correctly.
     if (showSettings || !playing) return;
     controlsTimeout.current = setTimeout(() => {
       setShowControls(false);
@@ -1337,6 +1946,88 @@ export default function LocalVideoPlayer({
   }, [playbackSpeed]);
 
   useEffect(() => {
+    if (castConnected && videoRef.current) {
+      videoRef.current.pause();
+    }
+  }, [castConnected]);
+
+  // Pause local video element if parent command updates playing to false
+  useEffect(() => {
+    if (castConnected) return;
+    if (videoRef.current && !playing && !videoRef.current.paused) {
+      videoRef.current.pause();
+    }
+  }, [playing, castConnected]);
+
+  // Keep screen and CPU/GPU awake using capacitor-community/keep-awake plugin when playing locally
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    
+    let active = false;
+    const enableKeepAwake = async () => {
+      try {
+        const { KeepAwake } = await import('@capacitor-community/keep-awake');
+        if (playing) {
+          await KeepAwake.keepAwake().catch(() => {});
+          active = true;
+          console.log('[LocalVideoPlayer] KeepAwake activated');
+        } else {
+          await KeepAwake.allowSleep().catch(() => {});
+          active = false;
+          console.log('[LocalVideoPlayer] KeepAwake deactivated (paused)');
+        }
+      } catch (e) {
+        console.warn('[LocalVideoPlayer] KeepAwake call failed:', e);
+      }
+    };
+
+    enableKeepAwake();
+
+    return () => {
+      if (active) {
+        import('@capacitor-community/keep-awake')
+          .then(({ KeepAwake }) => KeepAwake.allowSleep().catch(() => {}))
+          .catch(e => console.warn('[LocalVideoPlayer] KeepAwake cleanup failed:', e));
+      }
+    };
+  }, [playing]);
+  // Keep-alive loop that forces Chromium WebView's main thread to stay active during playback.
+  // FIX: Changed from 60fps rAF (burning CPU every frame) to ~8fps via setTimeout.
+  // This still prevents WebView from throttling video compositing but uses ~87% less CPU.
+  useEffect(() => {
+    if (!IS_MOBILE_DEVICE || castConnected || !playing) return;
+
+    const dummy = document.createElement('div');
+    dummy.style.position = 'absolute';
+    dummy.style.width = '1px';
+    dummy.style.height = '1px';
+    dummy.style.pointerEvents = 'none';
+    dummy.style.zIndex = '-1';
+    dummy.style.opacity = '0.01';
+    containerRef.current?.appendChild(dummy);
+
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+    let toggle = false;
+    let active = true;
+
+    const tick = () => {
+      if (!active) return;
+      toggle = !toggle;
+      dummy.style.opacity = toggle ? '0.01' : '0.012';
+      // ~8fps instead of 60fps — sufficient to keep compositor alive without burning CPU
+      timerId = setTimeout(tick, 120);
+    };
+
+    timerId = setTimeout(tick, 120);
+
+    return () => {
+      active = false;
+      if (timerId !== null) clearTimeout(timerId);
+      dummy.remove();
+    };
+  }, [playing, castConnected]);
+
+  useEffect(() => {
     const handlePlay = () => {
       if (videoRef.current) {
         videoRef.current.playbackRate = playbackSpeed;
@@ -1360,15 +2051,31 @@ export default function LocalVideoPlayer({
   }, [currentSrc]);
 
   useEffect(() => {
+    if (!currentSrc) return;
+    const canPlayNatively = videoRef.current ? videoRef.current.canPlayType('application/vnd.apple.mpegurl') : 'unknown';
+    const hlsSupported = Hls.isSupported();
+    const diagMsg = `[HLS Diagnostics]\n` +
+      `- Source: ${currentSrc}\n` +
+      `- isHls: ${isHls}\n` +
+      `- Hls.isSupported(): ${hlsSupported}\n` +
+      `- Native HLS: ${canPlayNatively}\n` +
+      `- Server: ${selectedServer}\n` +
+      `- User Agent: ${navigator.userAgent}`;
+    setVidlinkDiagnostics(diagMsg);
+    console.log('[LocalVideoPlayer] Diagnostics updated:', diagMsg);
+  }, [currentSrc, isHls, selectedServer]);
+
+  useEffect(() => {
     if (isHls && Hls.isSupported()) return;
 
-    if (startTime && startTime > 10 && videoRef.current && !seekedOnStartRef.current) {
+    const targetTime = currentTimeRef.current > 10 ? currentTimeRef.current : (startTime || 0);
+    if (targetTime > 10 && videoRef.current && !seekedOnStartRef.current) {
       const handleReadyToSeek = () => {
         if (videoRef.current && !seekedOnStartRef.current) {
-          videoRef.current.currentTime = startTime;
-          setCurrentTime(startTime);
+          videoRef.current.currentTime = targetTime;
+          setCurrentTime(targetTime);
           seekedOnStartRef.current = true;
-          console.log('[LocalVideoPlayer] Native player seeked to initial startTime:', startTime);
+          console.log('[LocalVideoPlayer] Native player seeked to initial time:', targetTime);
         }
       };
       
@@ -1398,37 +2105,124 @@ export default function LocalVideoPlayer({
       const isTV = !!season || !!episode;
       const type = isTV ? 'tv' : 'movie';
       const tmdbId = item.id;
-      const localServer = getLocalServerUrl();
-      const titleToUse = (item as any)?.title || (item as any)?.name || '';
       
-      let watchUrl = `${localServer}/meta/tmdb/watch/${tmdbId}?type=${type}&server=${selectedServer}&title=${encodeURIComponent(titleToUse)}`;
-      if (isTV) {
-        watchUrl += `&s=${season}&e=${episode}`;
-      }
-      
-      fetch(watchUrl)
-        .then(res => res.ok ? res.json() : null)
-        .then(data => {
-          if (data && data.sources && Array.isArray(data.sources) && data.sources.length > 0) {
-            setAvailableSources(data.sources);
-            setServerAvailableSources(prev => ({ ...prev, [selectedServer]: data.sources }));
-            if (!data.sources[0].isM3U8) {
-              const directQualities = data.sources.map((s, idx) => ({
-                height: parseInt(s.quality) || 1080,
-                index: idx
-              }));
+      if (Capacitor.isNativePlatform() && selectedServer === 'vidlink-pro') {
+        console.log(`[LocalVideoPlayer] Pre-fetching native qualities for Vidlink...`);
+        NativeStreamingEngine.resolveVidlink({
+          tmdbId: String(tmdbId),
+          imdbId: (item as any)?.imdbId || (item as any)?.imdb_id || '',
+          type: type,
+          season: season || 1,
+          episode: episode || 1
+        }).then(nativeRes => {
+          if (nativeRes && nativeRes.sources && nativeRes.sources.length > 0) {
+            const sources = (nativeRes.sources || []).map((s: any) => ({
+              url: s.url,
+              quality: s.quality || 'auto',
+              isM3U8: s.isM3U8
+            }));
+            setAvailableSources(sources);
+            setServerAvailableSources(prev => ({ ...prev, [selectedServer]: sources }));
+            if (!sources[0].isM3U8) {
+              const directQualities = sources.map((s: any, idx: number) => {
+                const isHeight = !isNaN(parseInt(s.quality));
+                const normHeight = isHeight ? getStandardResolutionHeight(parseInt(s.quality)) : undefined;
+                return {
+                  height: normHeight || 1080,
+                  label: isHeight ? `${normHeight}p` : (s.quality || `Source ${idx + 1}`),
+                  index: idx
+                };
+              });
               setQualities(directQualities);
               setServerQualities(prev => ({ ...prev, [selectedServer]: directQualities }));
-              const currentIdx = data.sources.findIndex(s => s.url === currentSrc || s.url === src);
+              const currentIdx = sources.findIndex((s: any) => s.url === currentSrc || s.url === src);
               const qIdx = currentIdx !== -1 ? currentIdx : 0;
               setCurrentQuality(qIdx);
               setServerCurrentQuality(prev => ({ ...prev, [selectedServer]: qIdx }));
             }
+
+            // Populate subtitles
+            if (nativeRes.subtitles && Array.isArray(nativeRes.subtitles) && nativeRes.subtitles.length > 0) {
+              const newTracks = nativeRes.subtitles.map((sub: any) => ({
+                file: sub.url,
+                label: sub.label || sub.lang || 'Unknown',
+                kind: 'subtitles',
+                default: (sub.lang || '').toLowerCase().includes('english') && !sub.isBackup,
+                isBackup: !!sub.isBackup
+              }));
+              const defaultIndex = newTracks.findIndex((t: any) => t.default);
+              setServerSubtitleTracks(prev => ({
+                ...prev,
+                [selectedServer]: newTracks
+              }));
+              setServerActiveTrackIndices(prev => ({
+                ...prev,
+                [selectedServer]: defaultIndex !== -1 ? defaultIndex : -1
+              }));
+            } else {
+              // Fallback to YTS subtitles
+              const imdbId = (item as any)?.imdbId || (item as any)?.imdb_id;
+              if (type === 'movie' && imdbId) {
+                const localServer = getLocalServerUrl();
+                const ytsUrl = `${localServer}/movies/yts-subtitles/${imdbId}`;
+                fetch(ytsUrl)
+                  .then(res => res.ok ? res.json() : null)
+                  .then(ytsSubs => {
+                    if (Array.isArray(ytsSubs) && ytsSubs.length > 0) {
+                      const newTracks = ytsSubs.map((sub: any) => ({
+                        file: `${localServer}/movies/yts-subtitles/download?link=${encodeURIComponent(sub.link)}`,
+                        label: `${sub.language} (Auto YTS)`,
+                        kind: 'subtitles',
+                        default: sub.language.toLowerCase().includes('english')
+                      }));
+                      const defaultIndex = newTracks.findIndex((t: any) => t.default);
+                      setServerSubtitleTracks(prev => ({
+                        ...prev,
+                        [selectedServer]: newTracks
+                      }));
+                      setServerActiveTrackIndices(prev => ({
+                        ...prev,
+                        [selectedServer]: defaultIndex !== -1 ? defaultIndex : -1
+                      }));
+                    }
+                  })
+                  .catch(e => console.warn('[LocalVideoPlayer] Failed to pre-fetch YTS subtitles:', e));
+              }
+            }
           }
-        })
-        .catch(e => console.warn('[LocalVideoPlayer] Failed to pre-fetch qualities:', e));
+        }).catch(e => console.warn('[LocalVideoPlayer] Failed to pre-fetch native qualities:', e));
+      } else {
+        const localServer = getLocalServerUrl();
+        const titleToUse = (item as any)?.title || (item as any)?.name || '';
+        let watchUrl = `${localServer}/meta/tmdb/watch/${tmdbId}?type=${type}&server=${selectedServer}&title=${encodeURIComponent(titleToUse)}`;
+        if (isTV) {
+          watchUrl += `&s=${season}&e=${episode}`;
+        }
+        
+        fetch(watchUrl)
+          .then(res => res.ok ? res.json() : null)
+          .then(data => {
+            if (data && data.sources && Array.isArray(data.sources) && data.sources.length > 0) {
+              setAvailableSources(data.sources);
+              setServerAvailableSources(prev => ({ ...prev, [selectedServer]: data.sources }));
+              if (!data.sources[0].isM3U8) {
+                const directQualities = data.sources.map((s, idx) => ({
+                  height: parseInt(s.quality) || 1080,
+                  index: idx
+                }));
+                setQualities(directQualities);
+                setServerQualities(prev => ({ ...prev, [selectedServer]: directQualities }));
+                const currentIdx = data.sources.findIndex(s => s.url === currentSrc || s.url === src);
+                const qIdx = currentIdx !== -1 ? currentIdx : 0;
+                setCurrentQuality(qIdx);
+                setServerCurrentQuality(prev => ({ ...prev, [selectedServer]: qIdx }));
+              }
+            }
+          })
+          .catch(e => console.warn('[LocalVideoPlayer] Failed to pre-fetch qualities:', e));
+      }
     }
-  }, [src, item?.id]);
+  }, [src, item?.id, selectedServer]);
 
 
   // Handle HLS Playback Setup
@@ -1437,8 +2231,8 @@ export default function LocalVideoPlayer({
       if (videoRef.current && isHls) {
           if (Hls.isSupported()) {
               const startPos = pendingSeekTimeRef.current !== null 
-                  ? pendingSeekTimeRef.current 
-                  : (startTime && startTime > 10 ? startTime : -1);
+                      ? pendingSeekTimeRef.current 
+                      : (currentTimeRef.current > 10 ? currentTimeRef.current : (startTime && startTime > 10 ? startTime : -1));
               
               if (pendingSeekTimeRef.current !== null) {
                   pendingSeekTimeRef.current = null;
@@ -1463,21 +2257,59 @@ export default function LocalVideoPlayer({
                   clearTimeout(loadTimeout);
               };
 
-              console.log(`[LocalVideoPlayer] Instantiating Hls.js. useNativeLoader = ${useNativeLoader}`);
               const hls = new Hls({ 
                 startPosition: startPos,
                 loader: useNativeLoader 
                   ? buildNativeHlsLoader((Hls as any).DefaultConfig.loader)
                   : (Hls as any).DefaultConfig.loader,
-              });
+                // Device-specific buffer memory optimizations to prevent Garbage Collection stutters
+                maxBufferLength: IS_MOBILE_DEVICE ? 30 : 60,
+                maxMaxBufferLength: IS_MOBILE_DEVICE ? 45 : 120,
+                maxBufferSize: IS_MOBILE_DEVICE ? 30 * 1024 * 1024 : 60 * 1024 * 1024,
+                backBufferLength: IS_MOBILE_DEVICE ? 30 : 30,
+                fragLoadingTimeOut: 30000,
+                manifestLoadingTimeOut: 30000,
+                levelLoadingTimeOut: 30000,
+                fragLoadingMaxRetry: 10,
+                manifestLoadingMaxRetry: 10,
+                fragLoadingRetryDelay: 1000,
+                manifestLoadingRetryDelay: 1000,
+                // Native Gap / Stall Recovery parameters (disable watchdog to prevent micro-skips)
+                highBufferWatchdogPeriod: 0,
+                maxBufferHole: 0.5,
+                nudgeMax: 5,
+                nudgeOffset: 0.1,
+                // MSE performance: cap quality to player size and use web worker for transmuxing
+                capLevelToPlayerSize: IS_MOBILE_DEVICE,
+                enableWorker: true,
+                // ABR tuning: higher default estimate prevents the player from being too
+                // conservative on the first quality upgrade (e.g. switching to 1080p on WiFi)
+                abrBandWidthFactor: 0.70,         // 30% safety margin prevents constant bouncing
+                abrEwmaFastVoD: 4,
+                abrEwmaSlowVoD: 20,               // Slow average smooths momentary WiFi drops
+                abrEwmaDefaultEstimate: 5_000_000, // 5 Mbps — realistic modern WiFi starting point
+              } as any);
 
               hlsRef.current = hls;
               hls.loadSource(currentSrc);
               hls.attachMedia(videoRef.current);
               
               hls.on(Hls.Events.ERROR, (event, data) => {
-                  console.error('[LocalVideoPlayer] Hls.js error:', data);
-                  if (!data.fatal) return;
+                  if (!data.fatal) {
+                      if (data.details === 'fragLoadTimeOut' || data.details === 'fragLoadError') {
+                          console.warn('[LocalVideoPlayer] Non-fatal HLS fragment load error/timeout:', data.details);
+                          if (!useNativeLoader && Capacitor.isNativePlatform()) {
+                              console.warn('[LocalVideoPlayer] Switching to NativeHlsLoader fallback due to fragment load error...');
+                              markStarted();
+                              setUseNativeLoader(true);
+                              return;
+                          }
+                          hls.startLoad();
+                      }
+                      return;
+                  }
+                  
+                  console.error('[LocalVideoPlayer] Fatal Hls.js error:', data);
 
                   // Manifest errors mean the stream URL itself is dead/blocked (e.g. 404/Cloudflare WAF).
                   const isManifestError = data.details === 'manifestLoadError'
@@ -1492,6 +2324,15 @@ export default function LocalVideoPlayer({
                           console.warn('[LocalVideoPlayer] Manifest load error occurred on default loader. Switching to NativeHlsLoader fallback...');
                           markStarted();
                           setUseNativeLoader(true);
+                          return;
+                      }
+
+                      if (Capacitor.isNativePlatform()) {
+                          console.warn('[LocalVideoPlayer] HLS manifest error on native mobile, falling back to official iframe player embed...');
+                          setIframeFallback(true);
+                          setIsInitialLoading(false);
+                          setIsSwitchingServer(false);
+                          setBuffering(false);
                           return;
                       }
 
@@ -1512,6 +2353,12 @@ export default function LocalVideoPlayer({
 
                   switch (data.type) {
                       case Hls.ErrorTypes.NETWORK_ERROR:
+                          if (!useNativeLoader && Capacitor.isNativePlatform()) {
+                              console.warn('[LocalVideoPlayer] Fatal Network error occurred on default loader. Switching to NativeHlsLoader fallback...');
+                              markStarted();
+                              setUseNativeLoader(true);
+                              return;
+                          }
                           // Transient network hiccup (segment failed, etc.) — try recovering
                           console.warn('[LocalVideoPlayer] Fatal HLS network error, attempting to recover loading...');
                           hls.startLoad();
@@ -1521,6 +2368,14 @@ export default function LocalVideoPlayer({
                           hls.recoverMediaError();
                           break;
                       default:
+                          if (Capacitor.isNativePlatform()) {
+                              console.warn('[LocalVideoPlayer] Unrecoverable HLS error on native mobile, falling back to official iframe player embed...');
+                              setIframeFallback(true);
+                              setIsInitialLoading(false);
+                              setIsSwitchingServer(false);
+                              setBuffering(false);
+                              return;
+                          }
                           const unrecoverableMsg = `Fatal Playback Error [${data.type} / ${data.details}].`;
                           if (selectedServer === 'vidlink-pro') {
                             setVidlinkDiagnostics(unrecoverableMsg);
@@ -1538,9 +2393,44 @@ export default function LocalVideoPlayer({
                   markStarted();
                   setBuffering(false);
                   setIsInitialLoading(false);
-                  const levels = hls.levels.map((l, i) => ({ height: l.height, index: i }));
-                  setQualities(levels);
-                  setServerQualities(prev => ({ ...prev, [selectedServerRef.current]: levels }));
+                  if (selectedServerRef.current !== 'vidsrc-wtf-2') {
+                      const levels = hls.levels.map((l, i) => {
+                          const normHeight = getStandardResolutionHeight(l.height);
+                          return {
+                              height: normHeight,
+                              label: `${normHeight}p`,
+                              index: i
+                          };
+                      });
+                      setQualities(levels);
+                      setServerQualities(prev => ({ ...prev, [selectedServerRef.current]: levels }));
+                      
+                      // Lock to previously selected manual quality level if any
+                      const prevQuality = serverCurrentQuality[selectedServerRef.current] ?? -1;
+                      if (prevQuality !== -1 && prevQuality < hls.levels.length) {
+                          hls.currentLevel = prevQuality;
+                          hls.loadLevel = prevQuality;
+                          hls.nextLevel = prevQuality;
+                      } else {
+                          let highestIdx = hls.levels.length - 1;
+                          if (IS_MOBILE_DEVICE) {
+                               // Cap AUTO quality to 1080p on mobile to prevent MSE SourceBuffer
+                               // stuttering on 4K streams while keeping 1080p crisp.
+                               const max1080idx = hls.levels.reduce((best, l, i) => {
+                                 if (l.height <= 1080 && (best === -1 || l.height > hls.levels[best].height)) return i;
+                                 return best;
+                               }, -1);
+                               if (max1080idx !== -1 && hls.levels.length > 1) {
+                                 hls.autoLevelCapping = max1080idx;
+                                 (hls as any).__mobileLevelCap = max1080idx;
+                                 highestIdx = max1080idx;
+                               }
+                           }
+                          if (highestIdx >= 0) {
+                              hls.startLevel = highestIdx;
+                          }
+                      }
+                  }
                   if (startPos > 10) {
 
                       setCurrentTime(startPos);
@@ -1592,7 +2482,17 @@ export default function LocalVideoPlayer({
               const handleNativeError = () => {
                   const err = videoRef.current?.error;
                   console.error('[LocalVideoPlayer] Native HLS video error:', err?.code, err?.message);
-                  if (!isOfflineMode) triggerAutoFailover();
+                  if (Capacitor.isNativePlatform()) {
+                      console.warn('[LocalVideoPlayer] Native HLS error on native mobile, falling back to official iframe player embed...');
+                      setIframeFallback(true);
+                      setIsInitialLoading(false);
+                      return;
+                  }
+                  const msg = `Native HLS playback error: ${err?.message || 'Video segment download failed.'} (Code ${err?.code || 'unknown'})`;
+                  setServerError(msg);
+                  if (selectedServer === 'vidlink-pro') setVidlinkDiagnostics(msg);
+                  setShowSettings(true);
+                  setIsInitialLoading(false);
               };
               videoRef.current.addEventListener('loadedmetadata', handleLoadedMetadata);
               videoRef.current.addEventListener('durationchange', handleDurationChange);
@@ -1622,7 +2522,17 @@ export default function LocalVideoPlayer({
           const handleNativeError = () => {
               const err = videoRef.current?.error;
               console.error('[LocalVideoPlayer] Native MP4 video error:', err?.code, err?.message);
-              if (!isOfflineMode) triggerAutoFailover();
+              if (Capacitor.isNativePlatform()) {
+                  console.warn('[LocalVideoPlayer] Native MP4 error on native mobile, falling back to official iframe player embed...');
+                  setIframeFallback(true);
+                  setIsInitialLoading(false);
+                  return;
+              }
+              const msg = `Native MP4 playback error: ${err?.message || 'Video stream could not be decoded.'} (Code ${err?.code || 'unknown'})`;
+              setServerError(msg);
+              if (selectedServer === 'vidlink-pro') setVidlinkDiagnostics(msg);
+              setShowSettings(true);
+              setIsInitialLoading(false);
           };
           videoRef.current.addEventListener('loadedmetadata', handleLoadedMetadata);
           videoRef.current.addEventListener('durationchange', handleDurationChange);
@@ -1651,36 +2561,54 @@ export default function LocalVideoPlayer({
       return () => clearInterval(poll);
   }, [currentSrc, isOfflineMode]);
 
-  const currentTimeRef = useRef(currentTime);
-  const durationRef = useRef(duration);
-  useEffect(() => {
-    currentTimeRef.current = currentTime;
-    durationRef.current = duration;
-  }, [currentTime, duration]);
+   useEffect(() => {
+     currentTimeRef.current = currentTime;
+     durationRef.current = duration;
+   }, [currentTime, duration]);
 
   useEffect(() => {
     if (!item) return;
 
-    let lastUpdateTime = 0;
+    // Reset iframe progress tracking baseline when item/season/episode shifts
+    iframeStartTimeRef.current = startTime || 0;
+    iframeLastTickRef.current = Date.now();
 
     const handleTimeUpdate = () => {
+        if (castConnected) return;
         if (videoRef.current && !isDraggingRef.current && !isSeekingRef.current && !videoRef.current.seeking) {
              const cTime = videoRef.current.currentTime;
              const dur = videoRef.current.duration || 0;
              progressRef.current = { time: cTime, duration: dur };
 
-             const now = Date.now();
-             // Throttle state re-renders to once every 1000ms during passive playback to ensure smooth 60 FPS
-             if (now - lastUpdateTime >= 1000) {
-                 setCurrentTime(cTime);
-                 if (dur > 0 && isFinite(dur) && dur < 86399) setDuration(dur);
-                 lastUpdateTime = now;
+             // FIX: Throttle state updates to max once per second.
+             // Previously this fired every 250ms unconditionally, causing
+             // 4 re-renders/sec even with the showControls guard.
+             // Now only updates if time changed by ≥1s OR controls are visible
+             // and time changed by ≥0.25s (for smooth scrubber movement).
+             const prevTime = lastTimeUpdateStateRef.current;
+             const timeDelta = Math.abs(cTime - prevTime);
+             const threshold = showControlsRef.current ? 0.25 : 1.0;
+             if (timeDelta >= threshold) {
+               lastTimeUpdateStateRef.current = cTime;
+               setCurrentTime(cTime);
+             }
+             // Only update duration if it actually changed (avoid redundant sets)
+             if (dur > 0 && isFinite(dur) && dur < 86399 && Math.abs(dur - durationRef.current) > 1) {
+               setDuration(dur);
              }
         }
     };
 
     const handlePause = () => {
+        if (isSeekingRef.current || (videoRef.current && videoRef.current.seeking)) {
+            if (videoRef.current && videoRef.current.paused) {
+                setPlaying(false);
+                setBuffering(false);
+            }
+            return;
+        }
         setPlaying(false);
+        setBuffering(false);
         const finalTime = castConnected ? currentTimeRef.current : progressRef.current.time;
         const finalDuration = castConnected ? durationRef.current : progressRef.current.duration;
         if (finalTime > 0 && finalDuration > 0) {
@@ -1694,6 +2622,7 @@ export default function LocalVideoPlayer({
 
     const handleSeeked = () => {
         isSeekingRef.current = false;
+        setBuffering(false);
         if (ignoreNextSeekedRef.current) {
           ignoreNextSeekedRef.current = false;
           return;
@@ -1723,11 +2652,38 @@ export default function LocalVideoPlayer({
     
     const handleVisibilityChange = () => {
         if (document.visibilityState === 'hidden') {
-            const finalTime = castConnected ? currentTimeRef.current : progressRef.current.time;
-            const finalDuration = castConnected ? durationRef.current : progressRef.current.duration;
-            if (finalTime > 0 && finalDuration > 0) {
-                WatchProgressService.saveProgress(item, finalTime, finalDuration, season, episode);
+            if (iframeFallback || !!embedServer) {
+               const now = Date.now();
+               const deltaSeconds = (now - iframeLastTickRef.current) / 1000;
+               const cappedDelta = Math.min(deltaSeconds, 45);
+               
+               const defaultDuration = (() => {
+                 if (item) {
+                   if ((item as any).runtime) {
+                     return (item as any).runtime * 60;
+                   }
+                   if (Array.isArray((item as any).episodeRunTime) && (item as any).episodeRunTime.length > 0) {
+                     return (item as any).episodeRunTime[0] * 60;
+                   }
+                 }
+                 return (season || episode) ? 2700 : 7200;
+               })();
+               
+               iframeStartTimeRef.current = Math.min(defaultDuration, iframeStartTimeRef.current + cappedDelta);
+               iframeLastTickRef.current = now;
+               
+               if (iframeStartTimeRef.current > 0 && defaultDuration > 0) {
+                   WatchProgressService.saveProgress(item, iframeStartTimeRef.current, defaultDuration, season, episode);
+               }
+            } else {
+               const finalTime = castConnected ? currentTimeRef.current : progressRef.current.time;
+               const finalDuration = castConnected ? durationRef.current : progressRef.current.duration;
+               if (finalTime > 0 && finalDuration > 0) {
+                   WatchProgressService.saveProgress(item, finalTime, finalDuration, season, episode);
+               }
             }
+        } else {
+            iframeLastTickRef.current = Date.now();
         }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -1744,9 +2700,31 @@ export default function LocalVideoPlayer({
            if (currentT > 0 && dur > 0) {
                WatchProgressService.saveProgress(item, currentT, dur, season, episode);
            }
+      } else if (iframeFallback || !!embedServer) {
+           const now = Date.now();
+           const deltaSeconds = (now - iframeLastTickRef.current) / 1000;
+           iframeLastTickRef.current = now;
+           
+           const defaultDuration = (() => {
+             if (item) {
+               if ((item as any).runtime) {
+                 return (item as any).runtime * 60;
+               }
+               if (Array.isArray((item as any).episodeRunTime) && (item as any).episodeRunTime.length > 0) {
+                 return (item as any).episodeRunTime[0] * 60;
+               }
+             }
+             return (season || episode) ? 2700 : 7200;
+           })();
+           
+           iframeStartTimeRef.current = Math.min(defaultDuration, iframeStartTimeRef.current + deltaSeconds);
+           
+           if (iframeStartTimeRef.current > 0 && defaultDuration > 0) {
+               WatchProgressService.saveProgress(item, iframeStartTimeRef.current, defaultDuration, season, episode);
+           }
       }
     }, 30000); 
-
+ 
     return () => {
         clearInterval(interval);
         document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -1757,17 +2735,47 @@ export default function LocalVideoPlayer({
            videoRef.current.removeEventListener('pause', handlePause);
            videoRef.current.removeEventListener('ended', handlePause);
         }
-        const finalTime = castConnected ? currentTimeRef.current : progressRef.current.time;
-        const finalDuration = castConnected ? durationRef.current : progressRef.current.duration;
-        if (finalTime > 0 && finalDuration > 0) {
-               WatchProgressService.saveProgress(item, finalTime, finalDuration, season, episode);
+        
+        if (iframeFallback || !!embedServer) {
+           const now = Date.now();
+           const deltaSeconds = (now - iframeLastTickRef.current) / 1000;
+           const cappedDelta = Math.min(deltaSeconds, 45);
+           
+           const defaultDuration = (() => {
+             if (item) {
+               if ((item as any).runtime) {
+                 return (item as any).runtime * 60;
+               }
+               if (Array.isArray((item as any).episodeRunTime) && (item as any).episodeRunTime.length > 0) {
+                 return (item as any).episodeRunTime[0] * 60;
+               }
+             }
+             return (season || episode) ? 2700 : 7200;
+           })();
+           
+           iframeStartTimeRef.current = Math.min(defaultDuration, iframeStartTimeRef.current + cappedDelta);
+           
+           if (iframeStartTimeRef.current > 0 && defaultDuration > 0) {
+               WatchProgressService.saveProgress(item, iframeStartTimeRef.current, defaultDuration, season, episode);
+           }
+        } else {
+           const finalTime = castConnected ? currentTimeRef.current : progressRef.current.time;
+           const finalDuration = castConnected ? durationRef.current : progressRef.current.duration;
+           if (finalTime > 0 && finalDuration > 0) {
+                WatchProgressService.saveProgress(item, finalTime, finalDuration, season, episode);
+           }
         }
     };
-  }, [item, season, episode, castConnected]);
+  }, [item, season, episode, castConnected, iframeFallback, embedServer]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isLocked) return;
+      
+      // Auto-show controls on any keydown event
+      setShowControls(true);
+      resetControlsTimeout();
+
       switch(e.key) {
           case ' ':
           case 'Enter': 
@@ -1789,8 +2797,6 @@ export default function LocalVideoPlayer({
                 if (videoRef.current) videoRef.current.volume = nextVolume;
                 return nextVolume;
               });
-              setShowControls(true);
-              resetControlsTimeout();
               break;
           case 'ArrowDown':
               e.preventDefault();
@@ -1799,8 +2805,6 @@ export default function LocalVideoPlayer({
                 if (videoRef.current) videoRef.current.volume = nextVolume;
                 return nextVolume;
               });
-              setShowControls(true);
-              resetControlsTimeout();
               break;
           case 'f':
           case 'F':
@@ -1810,7 +2814,8 @@ export default function LocalVideoPlayer({
           case 'Escape':
               if (showSettings) {
                 setShowSettings(false);
-                resetControlsTimeout();
+              } else {
+                onClose();
               }
               break;
       }
@@ -1818,11 +2823,30 @@ export default function LocalVideoPlayer({
     
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [playing, castConnected, currentTime, duration, isLocked, showSettings]);
+  }, [playing, castConnected, currentTime, duration, isLocked, showSettings, onClose]);
+
+  // Resume local playback at correct currentTime when disconnecting from Chromecast
+  const prevCastConnectedRef = useRef(castConnected);
+  useEffect(() => {
+    if (prevCastConnectedRef.current && !castConnected && videoRef.current) {
+      console.log("[LocalVideoPlayer] Disconnected from Chromecast. Resuming locally at:", currentTime);
+      videoRef.current.currentTime = currentTime;
+      if (playing) {
+        videoRef.current.play().catch((e: any) => console.warn("Failed to resume local playback after casting:", e));
+      }
+    }
+    prevCastConnectedRef.current = castConnected;
+  }, [castConnected, playing, currentTime]);
 
   const handleTrackSelect = async (index: number) => {
     if (index === -1) {
+      localStorage.setItem('cinemovie_preferred_subtitle_lang', 'none');
       setServerActiveTrackIndices(prev => ({ ...prev, [selectedServer]: -1 }));
+      if (onTracksChange) {
+        const currentServerTracks = serverSubtitleTracks[selectedServer] || [];
+        const disabledTracks = currentServerTracks.map(t => ({ ...t, default: false }));
+        onTracksChange(disabledTracks);
+      }
       setShowSettings(false);
       resetControlsTimeout();
       return;
@@ -1832,10 +2856,18 @@ export default function LocalVideoPlayer({
     const track = currentServerTracks[index];
     if (!track) return;
     
+    localStorage.setItem('cinemovie_preferred_subtitle_lang', track.label || 'en');
     setLastAttemptedTrack(track);
 
     if (track.file.startsWith('blob:')) {
       setServerActiveTrackIndices(prev => ({ ...prev, [selectedServer]: index }));
+      if (onTracksChange) {
+        const updated = currentServerTracks.map((t, idx) => ({
+          ...t,
+          default: idx === index
+        }));
+        onTracksChange(updated);
+      }
       setShowSettings(false);
       resetControlsTimeout();
       return;
@@ -1874,20 +2906,31 @@ export default function LocalVideoPlayer({
       const blob = new Blob([vttContent], { type: 'text/vtt' });
       const objectUrl = URL.createObjectURL(blob);
       
+      let updatedTracks: any[] = [];
       setServerSubtitleTracks(prev => {
         const nextTracks = [...(prev[selectedServer] || [])];
         if (nextTracks[index]) {
           nextTracks[index] = {
             ...nextTracks[index],
-            file: objectUrl
-          };
+            file: objectUrl,
+            originalFile: (nextTracks[index] as any).originalFile || nextTracks[index].file
+          } as any;
         }
+        updatedTracks = nextTracks;
         return {
           ...prev,
           [selectedServer]: nextTracks
         };
       });
       setServerActiveTrackIndices(prev => ({ ...prev, [selectedServer]: index }));
+      
+      if (onTracksChange && updatedTracks.length > 0) {
+        const tracksForCast = updatedTracks.map((t, idx) => ({
+          ...t,
+          default: idx === index
+        }));
+        onTracksChange(tracksForCast);
+      }
       setShowSettings(false);
     } catch (e) {
       console.error('[LocalVideoPlayer] Subtitle proxy resolution failed:', e);
@@ -1899,22 +2942,54 @@ export default function LocalVideoPlayer({
   };
 
   const handleQualitySelect = (index: number) => {
-      if (hlsRef.current) {
-          hlsRef.current.currentLevel = index;
+      if (hlsRef.current && selectedServer !== 'vidsrc-wtf-2') {
+          const hls = hlsRef.current;
+          const levels = hls.levels || [];
+          const selectedHeight = levels[index]?.height ?? 0;
+          const mobileCap = (hls as any).__mobileLevelCap ?? -1;
+
+          // If user is manually picking a level above the mobile cap (e.g. 1080p)
+          // clear the cap so ABR doesn't fight back and revert to 720p after a stall.
+          if (IS_MOBILE_DEVICE && mobileCap !== -1 && index > mobileCap) {
+              hls.autoLevelCapping = -1; // Remove cap — user explicitly wants high quality
+          } else if (IS_MOBILE_DEVICE && index === -1 && mobileCap !== -1) {
+              // User switching back to AUTO — restore the safe mobile cap
+              hls.autoLevelCapping = mobileCap;
+          }
+
+          if (index === -1) {
+              // AUTO mode — let ABR decide
+              hls.nextLevel = -1;
+              hls.loadLevel = -1;
+          } else {
+              // Manual level — use nextLevel for a smooth buffer-boundary switch
+              // (avoids an immediate full buffer flush that causes the 1-2s freeze).
+              // Also set loadLevel so the download target is correct immediately.
+              hls.nextLevel = index;
+              hls.loadLevel = index;
+              // currentLevel will be updated automatically by HLS.js once the
+              // next segment at the new quality is appended to the SourceBuffer.
+          }
+
           setCurrentQuality(index);
           setServerCurrentQuality(prev => ({ ...prev, [selectedServer]: index }));
           setShowSettings(false);
           resetControlsTimeout();
-      } else if (availableSources[index]) {
-          const selectedSource = availableSources[index].url;
-          const savedTime = videoRef.current ? videoRef.current.currentTime : currentTime;
-          
-          import('../../../../utils/haptics').then(m => m.triggerHaptic('medium'));
-          pendingSeekTimeRef.current = savedTime > 5 ? savedTime : null;
-          
-          setCurrentSrc(selectedSource);
-          setCurrentQuality(index);
-          setServerCurrentQuality(prev => ({ ...prev, [selectedServer]: index }));
+      } else if (index === -1 || availableSources[index]) {
+          const idxToUse = index === -1 ? 0 : index;
+          if (availableSources[idxToUse]) {
+              const selectedSource = availableSources[idxToUse].url;
+              const savedTime = videoRef.current ? videoRef.current.currentTime : currentTime;
+              
+              import('../../../../utils/haptics').then(m => m.triggerHaptic('medium'));
+              pendingSeekTimeRef.current = savedTime > 5 ? savedTime : null;
+              
+              setCurrentSrc(selectedSource);
+              setCurrentQuality(index);
+              setServerCurrentQuality(prev => ({ ...prev, [selectedServer]: index }));
+              setShowSettings(false);
+              resetControlsTimeout();
+          }
           setShowSettings(false);
           resetControlsTimeout();
       }
@@ -1958,7 +3033,7 @@ export default function LocalVideoPlayer({
   };
 
   const handleDoubleClick = (e: React.MouseEvent) => {
-    if (isLocked) return;
+    if (isLocked || iframeFallback || !!embedServer) return;
     e.stopPropagation();
 
     const container = containerRef.current;
@@ -1983,15 +3058,17 @@ export default function LocalVideoPlayer({
   return (
     <div 
       ref={containerRef}
+      tabIndex={0}
       style={{ 
         width: '100%', 
         height: '100%', 
         position: 'relative', 
         overflow: 'hidden', 
         backgroundColor: '#000000',
+        outline: 'none',
         userSelect: 'none',
         WebkitUserSelect: 'none',
-        cursor: showControls ? 'default' : 'none',
+        cursor: IS_MOBILE_DEVICE ? 'default' : (showControls ? 'default' : 'none'),
         ['--subtitle-bg-opacity' as any]: subtitleBgOpacity,
         ['--subtitle-color' as any]: subtitleColor,
         ['--subtitle-font-size' as any]: 
@@ -2044,6 +3121,44 @@ export default function LocalVideoPlayer({
           src={
             (() => {
               const currentSrv = embedServer || selectedServer;
+              const imdbId = (item as any)?.imdbId || (item as any)?.imdb_id;
+              const idToUse = imdbId || item?.id;
+
+              if (currentSrv === 'vidsrc-sbs') {
+                return season || episode
+                  ? `https://vidsrc.sbs/embed/tv/${item?.id}/${season}/${episode}`
+                  : `https://vidsrc.sbs/embed/movie/${item?.id}`;
+              }
+              if (currentSrv === 'vidsrc-wtf-1') {
+                return season || episode
+                  ? `https://vidsrc.wtf/1/tv/${idToUse}/${season}/${episode}?color=3b82f6`
+                  : `https://vidsrc.wtf/1/movie/${idToUse}?color=3b82f6`;
+              }
+              if (currentSrv === 'vidsrc-wtf-2') {
+                return season || episode
+                  ? `https://vidsrc.wtf/2/tv/${idToUse}/${season}/${episode}?color=3b82f6`
+                  : `https://vidsrc.wtf/2/movie/${idToUse}?color=3b82f6`;
+              }
+              if (currentSrv === 'vidsrc-wtf-3') {
+                return season || episode
+                  ? `https://vidsrc.wtf/3/tv/${idToUse}/${season}/${episode}?color=3b82f6`
+                  : `https://vidsrc.wtf/3/movie/${idToUse}?color=3b82f6`;
+              }
+              if (currentSrv === 'vidsrc-wtf-4') {
+                return season || episode
+                  ? `https://vidsrc.wtf/4/tv/${idToUse}/${season}/${episode}?color=3b82f6`
+                  : `https://vidsrc.wtf/4/movie/${idToUse}?color=3b82f6`;
+              }
+              if (currentSrv === 'vidsrc-pk') {
+                return season || episode
+                  ? `https://embed.vidsrc.pk/tv/${idToUse}/${season}-${episode}`
+                  : `https://embed.vidsrc.pk/movie/${idToUse}`;
+              }
+              if (currentSrv === 'vidsrc-fyi') {
+                return season || episode
+                  ? `https://vidsrc.fyi/embed/tv/${idToUse}/${season}/${episode}`
+                  : `https://vidsrc.fyi/embed/movie/${idToUse}`;
+              }
               if (currentSrv === 'universal') {
                 return season || episode
                   ? `https://vidsrc.to/embed/tv/${item?.id}/${season}/${episode}`
@@ -2074,9 +3189,8 @@ export default function LocalVideoPlayer({
               width: '100%', 
               height: '100%', 
               objectFit: aspectRatio === 'fill' ? 'cover' : 'contain',
-              transform: aspectRatio === 'zoom' ? `scale(${zoomScale})` : 'scale(1)',
-              transition: 'transform 0.3s ease, object-fit 0.3s ease',
-              transformOrigin: 'center center'
+              transform: aspectRatio === 'zoom' ? `scale(${zoomScale})` : undefined,
+              transformOrigin: aspectRatio === 'zoom' ? 'center center' : undefined
             }}
             playsInline
             crossOrigin="anonymous"
@@ -2204,11 +3318,9 @@ export default function LocalVideoPlayer({
             src="/cinemovie-logo.png" 
             alt="Cinemovie" 
             style={{ 
-              height: '240px', 
+              height: '80px', 
               width: 'auto', 
               objectFit: 'contain',
-              marginTop: '-40px',
-              marginBottom: '-50px',
             }} 
           />
           {/* Simple, sleek, professional spinner */}
@@ -2272,38 +3384,28 @@ export default function LocalVideoPlayer({
 
       {/* Connecting Full Screen Server switcher Overlay */}
       {isSwitchingServer && (
-        <div style={{
-          position: 'absolute', inset: 0, zIndex: 10050, background: 'rgba(0, 0, 0, 0.88)',
-          backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px',
-          animation: 'fadeIn 0.2s ease-out'
-        }}>
-          <div style={{ position: 'relative', width: '64px', height: '64px' }}>
-            <div style={{ position: 'absolute', inset: 0, border: '3px solid rgba(255,255,255,0.1)', borderRadius: '50%' }} />
-            <div style={{ position: 'absolute', inset: 0, border: '3px solid transparent', borderTopColor: '#ffffff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2">
-                <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
-                <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
-                <line x1="6" y1="6" x2="6.01" y2="6"/>
-                <line x1="6" y1="18" x2="6.01" y2="18"/>
-              </svg>
-            </div>
+        <div className="player-server-loader">
+          {/* Spacer to push content to middle */}
+          <div style={{ height: '10px', visibility: 'hidden' }} />
+
+          {/* Loading content in the middle */}
+          <div className="player-server-loader-content">
+            <div className="player-server-loader-spinner" />
+            <span className="player-server-loader-text">
+              Loading...
+            </span>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
-            <span style={{ color: '#ffffff', fontSize: '1rem', fontWeight: 700 }}>Connecting to {connectingServerName}...</span>
-            <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: '0.78rem', fontWeight: 500 }}>Resolving stream, please wait</span>
-          </div>
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-            {[0, 1, 2].map(i => (
-              <div key={i} style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'rgba(255,255,255,0.4)', animation: `fadeIn 0.6s ease-in-out ${i * 0.2}s infinite alternate` }} />
-            ))}
-          </div>
+
+          {/* Cancel button at the bottom */}
           <button
-            onClick={(e) => { e.stopPropagation(); handleCancelServerSwitch(); }}
-            style={{ marginTop: '12px', padding: '8px 18px', background: 'rgba(255, 255, 255, 0.08)', border: '1px solid rgba(255, 255, 255, 0.12)', borderRadius: '10px', color: '#ffffff', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer' }}
+            className="player-server-loader-cancel"
+            onClick={(e) => {
+              e.stopPropagation();
+              import('../../../../utils/haptics').then(m => m.triggerHaptic('medium'));
+              handleCancelServerSwitch();
+            }}
           >
-            Cancel Switch
+            Cancel
           </button>
         </div>
       )}
@@ -2321,7 +3423,21 @@ export default function LocalVideoPlayer({
 
 
       {/* Split Control overlays component */}
-      {!isInitialLoading && (
+      {/* FIX: Replaced Framer Motion AnimatePresence+motion.div with a plain CSS
+           opacity/visibility transition. The controls already have their own
+           CSS transitions internally. This removes framer-motion layout-effect
+           overhead on every show/hide cycle, which was expensive on low-end GPUs. */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          zIndex: 10010,
+          opacity: (!isInitialLoading && showControls) ? 1 : 0,
+          visibility: (!isInitialLoading && showControls) ? 'visible' : 'hidden',
+          transition: 'opacity 0.25s ease-out, visibility 0.25s ease-out',
+          pointerEvents: (!isInitialLoading && showControls) ? 'auto' : 'none',
+        }}
+      >
         <PlayerControls
           showControls={showControls}
           iframeFallback={iframeFallback || !!embedServer}
@@ -2364,53 +3480,8 @@ export default function LocalVideoPlayer({
           zoomScale={zoomScale}
           setZoomScale={setZoomScale}
         />
-      )}
+      </div>
 
-      {/* Floating Control Bar for direct Iframe fallback mode */}
-      {iframeFallback && (
-        <div style={{
-          position: 'absolute', top: '24px', left: '24px', right: '24px',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 10040, pointerEvents: 'none'
-        }}>
-          <button 
-            onClick={onClose}
-            style={{
-              pointerEvents: 'auto', background: 'rgba(0, 0, 0, 0.7)',
-              border: '1px solid rgba(255, 255, 255, 0.15)', borderRadius: '50%', width: '46px', height: '46px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#ffffff',
-              transition: 'transform 0.1s'
-            }}
-          >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
-            </svg>
-          </button>
-
-          <div style={{
-            background: 'rgba(0, 0, 0, 0.7)',
-            border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '20px', padding: '8px 20px',
-            color: '#fff', fontSize: '0.85rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px'
-          }}>
-            <span style={{ display: 'inline-block', width: '8px', height: '8px', background: '#eab308', borderRadius: '50%', animation: 'fadeIn 0.8s ease-in-out infinite alternate' }} />
-            <span>{selectedServer === 'vidsrc-pm' ? 'VidSrc PM Player (Embed Fallback)' : selectedServer === 'universal' ? 'Universal Player (Embed Fallback)' : 'Vidlink Pro Player (Embed Fallback)'}</span>
-          </div>
-
-          <button 
-            onClick={() => { setSettingsTab('servers'); setShowSettings(true); }}
-            style={{
-              pointerEvents: 'auto', background: 'rgba(0, 0, 0, 0.7)',
-              border: '1px solid rgba(255, 255, 255, 0.15)', borderRadius: '50%', width: '46px', height: '46px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#ffffff',
-              transition: 'transform 0.1s'
-            }}
-          >
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="3"/>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-            </svg>
-          </button>
-        </div>
-      )}
 
       {/* Screen Lock Overlay */}
       {isLocked && (
@@ -2471,7 +3542,6 @@ export default function LocalVideoPlayer({
         subtitleError={subtitleError}
         lastAttemptedTrack={lastAttemptedTrack}
         handleAlternativeSearch={handleAlternativeSearch}
-        downloadTrack={downloadTrack}
         isOfflineMode={isOfflineMode}
         item={item}
         season={season}
@@ -2507,7 +3577,6 @@ export default function LocalVideoPlayer({
 
         handleOnlineSubtitleSearch={handleOnlineSubtitleSearch}
         handleOnlineSubtitleDownload={handleOnlineSubtitleDownload}
-        saveOnlineSubtitleToDevice={saveOnlineSubtitleToDevice}
         playbackSpeed={playbackSpeed}
         setPlaybackSpeed={setPlaybackSpeed}
         isDownloading={isDownloading}
@@ -2518,6 +3587,7 @@ export default function LocalVideoPlayer({
         setOnlineSearchError={setOnlineSearchError}
         setOnlineSubs={setOnlineSubs}
         vidlinkDiagnostics={vidlinkDiagnostics}
+        testServerDiagnostics={testServerDiagnostics}
       />
 
       {/* Toast Alert Feedback HUD */}

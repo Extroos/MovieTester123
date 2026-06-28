@@ -8,14 +8,16 @@ interface VideoGalleryProps {
   onVideoClick: (video: Video) => void;
 }
 
-export default function VideoGallery({ videos, onVideoClick }: VideoGalleryProps) {
+const VideoGallery = React.memo(function VideoGallery({ videos, onVideoClick }: VideoGalleryProps) {
   if (!videos || videos.length === 0) return null;
 
   // Filter to show interesting videos
-  const galleryVideos = videos.filter(v => 
-    v.site === 'YouTube' && 
-    (v.type === 'Trailer' || v.type === 'Teaser' || v.type === 'Clip')
-  );
+  const galleryVideos = React.useMemo(() => {
+    return videos.filter(v => 
+      v.site === 'YouTube' && 
+      (v.type === 'Trailer' || v.type === 'Teaser' || v.type === 'Clip')
+    );
+  }, [videos]);
 
   if (galleryVideos.length <= 1) return null; // Already shown in hero or too few
 
@@ -52,27 +54,18 @@ export default function VideoGallery({ videos, onVideoClick }: VideoGalleryProps
               scrollSnapAlign: 'start'
             }}
           >
-            <div style={{ 
-              position: 'relative',
-              aspectRatio: '16/9',
-              borderRadius: '16px',
-              overflow: 'hidden',
-              background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 100%)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.1), 0 4px 12px rgba(0, 0, 0, 0.3)',
-              marginBottom: '10px',
-              transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'scale(1.03)';
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.18)';
-              e.currentTarget.style.boxShadow = 'inset 0 1px 1px rgba(255, 255, 255, 0.15), 0 8px 20px rgba(0, 0, 0, 0.5)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
-              e.currentTarget.style.boxShadow = 'inset 0 1px 1px rgba(255, 255, 255, 0.1), 0 4px 12px rgba(0, 0, 0, 0.3)';
-            }}
+            <div 
+              className="video-gallery-card-inner"
+              style={{ 
+                position: 'relative',
+                aspectRatio: '16/9',
+                borderRadius: '16px',
+                overflow: 'hidden',
+                background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 100%)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.1), 0 4px 12px rgba(0, 0, 0, 0.3)',
+                marginBottom: '10px',
+              }}
             >
               <img 
                 src={`https://img.youtube.com/vi/${video.key}/mqdefault.jpg`}
@@ -105,4 +98,6 @@ export default function VideoGallery({ videos, onVideoClick }: VideoGalleryProps
       </div>
     </div>
   );
-}
+});
+
+export default VideoGallery;

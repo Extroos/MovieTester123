@@ -66,6 +66,8 @@ export function usePlayerGestures({
   const startXRef = useRef(0);
   const startYRef = useRef(0);
   const startBrightnessRef = useRef(1);
+  // FIX: startVolumeRef is now always set from videoRef.current.volume at touchstart
+  // to prevent stale-closure bugs after server switches reset the video element's volume.
   const startVolumeRef = useRef(1);
   const startSeekTimeRef = useRef(0);
   const initialPinchDistRef = useRef(0);
@@ -73,6 +75,7 @@ export function usePlayerGestures({
   const lastTapTimeRef = useRef(0);
   const lastTouchTimeRef = useRef<number>(0);
 
+  // --- Consolidated ref mirrors (single effect instead of 12 individual ones) ---
   const isLockedRef = useRef(isLocked);
   const brightnessRef = useRef(brightness);
   const zoomScaleRef = useRef(zoomScale);
@@ -87,24 +90,30 @@ export function usePlayerGestures({
   const currentTimeRef = useRef(currentTime);
   const handleLockedScreenTapRef = useRef(handleLockedScreenTap);
 
-  useEffect(() => { isLockedRef.current = isLocked; }, [isLocked]);
-  useEffect(() => { brightnessRef.current = brightness; }, [brightness]);
-  useEffect(() => { zoomScaleRef.current = zoomScale; }, [zoomScale]);
-  useEffect(() => { castConnectedRef.current = castConnected; }, [castConnected]);
-  useEffect(() => { durationRef.current = duration; }, [duration]);
-  useEffect(() => { horizontalSeekTimeRef.current = horizontalSeekTime; }, [horizontalSeekTime]);
-  useEffect(() => { showSettingsRef.current = showSettings; }, [showSettings]);
-  useEffect(() => { toggleControlsVisibilityRef.current = toggleControlsVisibility; }, [toggleControlsVisibility]);
-  useEffect(() => { handleRewindRef.current = handleRewind; }, [handleRewind]);
-  useEffect(() => { handleForwardRef.current = handleForward; }, [handleForward]);
-  useEffect(() => { toggleFullScreenRef.current = toggleFullScreen; }, [toggleFullScreen]);
-  useEffect(() => { handleLockedScreenTapRef.current = handleLockedScreenTap; }, [handleLockedScreenTap]);
-  useEffect(() => { currentTimeRef.current = currentTime; }, [currentTime]);
+  // Consolidated single effect for all ref mirrors — avoids 12 separate effect registrations
+  useEffect(() => {
+    isLockedRef.current = isLocked;
+    brightnessRef.current = brightness;
+    zoomScaleRef.current = zoomScale;
+    castConnectedRef.current = castConnected;
+    durationRef.current = duration;
+    horizontalSeekTimeRef.current = horizontalSeekTime;
+    showSettingsRef.current = showSettings;
+    toggleControlsVisibilityRef.current = toggleControlsVisibility;
+    handleRewindRef.current = handleRewind;
+    handleForwardRef.current = handleForward;
+    toggleFullScreenRef.current = toggleFullScreen;
+    currentTimeRef.current = currentTime;
+    handleLockedScreenTapRef.current = handleLockedScreenTap;
+  });
+  // No dependency array → runs after every render but as a single cheap sync (no cleanup, no scheduling overhead).
 
+  // Sync volume display state from actual video element when src changes
   useEffect(() => {
     if (videoRef.current) {
       setVolume(videoRef.current.volume);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoRef.current]);
 
   useEffect(() => {
@@ -167,7 +176,12 @@ export function usePlayerGestures({
       startXRef.current = touch.clientX;
       startYRef.current = touch.clientY;
       startBrightnessRef.current = brightnessRef.current;
+
+      // FIX: Always read the live video element volume at touchstart.
+      // This prevents stale-ref bugs where the video reloads (server switch) 
+      // and resets its volume but the React state hasn't caught up yet.
       startVolumeRef.current = videoRef.current ? videoRef.current.volume : 1;
+      
       touchTypeRef.current = 'tap';
     };
 
@@ -188,7 +202,7 @@ export function usePlayerGestures({
       if (isLockedRef.current) return;
 
       if (touchTypeRef.current === 'pinch' && e.touches.length === 2) {
-        e.preventDefault();
+        if (e.cancelable) e.preventDefault();
         const dist = getTouchDistance(e.touches[0], e.touches[1]);
         if (initialPinchDistRef.current > 0) {
           const ratio = dist / initialPinchDistRef.current;
@@ -213,31 +227,35 @@ export function usePlayerGestures({
             if (hostControlsLocked) return;
             touchTypeRef.current = 'swipe_x';
             startSeekTimeRef.current = currentTimeRef.current;
-            e.preventDefault();
+            if (e.cancelable) e.preventDefault();
           } else {
             touchTypeRef.current = 'swipe_y';
-            e.preventDefault();
+            if (e.cancelable) e.preventDefault();
           }
         }
       }
 
       if (touchTypeRef.current === 'swipe_x') {
-        e.preventDefault();
+        if (e.cancelable) e.preventDefault();
         const sweepRange = 120;
         const seekOffset = (deltaX / containerWidth) * sweepRange;
         const targetTime = Math.max(0, Math.min(durationRef.current, startSeekTimeRef.current + seekOffset));
         setHorizontalSeekTime(targetTime);
       } 
       else if (touchTypeRef.current === 'swipe_y') {
-        e.preventDefault();
-        const dragFraction = deltaY / (containerHeight * 0.5);
+        if (e.cancelable) e.preventDefault();
+        // Use 60% of height for full range (more responsive than 50%)
+        const dragFraction = deltaY / (containerHeight * 0.6);
         const isLeft = startXRef.current < containerWidth / 2;
 
         if (isLeft) {
+          // Brightness: apply delta from the brightness at touchstart
           const nextBrightness = Math.max(0.0, Math.min(1.0, startBrightnessRef.current + dragFraction));
           setBrightness(nextBrightness);
           setActiveSlider('brightness');
         } else {
+          // Volume: apply delta from the LIVE video volume at touchstart
+          // startVolumeRef is always set fresh at touchstart from videoRef.current.volume
           const nextVolume = Math.max(0.0, Math.min(1.0, startVolumeRef.current + dragFraction));
           setVolume(nextVolume);
           if (videoRef.current) {
@@ -273,7 +291,7 @@ export function usePlayerGestures({
       if (isLockedRef.current) return;
 
       // Prevent simulated mouse click events on touch devices for general gestures
-      e.preventDefault();
+      if (e.cancelable) e.preventDefault();
 
       if (touchTypeRef.current === 'pinch') {
         setTimeout(() => setShowZoomBadge(false), 1500);

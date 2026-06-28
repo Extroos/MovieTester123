@@ -43,30 +43,30 @@ export const GENRES = {
   WESTERN: 37,
 };
 
-// App Theme Colors (Netflix-inspired professional palette)
+// App Theme Colors (Netflix-inspired professional palette with dynamic CSS variable fallback)
 export const COLORS = {
   // Main brand colors
-  primary: '#FFFFFF',      // White brand color
-  primaryHover: '#F3F4F6', // Brighter off-white/grey on hover
-  primaryDark: '#E5E7EB',  // Darker silver/grey for active states
+  primary: 'var(--color-primary, #FFFFFF)',
+  primaryHover: 'var(--color-primary-hover, #F3F4F6)',
+  primaryDark: 'var(--color-primary-dark, #E5E7EB)',
   
   // Background colors
-  bgPrimary: '#0a0a0a',    // Premium dark background (OLED styled)
-  bgSecondary: '#000000',  // Pure black
-  bgCard: '#1a1a1a',       // Darker card background
-  bgCardHover: '#2a2a2a',  // Card hover state
+  bgPrimary: 'var(--bg-primary, #0a0a0a)',
+  bgSecondary: 'var(--bg-secondary, #000000)',
+  bgCard: 'var(--bg-card, #1a1a1a)',
+  bgCardHover: 'var(--bg-card-hover, #2a2a2a)',
   
   // Text colors
-  textPrimary: '#FFFFFF',   // Main text
-  textSecondary: '#D2D2D2', // Secondary text
-  textMuted: '#808080',     // Muted text
+  textPrimary: 'var(--text-primary, #FFFFFF)',
+  textSecondary: 'var(--text-secondary, #D2D2D2)',
+  textMuted: 'var(--text-muted, #808080)',
   
   // UI elements
-  border: '#333333',        // Border color
-  overlay: 'rgba(0, 0, 0, 0.7)', // Modal/overlay
-  success: '#46D369',       // Success/positive
-  warning: '#FFA500',       // Warning
-  rating: '#FFD700',        // Star rating gold
+  border: 'var(--border-color, #333333)',
+  overlay: 'var(--overlay-color, rgba(0, 0, 0, 0.7))',
+  success: '#46D369',
+  warning: '#FFA500',
+  rating: '#FFD700',
 };
 
 // Breakpoints for responsive design

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as tmdb from '../services/tmdb';
 import { VidSrcService } from '../services/vidsrc';
-import { getMyList } from '../services/myList';
+import { getMyList } from '../services/user/myList';
 import { WatchProgressService } from '../services/progress';
 import { RecommendationService } from '../services/recommendations';
 import { ProfileService } from '../services/profiles';
@@ -122,49 +122,63 @@ export function useContent(profileId?: string) {
       await new Promise(resolve => setTimeout(resolve, 300));
       if (!isMounted) return;
 
-      const results = await Promise.allSettled([
+      // FIX: Split into two smaller batches with a 200ms gap between them.
+      // Previously all 17 calls fired simultaneously, saturating the network
+      // stack and JS event loop on low-end devices causing home page lag.
+      // Batch A: the most visible rows (top-rated, upcoming, action, comedy)
+      const batchA = await Promise.allSettled([
         withRetry(() => tmdb.getTopRated()),                                         // [0]
         withRetry(() => tmdb.getUpcoming()),                                         // [1]
-
-        // Mixed genre rows (movie + TV interleaved)
         Promise.allSettled([withRetry(() => tmdb.getTrendingByGenre(28, 'movie')), withRetry(() => tmdb.getTrendingByGenre(10759, 'tv'))]),   // [2] Action
         Promise.allSettled([withRetry(() => tmdb.getTrendingByGenre(35, 'movie')), withRetry(() => tmdb.getTrendingByGenre(35, 'tv'))]),      // [3] Comedy
-        Promise.allSettled([withRetry(() => tmdb.getTrendingByGenre(10751, 'movie')), withRetry(() => tmdb.getTrendingByGenre(10751, 'tv'))]),// [4] Family
-        Promise.allSettled([withRetry(() => tmdb.getTrendingByGenre(878, 'movie')), withRetry(() => tmdb.getTrendingByGenre(10765, 'tv'))]),  // [5] Sci-Fi
-        Promise.allSettled([withRetry(() => tmdb.getTrendingByGenre(27, 'movie')), withRetry(() => tmdb.getTrendingByGenre(10765, 'tv'))]),   // [6] Horror
-        Promise.allSettled([withRetry(() => tmdb.getTrendingByGenre(99, 'movie')), withRetry(() => tmdb.getTrendingByGenre(99, 'tv'))]),      // [7] Documentary
-        Promise.allSettled([withRetry(() => tmdb.getTrendingByGenre(12, 'movie')), withRetry(() => tmdb.getTrendingByGenre(10759, 'tv'))]),   // [8] Adventure
-
-        // TV-specific rows
-        withRetry(() => tmdb.getPopularTV()),                                        // [9]
-        withRetry(() => tmdb.getTopRatedTV()),                                       // [10]
-        withRetry(() => tmdb.getTrendingByGenre(18, 'tv')),                          // [11] Drama
-        withRetry(() => tmdb.getTrendingByGenre(35, 'tv')),                          // [12] Comedy
-        withRetry(() => tmdb.getTrendingByGenre(10765, 'tv')),                       // [13] SciFi
-        withRetry(() => tmdb.getTrendingByGenre(80, 'tv')),                          // [14] Crime
-        withRetry(() => tmdb.getTrendingByGenre(9648, 'tv')),                        // [15] Mystery
-        withRetry(() => tmdb.getTrendingByGenre(99, 'tv')),                          // [16] Documentary
       ]);
 
       if (!isMounted) return;
 
-      const topRated   = getSettledValue(results[0], []);
-      const upcoming   = getSettledValue(results[1], []);
+      // 200ms yield so the browser can paint Batch A results first
+      await new Promise(resolve => setTimeout(resolve, 200));
+      if (!isMounted) return;
+
+      // Batch B: remaining genre rows + TV rows
+      const batchB = await Promise.allSettled([
+        Promise.allSettled([withRetry(() => tmdb.getTrendingByGenre(10751, 'movie')), withRetry(() => tmdb.getTrendingByGenre(10751, 'tv'))]),// [0] Family
+        Promise.allSettled([withRetry(() => tmdb.getTrendingByGenre(878, 'movie')), withRetry(() => tmdb.getTrendingByGenre(10765, 'tv'))]),  // [1] Sci-Fi
+        Promise.allSettled([withRetry(() => tmdb.getTrendingByGenre(27, 'movie')), withRetry(() => tmdb.getTrendingByGenre(10765, 'tv'))]),   // [2] Horror
+        Promise.allSettled([withRetry(() => tmdb.getTrendingByGenre(99, 'movie')), withRetry(() => tmdb.getTrendingByGenre(99, 'tv'))]),      // [3] Documentary
+        Promise.allSettled([withRetry(() => tmdb.getTrendingByGenre(12, 'movie')), withRetry(() => tmdb.getTrendingByGenre(10759, 'tv'))]),   // [4] Adventure
+        withRetry(() => tmdb.getPopularTV()),                                        // [5]
+        withRetry(() => tmdb.getTopRatedTV()),                                       // [6]
+        withRetry(() => tmdb.getTrendingByGenre(18, 'tv')),                          // [7] Drama
+        withRetry(() => tmdb.getTrendingByGenre(35, 'tv')),                          // [8] Comedy
+        withRetry(() => tmdb.getTrendingByGenre(10765, 'tv')),                       // [9] SciFi
+        withRetry(() => tmdb.getTrendingByGenre(80, 'tv')),                          // [10] Crime
+        withRetry(() => tmdb.getTrendingByGenre(9648, 'tv')),                        // [11] Mystery
+        withRetry(() => tmdb.getTrendingByGenre(99, 'tv')),                          // [12] Documentary
+      ]);
+
+      // Map results from the two batches
+      const results = [...batchA, ...batchB];
+
+      if (!isMounted) return;
+
+       const topRated   = getSettledValue(results[0] as any, []);
+      const upcoming   = getSettledValue(results[1] as any, []);
       const actionMix  = interleaveSet(results[2] as any);
       const comedyMix  = interleaveSet(results[3] as any);
+      // Batch B results offset by 4 (batchA had 4 items)
       const familyMix  = interleaveSet(results[4] as any);
       const scifiMix   = interleaveSet(results[5] as any);
       const horrorMix  = interleaveSet(results[6] as any);
       const documentaryMix = interleaveSet(results[7] as any);
       const adventureMix = interleaveSet(results[8] as any);
-      const popularTV  = getSettledValue(results[9], []);
-      const topRatedTV = getSettledValue(results[10], []);
-      const dramaTV    = getSettledValue(results[11], []);
-      const comedyTV   = getSettledValue(results[12], []);
-      const scifiTV    = getSettledValue(results[13], []);
-      const crimeTV    = getSettledValue(results[14], []);
-      const mysteryTV  = getSettledValue(results[15], []);
-      const documentaryTV = getSettledValue(results[16], []);
+      const popularTV  = getSettledValue(results[9] as any, []);
+      const topRatedTV = getSettledValue(results[10] as any, []);
+      const dramaTV    = getSettledValue(results[11] as any, []);
+      const comedyTV   = getSettledValue(results[12] as any, []);
+      const scifiTV    = getSettledValue(results[13] as any, []);
+      const crimeTV    = getSettledValue(results[14] as any, []);
+      const mysteryTV  = getSettledValue(results[15] as any, []);
+      const documentaryTV = getSettledValue(results[16] as any, []);
 
       let topPicks: (Movie | TVShow)[] = [];
       let recommendedGenres: { genreId: number, name: string, items: (Movie | TVShow)[] }[] = [];
@@ -225,15 +239,15 @@ export function useContent(profileId?: string) {
     return () => { isMounted = false; };
   }, [loadContent]);
 
-  const refreshMyList = async () => {
+  const refreshMyList = useCallback(async () => {
     const list = await getMyList();
     setContent(prev => ({ ...prev, myList: list }));
-  };
+  }, []);
 
-  const refreshContinueWatching = async () => {
+  const refreshContinueWatching = useCallback(async () => {
     const cw = await WatchProgressService.getContinueWatching();
     setContent(prev => ({ ...prev, continueWatching: cw }));
-  };
+  }, []);
 
   return {
     ...content,

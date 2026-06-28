@@ -1,6 +1,9 @@
+import { SettingsService } from '../user/settings';
+
 /**
  * Generic Cache Service for persistent data storage
  * specific to WatchMovie mobile optimization.
+ * Wraps localStorage with an in-memory Cache Map to bypass synchronous disk I/O.
  */
 
 const DEFAULT_TTL = 4 * 60 * 60 * 1000; // 4 hours
@@ -16,16 +19,25 @@ interface CacheItem<T> {
 const CACHE_VERSION = 1;
 const CACHE_PREFIX = 'cine_cache_';
 
+// Fast in-memory cache storage
+const memoryCache = new Map<string, CacheItem<any>>();
+
 export const CacheService = {
   /**
-   * generate a unique key for a request
+   * generate a unique key for a request — includes language so fr/en/es data stays isolated
    */
   generateKey: (url: string, params: Record<string, any> = {}): string => {
+    // Optimized: read appLanguage directly from memory-cached SettingsService
+    let lang = 'en';
+    try {
+      lang = SettingsService.get('appLanguage') || 'en';
+    } catch {}
+    
     const paramString = Object.entries(params)
-      .sort(([keyA], [keyB]) => keyA.localeCompare(keyB)) // Sort to ensure consistent keys
+      .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
       .map(([key, value]) => `${key}=${String(value)}`)
       .join('&');
-    return `${CACHE_PREFIX}${url}?${paramString}`;
+    return `${CACHE_PREFIX}${lang}:${url}?${paramString}`;
   },
 
   /**
@@ -34,15 +46,25 @@ export const CacheService = {
    */
   get: <T>(key: string): { data: T; isStale: boolean } | null => {
     try {
-      const itemStr = localStorage.getItem(key);
-      if (!itemStr) return null;
+      // 1. Try In-Memory Cache first (0ms cost)
+      let item: CacheItem<T> | undefined = memoryCache.get(key);
 
-      const item: CacheItem<T> = JSON.parse(itemStr);
+      // 2. Fallback to localStorage if not in memory
+      if (!item) {
+        const itemStr = localStorage.getItem(key);
+        if (!itemStr) return null;
 
-      // Check version compatibility
-      if (item.version !== CACHE_VERSION) {
-        localStorage.removeItem(key);
-        return null;
+        item = JSON.parse(itemStr);
+        if (!item) return null;
+
+        // Check version compatibility
+        if (item.version !== CACHE_VERSION) {
+          localStorage.removeItem(key);
+          return null;
+        }
+
+        // Cache in memory for subsequent hits
+        memoryCache.set(key, item);
       }
 
       const isStale = Date.now() > item.expiry;
@@ -51,6 +73,10 @@ export const CacheService = {
       // but we should set a "Hard Expiry" (e.g., 7 days) where it's too old to show.
       const HARD_EXPIRY = 7 * 24 * 60 * 60 * 1000;
       if (Date.now() > item.timestamp + HARD_EXPIRY) {
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          return { data: item.data, isStale: true };
+        }
+        memoryCache.delete(key);
         localStorage.removeItem(key);
         return null;
       }
@@ -73,10 +99,14 @@ export const CacheService = {
         expiry: Date.now() + ttl,
         version: CACHE_VERSION,
       };
+      
+      // Cache in memory
+      memoryCache.set(key, item);
+      
+      // Persist to disk
       localStorage.setItem(key, JSON.stringify(item));
     } catch (e) {
       console.warn('Cache write error (quota exceeded?)', e);
-      // Optional: Prune old cache if quota exceeded
       CacheService.prune();
     }
   },
@@ -85,6 +115,7 @@ export const CacheService = {
    * Remove specific item
    */
   remove: (key: string): void => {
+    memoryCache.delete(key);
     localStorage.removeItem(key);
   },
 
@@ -92,6 +123,7 @@ export const CacheService = {
    * Clear all app-specific cache
    */
   clear: (): void => {
+    memoryCache.clear();
     Object.keys(localStorage).forEach(key => {
       if (key.startsWith(CACHE_PREFIX)) {
         localStorage.removeItem(key);
@@ -114,12 +146,14 @@ export const CacheService = {
             const item = JSON.parse(itemStr);
             // Remove expired items immediately
             if (Date.now() > item.expiry) {
+              memoryCache.delete(key);
               localStorage.removeItem(key);
             } else {
               entries.push({ key, timestamp: item.timestamp });
             }
           }
         } catch (e) {
+          memoryCache.delete(key);
           localStorage.removeItem(key); // Corrupt item
         }
       }
@@ -130,7 +164,9 @@ export const CacheService = {
       entries.sort((a, b) => a.timestamp - b.timestamp);
       const toRemove = Math.floor(entries.length / 2);
       for (let i = 0; i < toRemove; i++) {
-        localStorage.removeItem(entries[i].key);
+        const k = entries[i].key;
+        memoryCache.delete(k);
+        localStorage.removeItem(k);
       }
       console.log(`Cache pruned: removed ${toRemove} oldest entries`);
     }
@@ -138,4 +174,3 @@ export const CacheService = {
 };
 
 export { DEFAULT_TTL, LONG_TTL };
-

@@ -1,0 +1,753 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Globals from App.tsx */
+:root {
+  --brand-red: #ffffff;
+}
+
+html,
+body {
+  background: #0a0a0a;
+  scroll-behavior: smooth;
+  min-height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: auto;
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+/* Auto-hide BottomNav layout when high-performance full-viewport video overlay is active */
+body:has(.video-player-overlay) .cinemovie-bottom-nav {
+  display: none !important;
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+body {
+  font-size: 14px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+  position: relative;
+}
+
+img {
+  pointer-events: none;
+  -webkit-user-drag: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+::-webkit-scrollbar {
+  display: none;
+}
+* {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.active-press:active {
+  opacity: 0.7;
+  transform: scale(0.98);
+}
+
+.content-row-scroll {
+  touch-action: pan-x pan-y;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (hover: none) {
+  .movie-card {
+    transform: none !important;
+    transition: none !important;
+  }
+}
+
+/* GPU layer promotion removed — these elements already use `transition` which
+   promotes only during active animation. Permanent will-change wasted VRAM
+   by keeping 20+ compositing layers alive on mobile scroll views. */
+
+/* Keyframes */
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.95);
+    opacity: 0.8;
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Utility Animations */
+.pulse-dot {
+  animation: pulse 1.5s infinite ease-in-out;
+}
+
+.settings-section-animate {
+  animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes slideUpGlass {
+  from { opacity: 0; transform: translateY(40px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes backdropFadeBlur {
+  from { opacity: 0; backdrop-filter: blur(0) saturate(100%); }
+  to { opacity: 1; backdrop-filter: blur(25px) saturate(200%); }
+}
+
+@keyframes inputSlideIn {
+  from { opacity: 0; transform: translateX(30px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes suggestionFadeInUp {
+  from { opacity: 0; transform: translateY(15px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes resultsIn {
+  from { opacity: 0; transform: scale(1.02); filter: blur(10px); }
+  to { opacity: 1; transform: scale(1); filter: blur(0); }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes detailsIn { 
+  from { opacity: 0; transform: scale(1.02); } 
+  to { opacity: 1; transform: scale(1); } 
+}
+
+@keyframes backdropFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.search-result-card:active {
+  transform: scale(0.96) !important;
+  opacity: 0.8;
+}
+
+@keyframes fadeInGlass {
+  from { opacity: 0; transform: scale(1.05); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes revealCard {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Profile Selector Global Hover Styles */
+.profile-item {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.profile-avatar {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.profile-name {
+  transition: color 0.3s ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .profile-item:not(.managing):hover .profile-avatar {
+    transform: scale(1.08);
+    border-color: rgba(255, 255, 255, 0.9) !important;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7) !important;
+  }
+  .profile-item:not(.managing):hover .profile-name {
+    color: #ffffff !important;
+  }
+
+  .add-profile-btn:hover .add-icon-container {
+    background: rgba(255, 255, 255, 0.12) !important;
+    border-color: rgba(255, 255, 255, 0.5) !important;
+    transform: scale(1.08);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+  }
+  .add-profile-btn:hover span {
+    color: #ffffff !important;
+  }
+
+  .manage-btn:hover {
+    background: rgba(255, 255, 255, 0.15) !important;
+    border-color: #ffffff !important;
+    color: #ffffff !important;
+  }
+}
+
+.profile-avatar:active, .add-icon-container:active {
+  transform: scale(0.95) !important;
+}
+
+/* =============================================
+   120fps GPU-Composited Animation Utilities
+   All animations use only transform + opacity
+   to stay on the compositor thread (no layout)
+   ============================================= */
+
+@keyframes cardReveal {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes rowReveal {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Cards render instantly within their row to avoid staggered calculations */
+.content-card {
+  opacity: 1;
+  transform: none;
+}
+
+/* Row containers: smooth GPU-composited opacity fade-in instead of expensive layout shifts */
+.content-row-container {
+  opacity: 0;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 280px;
+  transition: opacity 0.25s ease-out;
+}
+
+.content-row-container.is-visible {
+  opacity: 1;
+}
+
+/* Highly performant media queries instead of JS layout calculations */
+.responsive-movie-card {
+  min-width: 110px;
+  width: 110px;
+}
+@media (min-width: 768px) {
+  .responsive-movie-card {
+    min-width: 140px;
+    width: 140px;
+  }
+}
+
+/* Pure CSS hover for content cards — zero JS state changes */
+.content-card-inner {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.25s ease;
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Desktop hover only — touch devices get no hover flicker */
+@media (hover: hover) and (pointer: fine) {
+  .content-card-inner:hover {
+    transform: scale(1.05);
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.15), 0 12px 24px rgba(0, 0, 0, 0.5);
+    border-color: rgba(255, 255, 255, 0.18) !important;
+  }
+}
+
+/* Active press state for touch — pure CSS, no JS */
+.content-card-inner:active {
+  transform: scale(0.96);
+  transition-duration: 0.1s;
+}
+
+/* Suppress ALL animations on reduced-motion or low-power mode */
+@media (prefers-reduced-motion: reduce) {
+  .content-card,
+  .content-card.is-visible,
+  .content-row-container,
+  .content-row-container.is-visible,
+  .content-card-inner {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+  }
+}
+
+/* =============================================
+   Cinematic Video Player Custom Styling
+   ============================================= */
+
+.video-player-overlay {
+  background-color: #000000;
+  font-family: 'Outfit', 'Inter', -apple-system, sans-serif;
+  overflow: hidden;
+}
+
+/* Vignette overlay on active controls */
+.player-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at center, transparent 20%, rgba(0, 0, 0, 0.7) 100%),
+              linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, transparent 20%),
+              linear-gradient(to bottom, rgba(0, 0, 0, 0.8) 0%, transparent 20%);
+  opacity: 0;
+  transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 9991;
+}
+.player-vignette.active {
+  opacity: 1;
+}
+
+/* Glassmorphic floating control bar */
+.cinematic-controls-bar {
+  background: rgba(15, 15, 15, 0.65);
+  backdrop-filter: blur(24px) saturate(180%) brightness(1.1);
+  -webkit-backdrop-filter: blur(24px) saturate(180%) brightness(1.1);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6),
+              inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  padding: 16px 24px;
+  width: 90%;
+  max-width: 900px;
+  margin: 0 auto 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 10010;
+  pointer-events: auto;
+}
+
+/* Custom premium progress bar */
+.cinematic-slider-container {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+}
+
+.cinematic-slider-track {
+  position: relative;
+  flex: 1;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: height 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.cinematic-slider-container:hover .cinematic-slider-track {
+  height: 6px;
+}
+
+.cinematic-slider-fill {
+  height: 100%;
+  background: #ffffff;
+  border-radius: 2px;
+  position: relative;
+  pointer-events: none;
+}
+
+.cinematic-slider-buffered {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+  pointer-events: none;
+  transition: width 0.2s ease;
+}
+
+.cinematic-slider-thumb {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  width: 14px;
+  height: 14px;
+  background: #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.8), 0 2px 4px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cinematic-slider-container:hover .cinematic-slider-thumb,
+.cinematic-slider-container:active .cinematic-slider-thumb {
+  transform: translate(-50%, -50%) scale(1);
+}
+
+/* Settings flyout panel */
+.settings-flyout-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 380px;
+  max-width: 100%;
+  background: rgba(10, 10, 10, 0.75);
+  backdrop-filter: blur(40px) saturate(200%) brightness(0.9);
+  -webkit-backdrop-filter: blur(40px) saturate(200%) brightness(0.9);
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: -20px 0 60px rgba(0, 0, 0, 0.8);
+  z-index: 10020;
+  display: flex;
+  flex-direction: column;
+  padding: 32px 28px;
+  transform: translateX(100%);
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.settings-flyout-panel.active {
+  transform: translateX(0);
+}
+
+.settings-flyout-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 10018;
+}
+
+.settings-flyout-backdrop.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Cinematic Server Selection tabs */
+.provider-tabs-bar {
+  display: flex;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 4px;
+  border-radius: 30px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.provider-tab-btn {
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: 20px;
+  cursor: pointer;
+  background: transparent;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.provider-tab-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.provider-tab-btn.active {
+  color: #000000;
+  background: #ffffff;
+  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.15);
+}
+
+/* Floating volume controller slider */
+.volume-control-popover {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.volume-container:hover .volume-control-popover,
+.volume-control-popover.active {
+  width: 100px;
+  opacity: 1;
+}
+
+/* 44px Stealth Touch Hitbox for mobile accessibility */
+.mobile-touch-target {
+  position: relative;
+}
+.mobile-touch-target::after {
+  content: '';
+  position: absolute;
+  top: -12px;
+  bottom: -12px;
+  left: -12px;
+  right: -12px;
+  cursor: pointer;
+  z-index: 10;
+}
+
+/* =============================================
+   Stabilized Premium Subtitle Styling
+   ============================================= */
+
+/* Move the VTT/caption container up on Webkit browsers (Chrome, Safari, iOS, Android Capacitor) */
+video::-webkit-media-text-track-container {
+  transform: translateY(var(--subtitle-position, -80px)) !important;
+  transition: transform 0.25s ease !important;
+}
+
+/* Premium styled webvtt subtitles */
+video::cue {
+  background-color: rgba(0, 0, 0, var(--subtitle-bg-opacity, 0.78)) !important;
+  color: var(--subtitle-color, #ffffff) !important;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+  font-size: var(--subtitle-font-size, calc(15px + 0.55vw)) !important;
+  font-weight: 600 !important;
+  text-shadow: 0 1.5px 3px rgba(0, 0, 0, 0.9) !important;
+  border-radius: 8px !important;
+  padding: 4px 10px !important;
+}
+
+/* Local Video Player Keyframe Animations */
+@keyframes rippleWaveLeft {
+  0% { opacity: 0; transform: scaleX(0.5); transform-origin: left center; }
+  50% { opacity: 1; transform: scaleX(1.1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+@keyframes rippleWaveRight {
+  0% { opacity: 0; transform: scaleX(0.5); transform-origin: right center; }
+  50% { opacity: 1; transform: scaleX(1.1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+@keyframes fadeInScaleCentered {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+/* Small Viewport Media Queries (e.g. 360px phones) */
+@media (max-width: 380px) {
+  .cinemovie-header {
+    left: 10px !important;
+    right: 10px !important;
+    padding: 0 10px !important;
+  }
+  .cinemovie-header-logo {
+    font-size: 1.1rem !important;
+  }
+  .cinemovie-header-left {
+    gap: 12px !important;
+  }
+}
+
+/* =============================================
+   Performance Optimization Classes (Listings & Pages)
+   ============================================= */
+
+/* Page reveals - hardware-accelerated opacity fades */
+.news-feed-card {
+  animation: newsCardReveal 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes newsCardReveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Category Grid & Genre content cards */
+.news-category-card {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease, box-shadow 0.25s ease;
+  will-change: transform;
+}
+@media (hover: hover) and (pointer: fine) {
+  .news-category-card:hover {
+    transform: scale(1.02) translate3d(0,0,0);
+    border-color: rgba(255, 255, 255, 0.15) !important;
+  }
+}
+.news-category-card:active {
+  transform: scale(0.97) translate3d(0,0,0);
+}
+
+.genre-content-card {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease;
+  animation: cardReveal 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform;
+}
+@media (hover: hover) and (pointer: fine) {
+  .genre-content-card:hover {
+    transform: scale(1.04) translate3d(0,0,0);
+    border-color: rgba(255, 255, 255, 0.2) !important;
+  }
+}
+.genre-content-card:active {
+  transform: scale(0.96) translate3d(0,0,0);
+}
+
+/* News media content box */
+.news-media-box {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.3s ease, box-shadow 0.3s ease;
+  will-change: transform;
+}
+@media (hover: hover) and (pointer: fine) {
+  .news-media-box:hover {
+    transform: scale(1.015) translate3d(0,0,0);
+    border-color: rgba(255, 255, 255, 0.15) !important;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5) !important;
+  }
+}
+
+/* My List page cards styling */
+.mylist-card {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+@media (hover: hover) and (pointer: fine) {
+  .mylist-card:hover {
+    transform: scale(1.02) translate3d(0,0,0);
+  }
+  .mylist-card:hover .mylist-img-container {
+    border-color: rgba(255, 255, 255, 0.16) !important;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55) !important;
+  }
+}
+
+/* Offline Downloads page card hover states */
+.download-card {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+@media (hover: hover) and (pointer: fine) {
+  .download-card:hover {
+    transform: scale(1.03) translate3d(0,0,0);
+  }
+}
+
+/* Search Suggestion Result Rows styling */
+.search-result-row {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease, background 0.25s ease;
+  will-change: transform;
+}
+@media (hover: hover) and (pointer: fine) {
+  .search-result-row:hover {
+    transform: translateY(-1px) translate3d(0,0,0);
+    border-color: rgba(255, 255, 255, 0.12) !important;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 100%) !important;
+  }
+}
+
+/* Search Grid item cards styling */
+.search-grid-card {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+@media (hover: hover) and (pointer: fine) {
+  .search-grid-card:hover {
+    transform: scale(1.04) translate3d(0,0,0);
+  }
+}
+.search-grid-card:active {
+  transform: scale(0.97) translate3d(0,0,0);
+}
+
+
+

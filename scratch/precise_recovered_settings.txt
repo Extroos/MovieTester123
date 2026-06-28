@@ -1,0 +1,351 @@
+import React, { useState, useEffect } from 'react';
+import { COLORS } from '../../../constants';
+import { triggerHaptic } from '../../../utils/haptics';
+import packageJson from '../../../../package.json';
+import { Profile, ProfileService } from '../../../services/profiles';
+import { Movie } from '../../../types';
+import { getBackdropUrl, getPosterUrl } from '../../../services/tmdb';
+import { SettingsService, AppSettings } from '../../../services/settings';
+import { WatchProgressService } from '../../../services/progress';
+import WatchHistory from './WatchHistory';
+import { supabase } from '../../../utils/supabase';
+import VersionHistory from './VersionHistory';
+import { getLocalServerUrl, setLocalServerUrl } from '../../../services/LocalStreamService';
+import { Play, Languages, Sliders, Shield, Users, Copy, Check, Download, Eye, EyeOff, ChevronRight, ChevronLeft, List, BarChart2, LogOut, User } from 'lucide-react';
+import { useFriends } from '../../../hooks/useFriends';
+import { StatsService } from '../../../services/user/stats';
+
+interface SettingsPageProps {
+  onNavigate: (view: any) => void;
+  heroBackground: Movie | null;
+  activeProfile: Profile | null;
+  onSwitchProfile: () => void;
+  onLogout: () => void;
+  activeSubPage?: 'streaming' | 'subtitles' | 'appearance' | 'account' | 'social' | 'statistics' | null;
+  onActiveSubPageChange?: (subPage: 'streaming' | 'subtitles' | 'appearance' | 'account' | 'social' | 'statistics' | null) => void;
+  showVers
+  const [testError, setTestError] = useState<string | null>(null);
+  const [profileStats, setProfileStats] = useState<any>(null);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [showOsPassword, setShowOsPassword] = useState(false);
+
+  const handleTestConnection = async (overrideUrl?: string) => {
+    const urlToTest = (overrideUrl || serverUrl).trim().replace(/\/$/, '');
+    if (!urlToTest) return;
+    
+    setIsTestingUrl(true);
+    setTestStatus(null);
+    setTestError(null);
+    triggerHaptic('light');
+    
+    try {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      
+      console.log(`[Settings] Testing connection to: ${urlToTest}/health`);
+      const res = await fetch(`${urlToTest}/health`, {
+        signal: controller.signal
+      });
+      clearTimeout(id);
+      
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'ok') {
+          setTestStatus('success');
+          triggerHaptic('medium');
+          return;
+        }
+      }
+      throw new Error(`Server returned status: ${res.status}`);
+    } catch (e: any) {
+      console.error('[Settings] Connection test failed:', e);
+      setTestStatus('error');
+      setTestError(e.message || 'Server unreachable. Verify the IP address, port, and ensure your PC firewall allows incoming connections.');
+      triggerHaptic('heavy');
+    } finally {
+      setIsTestingUrl(false);
+    }
+  };
+
+  const [osApiKey, setOsApiKey] = useState(localStorage.getItem('cinemovie_opensubtitles_apikey') || '');
+  const [osUsername, setOsUsername] = useState(localStorage.getItem('cinemovie_opensubtitles_username') || '');
+  const [osPassword, setOsPassword] = useState(localStorage.getItem('cinemovie_opensubtitles_password') || '');
+  const [osSaved, setOsSaved] = useState(false);
+
+  const [internalActiveSubPage, setInternalActiveSubPage] = useState<'streaming' | 'subtitles' | 'appearance' | 'account' | 'social' | 'statistics' | null>(null);
+  const activeSubPage = propActiveSubPage !== undefined ? propActiveSubPage : internalActiveSubPage;
+  const setActiveSubPage = onActiveSubPageChange || setInternalActiveSubPage;
+
+  useEffect(() => {
+    if (activeProfile && activeSubPage === 'statistics') {
+      StatsService.getStats(activeProfile.id).then(stats => {
+        setProfileStats(stats);
+      });
+    }
+  }, [activeProfile, activeSubPage]);
+
+  const { 
+  const executeDeleteProfile = async () => {
+    if (!activeProfile) return;
+    const success = await ProfileService.deleteProfile(activeProfile.id);
+    if (success) {
+      triggerHaptic('heavy');
+      onSwitchProfile();
+    } else {
+      showToast('Failed to delete profile.');
+    }
+    setConfirmModal(null);
+  };
+
+  const handleDeleteAccount = async () => {
+    setConfirmModal({
+      type: 'delete_account',
+      title: 'Delete Account permanently?',
+      message: 'WARNING: This will permanently delete your Cinemovie account and all data. This action is irreversible. Proceed?',
+      actionText: 'Terminate',
+      isDanger: true
+    });
+  };
+
+  const executeDeleteAccount = async () => {
+    const { error } = await supabase.rpc('delete_user_data');
+    if (error) {
+        console.error('Account deletion error:', error);
+        showToast('Error terminates account data.');
+    }
+    await supabase.auth.signOut();
+    onLogout();
+    setConfirmModal(null);
+  };
+
+              <div className="settings-group-container">
+                <div 
+                  onClick={() => {
+                    triggerHaptic('light');
+                    onNavigate('downloads');
+                  }}
+                  className="settings-list-item"
+                >
+                  <Download size={16} style={{ marginRight: '12px', opacity: 0.8, color: '#fff', flexShrink: 0 }} />
+                  <div className="settings-item-label">Offline Downloads</div>
+                  <ChevronRight size={14} className="settings-item-chevron" />
+                </div>
+
+                <div 
+                  onClick={() => {
+                    triggerHaptic('light');
+                    onNavigate('mylist');
+                  }}
+                  className="settings-list-item"
+                >
+                  <List size={16} style={{ marginRight: '12px', opacity: 0.8, color: '#fff', flexShrink: 0 }} />
+                  <div className="settings-item-label">My List</div>
+                  <ChevronRight size={14} className="settings-item-chevron" />
+                </div>
+              </div>
+
+              {/* Preferences Group */}
+              <div className="settings-group-title">Preferences</div>
+              <div className="settings-group-container">
+                <div 
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setActiveSubPage('streaming');
+                  }}
+                  className="settings-list-item"
+                >
+                  <Play size={16} style={{ marginRight: '12px', opacity: 0.8, color: '#fff', flexShrink: 0 }} />
+                  <div className="settings-item-label">Streaming Settings</div>
+                  <ChevronRight size={14} className="settings-item-chevron" />
+                </div>
+
+                <div 
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setActiveSubPage('subtitles');
+                  }}
+                  className="settings-list-item"
+                >
+                  <Languages size={16} style={{ marginRight: '12px', opacity: 0.8, color: '#fff', flexShrink: 0 }} />
+                  <div className="settings-item-label">Subtitle Engine</div>
+                  <ChevronRight size={14} className="settings-item-chevron" />
+                </div>
+
+                <div 
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setActiveSubPage('appearance');
+                  }}
+                  className="settings-list-item"
+                >
+                  <Sliders size={16} style={{ marginRight: '12px', opacity: 0.8, color: '#fff', flexShrink: 0 }} />
+                  <div className="settings-item-label">Appearance & Theme</div>
+                  <ChevronRight size={14} className="settings-item-chevron" />
+                </div>
+              </div>
+
+              {/* Social & Account Group */}
+              <div className="settings-group-title">Social & Account</div>
+         
+                        {/* Search account by name */}
+                        <div style={{
+                          background: 'rgba(255, 255, 255, 0.02)',
+                          border: '1px solid rgba(255, 255, 255, 0.05)',
+                          borderRadius: '12px',
+                          padding: '14px',
+                        }}>
+                          <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#fff', marginBottom: '4px' }}>Search Account Owner by Name</div>
+                          <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', marginBottom: '10px' }}>
+                            Search for users by primary account name.
+                          </div>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <input
+                              type="text"
+                              placeholder="Type name to search..."
+                              value={searchQuery}
+                              onChange={(e) => setSearchQuery(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleUserSearch()}
+                              style={{
+                                flex: 1,
+                                background: 'rgba(255,255,255,0.06)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: '8px',
+                                padding: '8px 10px',
+                                color: '#fff',
+                                fontSize: '0.8rem',
+                                fontWeight: 600,
+                                outline: 'none',
+                                minWidth: 0
+                              }}
+                            />
+                            <button
+                              onClick={handleUserSearch}
+                              disabled={isSearching || !searchQuery.trim()}
+                              style={{
+                                background: '#ffffff',
+                                border: 'none',
+                                color: '#000000',
+                                borderRadius: '8px',
+                                padding: '8px 12px',
+                                fontWeight: 800,
+                                fontSize: '0.8rem',
+                                cursor: 'pointer',
+                                transition: 'opacity 0.2s',
+                                opacity: (isSearching || !searchQuery.trim()) ? 0.5 : 1,
+                                flexShrink: 0
+                              }}
+                            >
+                              {isSearching ? '...' : 'Search'}
+                            </button>
+                          </div>
+
+                          {/* Search Results */}
+                          {searchResults.length > 0 && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
+                              {searchResults.map((result) 
+                                opacity: ach.unlocked ? 1 : 0.4,
+                                boxShadow: ach.unlocked ? `0 4px 16px ${ach.glow.replace('0.4', '0.08')}` : 'none',
+                                transition: 'all 0.3s ease',
+                                overflow: 'hidden'
+                              }}
+                            >
+                              <span style={{ fontSize: '1.5rem', filter: ach.unlocked ? 'none' : 'grayscale(100%)' }}>
+                                {ach.icon}
+                              </span>
+                              <div style={{ minWidth: 0, flex: 1 }}>
+                                <div style={{ fontSize: '0.78rem', fontWeight: 800, color: ach.unlocked ? '#fff' : 'rgba(255,255,255,0.6)' }}>
+                                  {ach.title}
+                                </div>
+                                <div style={{ fontSize: '0.64rem', color: 'rgba(255, 255, 255, 0.4)', fontWeight: 550, marginTop: '2px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                                  {ach.description}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Weekly Activity Column Chart */}
+                      <div style={{
+                        background: 'rgba(255, 255, 255, 0.01)',
+                        border: '1px solid rgba(255, 255, 255, 0.05)',
+                        borderRadius: '20px',
+                        padding: isMobile ? '14px' : '20px',
+                        display:
+                                <div style={{
+                                  width: '100%',
+                                  maxWidth: isMobile ? '14px' : '24px',
+                                  height: `${pct}%`,
+                                  background: day.time > 0 ? `linear-gradient(to top, ${COLORS.primary} 30%, #ff8c94 100%)` : 'rgba(255,255,255,0.04)',
+                                  borderRadius: '4px',
+                                  transition: 'height 0.5s ease-out, background 0.3s',
+                                  cursor: 'pointer',
+                                  boxShadow: day.time > 0 ? `0 4px 12px rgba(229, 9, 20, 0.2)` : 'none'
+                                }} />
+                                <div style={{
+                                  fontSize: '0.65rem',
+                                  fontWeight: 900,
+                                  color: 'rgba(255, 255, 255, 0.4)',
+                                  letterSpacing: '0.02em'
+                                }}>
+                                  {day.label}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Hourly Viewing Habits */}
+                      <div style={{
+                        background: 'rgba(255, 255, 
+          {sub}
+        </div>
+      </div>
+      <div style={{ display: 'flex', justifyContent: shouldStack ? 'stretch' : 'flex-end', width: shouldStack ? '100%' : 'auto' }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Switch({ checked, onChange, isMobile }: { checked: boolean, onChange: () => void, isMobile?: boolean }) {
+  const trackWidth = isMobile ? 42 : 50;
+  const trackHeight = isMobile ? 24 : 28;
+  const knobSize = isMobile ? 18 : 22;
+  const padding = 2;
+
+  return (
+    <div 
+      onClick={onChange}
+      style={{
+        width: `${trackWidth}px`,
+        height: `${trackHeight}px`,
+        background: checked ? '#ffffff' : 'rgba(255,255,255,0.06)',
+        borderRadius: '30px',
+        position: 'relative',
+        transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+        cursor: 'pointer',
+        border: '1px solid rgba(255,255,255,0.08)',
+        boxShadow: checked ? '0 0 12px rgba(255, 255, 255, 0.15)' : 'none'
+      }}
+    >
+      <div style={{
+        position: 'absolute',
+        top: `${padding}px`,
+        left: `${checked ? (trackWidth - knobSize - padding) : padding}px`,
+        width: `${knobSize}px`,
+        height: `${knobSize}px`,
+        background: checked ? '#000000' : '#ffffff',
+        borderRadius: '50%',
+        transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+      </div>
+    </div>
+  );
+}
+

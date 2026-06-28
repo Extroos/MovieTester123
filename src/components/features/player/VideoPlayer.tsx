@@ -5,11 +5,11 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import type { Movie, TVShow } from '../../../types';
 import { StreamService } from '../../../services/StreamService';
 import LocalVideoPlayer from './LocalVideoPlayer/index';
-import EmbedVideoPlayer from './EmbedVideoPlayer';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertCircle } from 'lucide-react';
 
 const SystemCast = registerPlugin<any>('SystemCast');
+const NativeStreamingEngine = registerPlugin<any>('NativeStreamingEngine');
 
 const isNative = Capacitor.isNativePlatform();
 
@@ -32,6 +32,28 @@ interface VideoPlayerProps {
 
 export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, season, episode, tracks, startTime, isOfflineMode: isOfflineProp = false, isPartyMode = false, partySessionId = null, isPartyHost = false }: VideoPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const isMountedRef = useRef(true);
+
+  // --- Google Cast Integration States & Refs ---
+  const [castConnected, setCastConnected] = useState(false);
+  const [isCastAvailable, setIsCastAvailable] = useState(true);
+  const [resolving, setResolving] = useState(false);
+  const [castSource, setCastSource] = useState<string | null>(null);
+  const [resolvedTracks, setResolvedTracks] = useState<VideoPlayerProps['tracks']>([]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (Capacitor.isNativePlatform()) {
+        SystemCast.disconnectCast().catch((e: any) => console.warn('Failed to disconnect cast on unmount:', e));
+      } else if (window.cast) {
+        try {
+          window.cast.framework.CastContext.getInstance().endCurrentSession(true);
+        } catch (e) {}
+      }
+    };
+  }, []);
   
   // Shared playback states (used for UI controls and sync with Google Cast)
   const [playing, setPlaying] = useState(true);
@@ -39,6 +61,7 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
   const [currentTime, setCurrentTime] = useState(startTime || 0);
   const [duration, setDuration] = useState(0);
   const [errorToast, setErrorToast] = useState<string | null>(null);
+  const [subtitleDelay, setSubtitleDelay] = useState<number>(0);
 
   useEffect(() => {
     if (errorToast) {
@@ -47,12 +70,28 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
     }
   }, [errorToast]);
 
-  // --- Google Cast Integration States & Refs ---
-  const [isCastAvailable, setIsCastAvailable] = useState(true);
-  const [castConnected, setCastConnected] = useState(false);
-  const [resolving, setResolving] = useState(false);
-  const [castSource, setCastSource] = useState<string | null>(null);
-  const [resolvedTracks, setResolvedTracks] = useState<VideoPlayerProps['tracks']>([]);
+  const subtitleStyleRef = useRef({ size: 'normal', color: '#ffffff', opacity: 0.6 });
+
+  useEffect(() => {
+    if (castConnected && Capacitor.isNativePlatform()) {
+      SystemCast.setSubtitleStyle({
+        size: subtitleStyleRef.current.size,
+        color: subtitleStyleRef.current.color,
+        opacity: subtitleStyleRef.current.opacity
+      }).catch((e: any) => console.error('Failed to sync initial subtitle style to TV:', e));
+    }
+  }, [castConnected]);
+
+  const handleSubtitleStyleChange = (style: { size: string, color: string, opacity: number }) => {
+    subtitleStyleRef.current = style;
+    if (castConnected && Capacitor.isNativePlatform()) {
+      SystemCast.setSubtitleStyle({
+        size: style.size,
+        color: style.color,
+        opacity: style.opacity
+      }).catch((e: any) => console.error('Failed to sync subtitle style to TV:', e));
+    }
+  };
   
   const remotePlayer = useRef<any>(null);
   const remotePlayerController = useRef<any>(null);
@@ -111,19 +150,35 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
 
   // Listen for native cast events on mobile
   useEffect(() => {
-    if (Capacitor.isNativePlatform()) {
-      let statusListener: any = null;
-      let progressListener: any = null;
+    let active = true;
+    let statusListener: any = null;
+    let progressListener: any = null;
 
-      const setupListeners = async () => {
-        statusListener = await SystemCast.addListener('onCastStatusChanged', (data: { connected: boolean, deviceName: string }) => {
+    const setupListeners = async () => {
+      if (!Capacitor.isNativePlatform()) return;
+
+      try {
+        const sListener = await SystemCast.addListener('onCastStatusChanged', (data: { connected: boolean, deviceName: string }) => {
+          if (!active) {
+            sListener.remove();
+            return;
+          }
           setCastConnected(data.connected);
           if (data.connected) {
             setPlaying(true);
           }
         });
+        if (!active) {
+          sListener.remove();
+          return;
+        }
+        statusListener = sListener;
 
-        progressListener = await SystemCast.addListener('onCastProgressChanged', (data: { currentTime: number, duration: number, paused: boolean, buffering: boolean }) => {
+        const pListener = await SystemCast.addListener('onCastProgressChanged', (data: { currentTime: number, duration: number, paused: boolean, buffering: boolean }) => {
+          if (!active) {
+            pListener.remove();
+            return;
+          }
           setCurrentTime(data.currentTime);
           if (data.duration > 0) {
             setDuration(data.duration);
@@ -131,15 +186,25 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
           setPlaying(!data.paused);
           setBuffering(data.buffering);
         });
-      };
+        if (!active) {
+          pListener.remove();
+          return;
+        }
+        progressListener = pListener;
+      } catch (e) {
+        console.warn('Failed to setup SystemCast listeners:', e);
+      }
+    };
 
+    if (Capacitor.isNativePlatform()) {
       setupListeners();
-
-      return () => {
-        if (statusListener) statusListener.remove();
-        if (progressListener) progressListener.remove();
-      };
     }
+
+    return () => {
+      active = false;
+      if (statusListener) statusListener.remove();
+      if (progressListener) progressListener.remove();
+    };
   }, []);
 
   // Initialize Chromecast SDK
@@ -210,14 +275,29 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
 
   // Load Media into Cast Session
   useEffect(() => {
-    const activeSrc = castSource || src;
+    const activeSrcToCast = castSource || activeSrc;
     const activeTracks = resolvedTracks.length > 0 ? resolvedTracks : tracks;
 
-    if (castConnected && activeSrc && window.cast) {
+    if (castConnected && activeSrcToCast && window.cast) {
         const session = window.cast.framework.CastContext.getInstance().getCurrentSession();
         if (session) {
-            // Ensure absolute URL
-            const streamUrl = activeSrc.startsWith('http') ? activeSrc : new URL(activeSrc, window.location.href).href;
+            const streamUrl = activeSrcToCast.startsWith('http') ? activeSrcToCast : new URL(activeSrcToCast, window.location.href).href;
+            const mediaSession = session.getMediaSession();
+            if (mediaSession && mediaSession.media) {
+                const currentContentId = mediaSession.media.contentId;
+                if (currentContentId === streamUrl) {
+                    const finalTracks = activeTracks || [];
+                    const activeTrackIndex = finalTracks.findIndex(t => t.default);
+                    const activeTrackIds = activeTrackIndex !== -1 ? [activeTrackIndex + 1] : [];
+                    
+                    const request = new window.chrome.cast.media.EditTracksInfoRequest(activeTrackIds);
+                    mediaSession.editTracksInfo(request,
+                        () => console.log('[VideoPlayer] Successfully updated active track on Web Cast'),
+                        (err: any) => console.error('[VideoPlayer] Failed to edit tracks on Web Cast:', err)
+                    );
+                    return;
+                }
+            }
             const contentType = streamUrl.includes('.m3u8') ? 'application/x-mpegURL' : 'video/mp4';
             
             const mediaInfo = new window.chrome.cast.media.MediaInfo(streamUrl, contentType);
@@ -235,7 +315,26 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
             if (finalTracks.length > 0) {
                const castTracks = finalTracks.map((track, i) => {
                   const castTrack = new window.chrome.cast.media.Track(i + 1, window.chrome.cast.media.TrackType.TEXT);
-                  castTrack.trackContentId = track.file;
+                  
+                  // Use the original remote URL if available to bypass local blob / host CORS issues on Chromecast
+                  let trackUrl = (track as any).originalFile || track.file;
+                  
+                  // Resolve relative path to absolute
+                  if (trackUrl && !trackUrl.startsWith('http') && !trackUrl.startsWith('blob:')) {
+                      trackUrl = new URL(trackUrl, window.location.href).href;
+                  }
+                  
+                  // Replace localhost/127.0.0.1 with the actual hostname of the server if we are casting
+                  if (trackUrl && (trackUrl.includes('localhost') || trackUrl.includes('127.0.0.1'))) {
+                      trackUrl = trackUrl.replace('localhost', window.location.hostname).replace('127.0.0.1', window.location.hostname);
+                  }
+
+                  if (trackUrl && subtitleDelay !== 0) {
+                      const separator = trackUrl.includes('?') ? '&' : '?';
+                      trackUrl = `${trackUrl}${separator}delay=${subtitleDelay}`;
+                  }
+
+                  castTrack.trackContentId = trackUrl;
                   castTrack.trackContentType = 'text/vtt';
                   castTrack.subtype = window.chrome.cast.media.TextTrackType.SUBTITLES;
                   castTrack.name = track.label;
@@ -244,10 +343,41 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
                });
                mediaInfo.tracks = castTracks;
                mediaInfo.textTrackStyle = new window.chrome.cast.media.TextTrackStyle();
-            }
+                
+                // Fetch user style selections dynamically from localStorage
+                const savedSize = localStorage.getItem('cinemovie_subtitle_size') || 'normal';
+                const savedColor = localStorage.getItem('cinemovie_subtitle_color') || '#ffffff';
+                const savedOpacity = localStorage.getItem('cinemovie_subtitle_bg_opacity') !== null ? parseFloat(localStorage.getItem('cinemovie_subtitle_bg_opacity')!) : 0.6;
+
+                if (window.chrome?.cast?.media) {
+                    const style = mediaInfo.textTrackStyle;
+                    style.fontFamily = 'sans-serif';
+                    
+                    // fontScale mapping
+                    let scale = 1.0;
+                    if (savedSize === 'small') scale = 0.85;
+                    else if (savedSize === 'large') scale = 1.3;
+                    else if (savedSize === 'xlarge') scale = 1.6;
+                    style.fontScale = scale;
+
+                    // foregroundColor mapping
+                    style.foregroundColor = (savedColor || '#ffffff') + 'FF';
+
+                    // backgroundColor mapping
+                    const opacityHex = Math.round((savedOpacity ?? 0.6) * 255).toString(16).padStart(2, '0');
+                    style.backgroundColor = '#000000' + opacityHex;
+                }
+             }
 
             const request = new window.chrome.cast.media.LoadRequest(mediaInfo);
+            request.autoplay = false;
             
+            // Set activeTrackIds if a track is selected (marked as default: true)
+            const activeTrackIndex = finalTracks.findIndex(t => t.default);
+            if (activeTrackIndex !== -1) {
+               request.activeTrackIds = [activeTrackIndex + 1];
+            }
+
             // If we have local current time, start from there
             if (currentTime > 0) {
                 request.currentTime = currentTime;
@@ -259,13 +389,72 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
                 currentTime
             });
             session.loadMedia(request)
-                .then(() => console.log('[VideoPlayer] Cast Media Load Success'))
+                .then(() => {
+                    console.log('[VideoPlayer] Cast Media Load Success');
+                    setTimeout(() => {
+                        const currentSession = window.cast?.framework?.CastContext?.getInstance()?.getCurrentSession();
+                        if (currentSession && currentSession.getMediaSession()) {
+                            currentSession.getMediaSession().play(null);
+                        }
+                    }, 1500);
+                })
                 .catch((e: any) => console.error('Cast Load Error:', e));
         }
     }
-  }, [castConnected, src, castSource, title, item, resolvedTracks]);
+  }, [castConnected, activeSrc, castSource, title, item, resolvedTracks, subtitleDelay]);
+
+  // Sync subtitle delay or selection changes to native Android Cast session
+  useEffect(() => {
+    if (castConnected && Capacitor.isNativePlatform() && (castSource || activeSrc)) {
+      const posterUrl = item && (item as any).posterPath 
+        ? `https://image.tmdb.org/t/p/w500${(item as any).posterPath}` 
+        : '';
+      const subtitleText = (item as any)?.name 
+        ? `Season ${season} • Episode ${episode}` 
+        : '';
+      
+      const finalTracks = resolvedTracks.length > 0 ? resolvedTracks : (tracks || []);
+      const processedTracks = finalTracks.map((track, i) => {
+        let trackUrl = (track as any).originalFile || track.file;
+        if (trackUrl && !trackUrl.startsWith('http') && !trackUrl.startsWith('blob:')) {
+          trackUrl = new URL(trackUrl, window.location.href).href;
+        }
+        if (trackUrl && (trackUrl.includes('localhost') || trackUrl.includes('127.0.0.1'))) {
+          trackUrl = trackUrl.replace('localhost', window.location.hostname).replace('127.0.0.1', window.location.hostname);
+        }
+        if (trackUrl && subtitleDelay !== 0) {
+          const separator = trackUrl.includes('?') ? '&' : '?';
+          trackUrl = `${trackUrl}${separator}delay=${subtitleDelay}`;
+        }
+        return {
+          id: i + 1,
+          src: trackUrl,
+          label: track.label,
+          language: track.label ? track.label.substring(0, 2).toLowerCase() : 'en',
+          isDefault: !!track.default
+        };
+      });
+      const activeTrack = processedTracks.find(t => t.isDefault);
+      const activeTrackId = activeTrack ? activeTrack.id : -1;
+
+      SystemCast.launchCastSettings({
+        videoUrl: castSource || activeSrc,
+        title: title,
+        subtitle: subtitleText,
+        posterUrl: posterUrl,
+        currentTime: currentTime,
+        subtitleTracks: processedTracks,
+        activeTrackId: activeTrackId
+      }).catch((e: any) => console.error('Failed to update native cast track delay:', e));
+    }
+  }, [subtitleDelay, resolvedTracks, castConnected, activeSrc, castSource, title, item, season, episode]);
 
   const handleCastClick = async () => {
+      // Auto-pause local playback if currently playing to prevent TV sound delay / overlays
+      if (playing) {
+          setPlaying(false);
+      }
+
       // 1. On mobile native platform, ALWAYS show our custom TV pairing remote modal
       if (Capacitor.isNativePlatform()) {
           import('../../../utils/haptics').then(m => m.triggerHaptic('medium'));
@@ -322,42 +511,65 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
     
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
+    const handleReFocus = () => {
+        if (!isMountedRef.current) return;
+        if (isNative) {
+            StatusBar.hide().catch(() => {});
+            StatusBar.setOverlaysWebView({ overlay: true }).catch(() => {});
+        }
+        if (containerRef.current && !document.fullscreenElement) {
+            if (containerRef.current.requestFullscreen) {
+                containerRef.current.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+            } else if ((containerRef.current as any).webkitRequestFullscreen) {
+                (containerRef.current as any).webkitRequestFullscreen().catch(() => {});
+            }
+        }
+    };
+
     const setupImmersion = async () => {
-        if (!containerRef.current) return;
+        if (!containerRef.current || !isMountedRef.current) return;
         
         try {
             // 1. Hide Status Bar immediately
-            if (isNative) {
+            if (isNative && isMountedRef.current) {
                 await StatusBar.hide().catch(() => {});
-                await StatusBar.setOverlaysWebView({ overlay: true }).catch(() => {});
+                if (isMountedRef.current) {
+                    await StatusBar.setOverlaysWebView({ overlay: true }).catch(() => {});
+                }
             }
             
             // 2. Lock Orientation
-            if (isMobile || isNative) {
+            if ((isMobile || isNative) && isMountedRef.current) {
                 if (isNative) {
                     try {
                         const { ScreenOrientation } = await import('@capacitor/screen-orientation');
-                        await (ScreenOrientation as any).lock({ orientation: 'landscape' }).catch(() => {});
+                        if (isMountedRef.current) {
+                            await (ScreenOrientation as any).lock({ orientation: 'landscape' }).catch(() => {});
+                        }
                     } catch (e) {
-                         if ((screen.orientation as any)?.lock) await (screen.orientation as any).lock('landscape').catch(() => {});
+                         if (isMountedRef.current && (screen.orientation as any)?.lock) {
+                             await (screen.orientation as any).lock('landscape').catch(() => {});
+                         }
                     }
-                } else if ((screen.orientation as any)?.lock) {
+                } else if (isMountedRef.current && (screen.orientation as any)?.lock) {
                     await (screen.orientation as any).lock('landscape').catch(() => {});
                 }
             }
 
             // 3. Keep Awake
-            if (isNative) {
+            if (isNative && isMountedRef.current) {
                 try {
                     const { KeepAwake } = await import('@capacitor-community/keep-awake');
-                    await KeepAwake.keepAwake().catch(() => {});
+                    if (isMountedRef.current) {
+                        await KeepAwake.keepAwake().catch(() => {});
+                    }
                 } catch (e) {}
             }
             
             // 4. Fullscreen LAST to prevent layout jumps during orientation change
-            if (!document.fullscreenElement) {
+            if (!document.fullscreenElement && isMountedRef.current) {
                 if (containerRef.current.requestFullscreen) {
-                    await containerRef.current.requestFullscreen().catch(() => {});
+                    await containerRef.current.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
                 } else if ((containerRef.current as any).webkitRequestFullscreen) {
                     await (containerRef.current as any).webkitRequestFullscreen().catch(() => {});
                 }
@@ -369,8 +581,13 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
 
     const timer = setTimeout(setupImmersion, 50);
 
+    window.addEventListener('focus', handleReFocus);
+    document.addEventListener('visibilitychange', handleReFocus);
+
     return () => {
         clearTimeout(timer);
+        window.removeEventListener('focus', handleReFocus);
+        document.removeEventListener('visibilitychange', handleReFocus);
         if (isNative) {
             StatusBar.show().catch(() => {});
             StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
@@ -457,6 +674,23 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
 
   const handleContextMenu = (e: React.MouseEvent) => e.preventDefault();
 
+  if (Capacitor.getPlatform() === 'android' && resolving) {
+    return createPortal(
+      <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontFamily: 'sans-serif' }}>
+        <div style={{ textAlign: 'center' }}>
+          <p style={{ fontSize: '1.2rem', marginBottom: '1.5rem', fontWeight: 600 }}>Resolving Native Auto-Streams...</p>
+          <div style={{ width: '40px', height: '40px', border: '3px solid rgba(255,255,255,0.1)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto' }} />
+          <style>{`
+            @keyframes spin {
+              to { transform: rotate(360deg); }
+            }
+          `}</style>
+        </div>
+      </div>,
+      document.body
+    );
+  }
+
   return createPortal(
     <div
       ref={containerRef}
@@ -473,53 +707,40 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
         paddingBottom: 'env(safe-area-inset-bottom, 0px)',
       }}
     >
-      {shouldShowNative ? (
-        <LocalVideoPlayer
-          src={castSource || activeSrc}
-          onSourceChange={setActiveSrc}
-          title={title}
-          onClose={onClose}
-          onNextEpisode={onNextEpisode}
-          item={item}
-          season={season}
-          episode={episode}
-          tracks={resolvedTracks.length > 0 ? resolvedTracks : tracks}
-          isOfflineMode={isOfflineMode}
-          isCastAvailable={isCastAvailable}
-          castConnected={castConnected}
-          resolving={resolving}
-          handleCastClick={handleCastClick}
-          playing={playing}
-          setPlaying={setPlaying}
-          currentTime={currentTime}
-          setCurrentTime={setCurrentTime}
-          duration={duration}
-          setDuration={setDuration}
-          buffering={buffering}
-          setBuffering={setBuffering}
-          remotePlayerRef={remotePlayer}
-          remotePlayerControllerRef={remotePlayerController}
-          startTime={startTime}
-          isPartyMode={isPartyMode}
-          partySessionId={partySessionId}
-          isPartyHost={isPartyHost}
-        />
-      ) : (
-        <EmbedVideoPlayer
-          src={activeSrc}
-          onSourceChange={setActiveSrc}
-          title={title}
-          onClose={onClose}
-          item={item}
-          season={season}
-          episode={episode}
-          isCastAvailable={isCastAvailable}
-          castConnected={castConnected}
-          resolving={resolving}
-          handleCastClick={handleCastClick}
-          startTime={startTime}
-        />
-      )}
+      <LocalVideoPlayer
+        src={castSource || activeSrc}
+        onSourceChange={setActiveSrc}
+        title={title}
+        onClose={onClose}
+        onNextEpisode={onNextEpisode}
+        item={item}
+        season={season}
+        episode={episode}
+        tracks={resolvedTracks.length > 0 ? resolvedTracks : tracks}
+        onTracksChange={setResolvedTracks}
+        isOfflineMode={isOfflineMode}
+        isCastAvailable={isCastAvailable}
+        castConnected={castConnected}
+        resolving={resolving}
+        handleCastClick={handleCastClick}
+        playing={playing}
+        setPlaying={setPlaying}
+        currentTime={currentTime}
+        setCurrentTime={setCurrentTime}
+        duration={duration}
+        setDuration={setDuration}
+        buffering={buffering}
+        setBuffering={setBuffering}
+        remotePlayerRef={remotePlayer}
+        remotePlayerControllerRef={remotePlayerController}
+        startTime={startTime}
+        isPartyMode={isPartyMode}
+        partySessionId={partySessionId}
+        isPartyHost={isPartyHost}
+        subtitleDelay={subtitleDelay}
+        onSubtitleDelayChange={setSubtitleDelay}
+        onSubtitleStyleChange={handleSubtitleStyleChange}
+      />
 
       {/* CineMovie Custom Smart TV Casting & Remote Pairing Modal */}
       <AnimatePresence>
@@ -610,56 +831,127 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
                 </p>
 
                 {Capacitor.isNativePlatform() && (
-                  <button
-                    onClick={async () => {
-                      import('../../../utils/haptics').then(m => m.triggerSuccessHaptic());
-                      try {
-                        if (castConnected) {
-                          await SystemCast.disconnectCast();
-                        } else {
-                          const posterUrl = item && (item as any).posterPath 
-                            ? `https://image.tmdb.org/t/p/w500${(item as any).posterPath}` 
-                            : '';
-                          const subtitleText = (item as any)?.name 
-                            ? `Season ${season} • Episode ${episode}` 
-                            : '';
-                          await SystemCast.launchCastSettings({
-                            videoUrl: castSource || src,
-                            title: title,
-                            subtitle: subtitleText,
-                            posterUrl: posterUrl,
-                            currentTime: currentTime
-                          });
+                  <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                    <button
+                      onClick={async () => {
+                        import('../../../utils/haptics').then(m => m.triggerSuccessHaptic());
+                        try {
+                          if (castConnected) {
+                            await SystemCast.disconnectCast();
+                          } else {
+                            // Automatically force disconnect any prior sessions first to ensure fresh TV connection state
+                            try {
+                              await SystemCast.disconnectCast();
+                              await new Promise(resolve => setTimeout(resolve, 500));
+                            } catch (ignored) {}
+
+                            const posterUrl = item && (item as any).posterPath 
+                              ? `https://image.tmdb.org/t/p/w500${(item as any).posterPath}` 
+                              : '';
+                            const subtitleText = (item as any)?.name 
+                              ? `Season ${season} • Episode ${episode}` 
+                              : '';
+                            const finalTracks = resolvedTracks.length > 0 ? resolvedTracks : (tracks || []);
+                            const processedTracks = finalTracks.map((track, i) => {
+                              let trackUrl = (track as any).originalFile || track.file;
+                              if (trackUrl && !trackUrl.startsWith('http') && !trackUrl.startsWith('blob:')) {
+                                trackUrl = new URL(trackUrl, window.location.href).href;
+                              }
+                              if (trackUrl && (trackUrl.includes('localhost') || trackUrl.includes('127.0.0.1'))) {
+                                trackUrl = trackUrl.replace('localhost', window.location.hostname).replace('127.0.0.1', window.location.hostname);
+                              }
+                              if (trackUrl && subtitleDelay !== 0) {
+                                const separator = trackUrl.includes('?') ? '&' : '?';
+                                trackUrl = `${trackUrl}${separator}delay=${subtitleDelay}`;
+                              }
+                              return {
+                                id: i + 1,
+                                src: trackUrl,
+                                label: track.label,
+                                language: track.label ? track.label.substring(0, 2).toLowerCase() : 'en',
+                                isDefault: !!track.default
+                              };
+                            });
+                            const activeTrack = processedTracks.find(t => t.isDefault);
+                            const activeTrackId = activeTrack ? activeTrack.id : -1;
+
+                            await SystemCast.launchCastSettings({
+                              videoUrl: castSource || activeSrc,
+                              title: title,
+                              subtitle: subtitleText,
+                              posterUrl: posterUrl,
+                              currentTime: currentTime,
+                              subtitleTracks: processedTracks,
+                              activeTrackId: activeTrackId
+                            });
+                          }
+                        } catch (err: any) {
+                          setErrorToast("Could not manage cast connection.");
                         }
-                      } catch (err: any) {
-                        setErrorToast("Could not manage cast connection.");
-                      }
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '14px',
-                      background: castConnected ? '#ef4444' : '#ffffff',
-                      border: 'none',
-                      borderRadius: '14px',
-                      color: castConnected ? '#ffffff' : '#000000',
-                      fontSize: '0.88rem',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '8px',
-                      boxShadow: castConnected ? '0 6px 20px rgba(239, 68, 68, 0.2)' : '0 6px 20px rgba(255, 255, 255, 0.1)',
-                      transition: 'all 0.2s',
-                    }}
-                  >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <path d="M2 17a5 5 0 0 1 5 5" />
-                      <path d="M2 12a10 10 0 0 1 10 10" />
-                      <rect x="2" y="2" width="20" height="20" rx="2" strokeWidth="2" />
-                    </svg>
-                    {castConnected ? "Disconnect TV / Stop Casting" : "Connect TV (Smart View / Google Home)"}
-                  </button>
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: '14px',
+                        background: castConnected ? '#ef4444' : '#ffffff',
+                        border: 'none',
+                        borderRadius: '14px',
+                        color: castConnected ? '#ffffff' : '#000000',
+                        fontSize: '0.86rem',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        boxShadow: castConnected ? '0 6px 20px rgba(239, 68, 68, 0.2)' : '0 6px 20px rgba(255, 255, 255, 0.1)',
+                        transition: 'all 0.2s',
+                      }}
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ flexShrink: 0 }}>
+                        <path d="M2 17a5 5 0 0 1 5 5" />
+                        <path d="M2 12a10 10 0 0 1 10 10" />
+                        <rect x="2" y="2" width="20" height="20" rx="2" strokeWidth="2" />
+                      </svg>
+                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {castConnected ? "Stop Casting" : "Connect TV"}
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={async () => {
+                        import('../../../utils/haptics').then(m => m.triggerSuccessHaptic());
+                        try {
+                          await SystemCast.disconnectCast();
+                          setErrorToast("Force disconnected from Chromecast.");
+                        } catch (err) {
+                          setErrorToast("Could not disconnect from TV.");
+                        }
+                      }}
+                      style={{
+                        padding: '14px 16px',
+                        background: 'rgba(239, 68, 68, 0.12)',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        borderRadius: '14px',
+                        color: '#ef4444',
+                        fontSize: '0.82rem',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        transition: 'all 0.2s',
+                        flexShrink: 0
+                      }}
+                      title="Force Disconnect"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ flexShrink: 0 }}>
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                      </svg>
+                      <span>{castConnected ? "Disconnect" : "Force Off"}</span>
+                    </button>
+                  </div>
                 )}
 
                 <div style={{ width: '100%', height: '1px', background: 'rgba(255,255,255,0.08)', margin: '4px 0' }} />

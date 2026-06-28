@@ -263,6 +263,7 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
   // Map single-gateway server IDs to specific Vidlink domain gateways
   const GATEWAY_MAP = {
     'vidlink-pro': 'https://vidlink.pro',
+    'vidlink-me': 'https://vidlink.me',
     'vidlink-org': 'https://vidlink.org',
     'vidlink-net': 'https://vidlink.net',
   };
@@ -298,6 +299,23 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
     } catch (err) {
       console.warn(`[Server] Vidlink multi-gateway failed: ${err.message}`);
       return res.status(500).json({ error: `Vidlink resolution failed: ${err.message}` });
+    }
+  }
+
+  // Handle explicit test-server request on Web/Desktop
+  if (server === 'test-server') {
+    try {
+      const pythonUrl = type === 'tv'
+        ? `http://localhost:8000/fallback/tv/${tmdbId}/${season}/${episode}`
+        : `http://localhost:8000/fallback/movie/${tmdbId}`;
+      const res2 = await fetch(pythonUrl);
+      if (!res2.ok) {
+        throw new Error(`Python fallback API returned status ${res2.status}`);
+      }
+      const result = await res2.json();
+      return res.json(rewriteLocalhostUrls(result, req));
+    } catch (err) {
+      return res.status(500).json({ error: `test-server failed: ${err.message}` });
     }
   }
 

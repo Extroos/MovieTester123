@@ -14,6 +14,7 @@ interface WatchPartyRoomPageProps {
 export default function WatchPartyRoomPage({ invite, onAccept, onDecline, onClose }: WatchPartyRoomPageProps) {
   if (!invite) return null;
 
+  const isGuestMode = localStorage.getItem('cinemovie_is_guest') === 'true';
   const { item_title, sender_name, sender_avatar, poster_path, media_type, is_host } = invite.data || {};
 
   const [friends, setFriends] = React.useState<any[]>([]);
@@ -22,6 +23,7 @@ export default function WatchPartyRoomPage({ invite, onAccept, onDecline, onClos
   const [invitingIds, setInvitingIds] = React.useState<Record<string, boolean>>({});
 
   const loadPartyStatus = React.useCallback(async () => {
+    if (isGuestMode) return;
     if (!is_host) return;
     setLoading(true);
     try {
@@ -41,11 +43,89 @@ export default function WatchPartyRoomPage({ invite, onAccept, onDecline, onClos
     } finally {
       setLoading(false);
     }
-  }, [is_host, invite.data.session_id]);
+  }, [is_host, invite.data.session_id, isGuestMode]);
 
   React.useEffect(() => {
-    loadPartyStatus();
-  }, [loadPartyStatus]);
+    if (!isGuestMode) {
+      loadPartyStatus();
+    }
+  }, [loadPartyStatus, isGuestMode]);
+
+  if (isGuestMode) {
+    return (
+      <div 
+        style={{ 
+          position: 'fixed',
+          inset: 0,
+          zIndex: 10500,
+          background: '#09090b',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '2rem 1.5rem',
+          fontFamily: "'Outfit', 'Inter', -apple-system, sans-serif"
+        }}
+      >
+        <div 
+          style={{
+            width: '100%',
+            maxWidth: '360px',
+            background: 'rgba(255, 255, 255, 0.02)',
+            borderRadius: '24px',
+            border: '1px solid rgba(255, 255, 255, 0.06)',
+            padding: '32px 24px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            textAlign: 'center',
+            gap: '20px',
+            boxShadow: '0 24px 60px rgba(0,0,0,0.8)'
+          }}
+        >
+          <div style={{
+            width: '56px',
+            height: '56px',
+            borderRadius: '50%',
+            background: 'rgba(239, 68, 68, 0.1)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#ef4444',
+            marginBottom: '8px'
+          }}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/>
+              <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+          </div>
+          <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 900, color: '#fff' }}>Watch Party Restricted</h3>
+          <p style={{ margin: 0, fontSize: '0.85rem', color: 'rgba(255,255,255,0.45)', lineHeight: 1.5 }}>
+            Co-watching and social features are disabled in Guest Mode. Please sign in or register to join watch parties.
+          </p>
+          <button
+            onClick={() => { triggerHaptic('medium'); onClose(); }}
+            style={{
+              width: '100%',
+              padding: '12px 24px',
+              background: '#ffffff',
+              color: '#000000',
+              border: 'none',
+              borderRadius: '16px',
+              fontSize: '0.85rem',
+              fontWeight: 800,
+              cursor: 'pointer',
+              marginTop: '8px',
+              transition: 'all 0.2s'
+            }}
+          >
+            Okay
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const handleReinvite = async (friend: any) => {
     triggerHaptic('medium');
@@ -113,6 +193,7 @@ export default function WatchPartyRoomPage({ invite, onAccept, onDecline, onClos
         {/* Close Button */}
         <button
           onClick={() => { triggerHaptic('light'); onClose(); }}
+          className="watch-party-close-btn"
           style={{
             position: 'absolute',
             top: '-20px',
@@ -246,6 +327,7 @@ export default function WatchPartyRoomPage({ invite, onAccept, onDecline, onClos
                       <button
                         disabled={isInviting}
                         onClick={() => handleReinvite(friend)}
+                        className="watch-party-reinvite-btn"
                         style={{
                           background: 'rgba(255, 255, 255, 0.06)',
                           color: '#ffffff',
@@ -258,8 +340,6 @@ export default function WatchPartyRoomPage({ invite, onAccept, onDecline, onClos
                           opacity: isInviting ? 0.5 : 1,
                           transition: 'all 0.2s ease'
                         }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.12)'; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
                       >
                         {isInviting ? 'Inviting...' : 'Re-invite'}
                       </button>
@@ -275,6 +355,7 @@ export default function WatchPartyRoomPage({ invite, onAccept, onDecline, onClos
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', maxWidth: '300px' }}>
           <button
             onClick={() => { triggerHaptic('heavy'); onAccept(); }}
+            className="watch-party-btn-primary"
             style={{
               width: '100%',
               padding: '12px 24px',
@@ -292,8 +373,6 @@ export default function WatchPartyRoomPage({ invite, onAccept, onDecline, onClos
               justifyContent: 'center',
               gap: '6px'
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.02)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
               <path d="M8 5v14l11-7z" />
@@ -302,6 +381,7 @@ export default function WatchPartyRoomPage({ invite, onAccept, onDecline, onClos
           </button>
           <button
             onClick={() => { triggerHaptic('medium'); onDecline(); }}
+            className="watch-party-btn-secondary"
             style={{
               width: '100%',
               padding: '11px 24px',
@@ -314,8 +394,6 @@ export default function WatchPartyRoomPage({ invite, onAccept, onDecline, onClos
               cursor: 'pointer',
               transition: 'all 0.2s ease'
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#ffffff'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)'; e.currentTarget.style.color = 'rgba(255,255,255,0.7)'; }}
           >
             {is_host ? 'End Party' : 'Leave / Decline'}
           </button>

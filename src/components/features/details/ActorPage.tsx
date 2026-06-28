@@ -64,13 +64,17 @@ function ActorPage({ personId, onClose, onMovieClick, onTVShowClick }: ActorPage
           new Map(creditsData.map((item: any) => [item.id, item])).values()
         );
 
-        // 2. Sort combined credits by popularity (high to low) so actor's biggest works appear first
+        // 2. Sort combined credits by release date / first air date descending (newest first)
         const sortedCredits = uniqueCredits.sort((a: any, b: any) => {
-          return (b.popularity || 0) - (a.popularity || 0);
+          const dateA = a.releaseDate || a.release_date || a.firstAirDate || a.first_air_date || '';
+          const dateB = b.releaseDate || b.release_date || b.firstAirDate || b.first_air_date || '';
+          if (!dateA) return 1;
+          if (!dateB) return -1;
+          return dateB.localeCompare(dateA);
         });
 
         setDetails(personData);
-        setCredits(sortedCredits);
+        setCredits(sortedCredits as (Movie | TVShow)[]);
         setDisplayLimit(24); // Reset pagination on actor change
       } catch (error: any) {
         if (error.name !== 'AbortError') {
@@ -99,9 +103,9 @@ function ActorPage({ personId, onClose, onMovieClick, onTVShowClick }: ActorPage
     return (
       <div style={{
         position: 'fixed', inset: 0, zIndex: 4000,
-        background: 'rgba(10,10,10,0.9)',
-        backdropFilter: 'blur(15px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(15px) saturate(180%)',
+        background: isMobile ? '#0a0a0a' : 'rgba(10,10,10,0.9)',
+        backdropFilter: isMobile ? 'none' : 'blur(15px) saturate(180%)',
+        WebkitBackdropFilter: isMobile ? 'none' : 'blur(15px) saturate(180%)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
         <div style={{
@@ -128,7 +132,7 @@ function ActorPage({ personId, onClose, onMovieClick, onTVShowClick }: ActorPage
       onClick={onClose}
       style={{
         position: 'fixed', inset: 0, zIndex: 4000,
-        background: 'rgba(10,10,10,0.6)', // Lighter overlay to show the blur better
+        background: isMobile ? '#0a0a0a' : 'rgba(10,10,10,0.6)', // Lighter overlay to show the blur better
         overflowY: 'auto', overflowX: 'hidden',
         WebkitOverflowScrolling: 'touch',
         animation: 'detailsIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
@@ -140,8 +144,8 @@ function ActorPage({ personId, onClose, onMovieClick, onTVShowClick }: ActorPage
           position: 'fixed',
           inset: 0,
           zIndex: -1,
-          backdropFilter: 'blur(25px) saturate(220%) brightness(0.8)',
-          WebkitBackdropFilter: 'blur(20px) saturate(220%) brightness(0.8)',
+          backdropFilter: isMobile ? 'none' : 'blur(25px) saturate(220%) brightness(0.8)',
+          WebkitBackdropFilter: isMobile ? 'none' : 'blur(20px) saturate(220%) brightness(0.8)',
           pointerEvents: 'none',
           animation: 'backdropFade 0.6s ease-out both',
       }} />
@@ -157,8 +161,8 @@ function ActorPage({ personId, onClose, onMovieClick, onTVShowClick }: ActorPage
             left: '1.2rem',
             zIndex: 4001,
             background: 'rgba(15, 15, 15, 0.6)',
-            backdropFilter: 'blur(20px) saturate(180%)',
-            WebkitBackdropFilter: 'blur(20px) saturate(200%)',
+            backdropFilter: isMobile ? 'none' : 'blur(20px) saturate(180%)',
+            WebkitBackdropFilter: isMobile ? 'none' : 'blur(20px) saturate(200%)',
             border: '1px solid rgba(255, 255, 255, 0.15)',
             color: '#fff',
             width: '48px',
@@ -216,12 +220,29 @@ function ActorPage({ personId, onClose, onMovieClick, onTVShowClick }: ActorPage
               border: '1px solid rgba(255, 255, 255, 0.08)',
               boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.1), 0 8px 30px rgba(0,0,0,0.6)',
             }}>
-              <img 
-                src={getProfileUrl(details.profile_path)} 
-                alt={details.name}
-                loading="lazy"
-                style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
-              />
+              {details.profile_path ? (
+                <img 
+                  src={getProfileUrl(details.profile_path)} 
+                  alt={details.name}
+                  loading="lazy"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
+                />
+              ) : (
+                <div style={{
+                  width: '100%',
+                  height: '100%',
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  borderRadius: '16px',
+                }}>
+                  <svg width={isMobile ? "28" : "36"} height={isMobile ? "28" : "36"} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                  </svg>
+                </div>
+              )}
             </div>
 
             <div style={{ flex: 1, minWidth: 0, paddingTop: isMobile ? '30px' : '50px' }}>
@@ -302,27 +323,18 @@ function ActorPage({ personId, onClose, onMovieClick, onTVShowClick }: ActorPage
                     willChange: index < 12 ? 'transform, opacity' : 'auto',
                   }}
                 >
-                  <div style={{
-                    position: 'relative',
-                    aspectRatio: '2/3',
-                    borderRadius: '12px',
-                    overflow: 'hidden',
-                    background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 100%)',
-                    border: '1px solid rgba(255, 255, 255, 0.08)',
-                    boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.1), 0 4px 12px rgba(0, 0, 0, 0.3)',
-                    marginBottom: '8px',
-                    transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'scale(1.04)';
-                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.18)';
-                    e.currentTarget.style.boxShadow = 'inset 0 1px 1px rgba(255, 255, 255, 0.15), 0 8px 20px rgba(0, 0, 0, 0.5)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'scale(1)';
-                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
-                    e.currentTarget.style.boxShadow = 'inset 0 1px 1px rgba(255, 255, 255, 0.1), 0 4px 12px rgba(0, 0, 0, 0.3)';
-                  }}
+                  <div 
+                    className="actor-credit-card-inner"
+                    style={{
+                      position: 'relative',
+                      aspectRatio: '2/3',
+                      borderRadius: '12px',
+                      overflow: 'hidden',
+                      background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 100%)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.1), 0 4px 12px rgba(0, 0, 0, 0.3)',
+                      marginBottom: '8px',
+                    }}
                   >
                     {item.posterPath ? (
                       <img 
@@ -339,16 +351,17 @@ function ActorPage({ personId, onClose, onMovieClick, onTVShowClick }: ActorPage
                     {item.voteAverage > 0 && (
                       <div style={{
                         position: 'absolute', top: '6px', right: '6px',
-                        background: 'rgba(0,0,0,0.6)',
-                        backdropFilter: 'blur(8px)',
-                        WebkitBackdropFilter: 'blur(8px)',
-                        padding: '3px 6px',
+                        background: 'rgba(255, 255, 255, 0.12)',
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        backdropFilter: isMobile ? 'none' : 'blur(8px)',
+                        WebkitBackdropFilter: isMobile ? 'none' : 'blur(8px)',
+                        padding: '2.5px 5.5px',
                         borderRadius: '6px',
-                        fontSize: '0.65rem',
-                        fontWeight: 800,
-                        color: '#46d369',
+                        fontSize: '0.62rem',
+                        fontWeight: 900,
+                        color: '#ffffff',
                       }}>
-                        {item.voteAverage.toFixed(1)}
+                        {Math.round(item.voteAverage * 10)}%
                       </div>
                     )}
                   </div>

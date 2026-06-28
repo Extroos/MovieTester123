@@ -1,5 +1,7 @@
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { scrapeVidlinkStream, scrapeVidsrcPmStream } from './ClientScraperService';
+
+const NativeStreamingEngine = registerPlugin<any>('NativeStreamingEngine');
 
 
 /**
@@ -29,6 +31,19 @@ export function getLocalServerUrl(): string {
   if (stored && stored.trim() && stored !== 'null' && stored !== 'undefined') return stored.trim().replace(/\/$/, '');
   const envUrl = (import.meta as any).env?.VITE_CONSUMET_URL;
   if (envUrl && envUrl.trim() && envUrl !== 'null' && envUrl !== 'undefined') return envUrl.trim().replace(/\/$/, '');
+
+  // Dynamic fallback for LAN / mobile browser testing:
+  if (typeof window !== 'undefined' && window.location && window.location.hostname) {
+    const host = window.location.hostname;
+    if (host && host !== 'localhost' && host !== '127.0.0.1' && !host.startsWith('10.') && !host.startsWith('192.168.') && !host.startsWith('172.')) {
+      // If it's a domain name or local LAN IP, construct the server URL using the same host
+      return `http://${host}:3001`;
+    }
+    // Standard local IP checking
+    if (host && (host.match(/^\d+\.\d+\.\d+\.\d+$/) || host.includes('.local'))) {
+      return `http://${host}:3001`;
+    }
+  }
   return 'http://localhost:3001';
 }
 
@@ -122,19 +137,93 @@ export async function resolveMovieStream(
   tmdbId: number | string,
   title: string,
   imdbId?: string,
-  server: string = 'vidlink-pro'
+  server?: string
 ): Promise<LocalStreamResult | null> {
-  // Mobile / Native Platform: All providers scrape directly from the phone.
-  // NativeHlsLoader injects the correct Referer/Origin on every HLS segment request natively,
-  // bypassing the Android WebView header restriction — so cloudnestra CDN is fully bypassed.
-  if (Capacitor.isNativePlatform()) {
-    console.log(`[LocalStream] Native platform detected, resolving movie ${tmdbId} directly via client scrapers...`);
+  const selectedServer = server || (typeof localStorage !== 'undefined' ? localStorage.getItem('selected_server') : 'vidlink-pro') || 'vidlink-pro';
+  const localServer = getLocalServerUrl();
+  const isLocalHost = !localServer || localServer.includes('localhost') || localServer.includes('127.0.0.1');
+  const runClientScrapers = Capacitor.isNativePlatform() && isLocalHost;
+  if (runClientScrapers) {
+    console.log(`[LocalStream] Resolving movie ${tmdbId} directly via client scrapers (Server: ${selectedServer})...`);
+    
+    if (selectedServer === 'test-server') {
+      try {
+        console.log(`[LocalStream] Resolving via native test-server...`);
+        const res = await NativeStreamingEngine.resolveStreams({
+          tmdbId: String(tmdbId),
+          imdbId: imdbId || '',
+          type: 'movie',
+          season: 1,
+          episode: 1,
+          localServer: localServer
+        });
+        const sources = res.sources || [];
+        if (sources.length > 0) {
+          let proxyPort = 8000;
+          try {
+            const portRes = await NativeStreamingEngine.getProxyPort();
+            if (portRes && portRes.port) proxyPort = portRes.port;
+          } catch(_) {}
+          
+          const resolvedSources = sources.map((s: any) => {
+            let sUrl = s.url;
+            if (!sUrl.includes('/local-proxy') && !sUrl.startsWith('blob:')) {
+              sUrl = `http://localhost:${proxyPort}/local-proxy?url=${encodeURIComponent(s.url)}&referer=${encodeURIComponent(s.referer || '')}&origin=${encodeURIComponent(s.origin || '')}`;
+            }
+            return {
+              url: sUrl,
+              quality: s.quality || 'auto',
+              isM3U8: s.isM3U8
+            };
+          });
+
+          return {
+            streamUrl: resolvedSources[0].url,
+            type: resolvedSources[0].isM3U8 ? 'm3u8' : 'mp4',
+            quality: resolvedSources[0].quality,
+            subtitles: (res.subtitles || []).map((s: any) => ({
+              file: s.url,
+              label: s.lang || 'Unknown',
+              kind: 'subtitles',
+              default: (s.lang || '').toLowerCase().includes('english')
+            })),
+            provider: 'client/test-server',
+            sources: resolvedSources
+          } as any;
+        }
+      } catch (e: any) {
+        console.warn(`[LocalStream] Client-side test-server movie resolution failed: ${e.message}`);
+      }
+    }
     
     // Attempt 1: Vidlink
     try {
       const vidlinkId = String(tmdbId).startsWith('tt') ? '' : String(tmdbId);
       if (vidlinkId) {
-        const result = await scrapeVidlinkStream(vidlinkId, 'movie');
+        let result;
+        if (Capacitor.isNativePlatform()) {
+          console.log(`[LocalStream] Resolving Vidlink movie natively on Android...`);
+          const nativeRes = await NativeStreamingEngine.resolveVidlink({
+            tmdbId: vidlinkId,
+            type: 'movie',
+            season: 1,
+            episode: 1
+          });
+          result = {
+            sources: (nativeRes.sources || []).map((s: any) => ({
+              url: s.url,
+              quality: s.quality || 'auto',
+              isM3U8: s.isM3U8
+            })),
+            subtitles: (nativeRes.subtitles || []).map((s: any) => ({
+              url: s.url,
+              lang: s.lang || 'Unknown'
+            }))
+          };
+        } else {
+          result = await scrapeVidlinkStream(vidlinkId, 'movie');
+        }
+
         if (result && result.sources && result.sources.length > 0) {
           const bestSource = result.sources[0];
           const subs = (result.subtitles || []).map((s: any) => ({
@@ -249,16 +338,90 @@ export async function resolveTVStream(
   showName: string,
   season: number,
   episode: number,
-  server: string = 'vidlink-pro'
+  server?: string
 ): Promise<LocalStreamResult | null> {
-  // Mobile / Native Platform: All providers scrape directly from the phone.
-  // NativeHlsLoader injects the correct Referer/Origin on every HLS segment request natively.
-  if (Capacitor.isNativePlatform()) {
-    console.log(`[LocalStream] Native platform detected, resolving TV ${tmdbId} S${season}E${episode} directly via client scrapers...`);
+  const selectedServer = server || (typeof localStorage !== 'undefined' ? localStorage.getItem('selected_server') : 'vidlink-pro') || 'vidlink-pro';
+  const localServer = getLocalServerUrl();
+  const isLocalHost = !localServer || localServer.includes('localhost') || localServer.includes('127.0.0.1');
+  const runClientScrapers = Capacitor.isNativePlatform() && isLocalHost;
+  if (runClientScrapers) {
+    console.log(`[LocalStream] Resolving TV ${tmdbId} S${season}E${episode} directly via client scrapers (Server: ${selectedServer})...`);
+    
+    if (selectedServer === 'test-server') {
+      try {
+        console.log(`[LocalStream] Resolving via native test-server...`);
+        const res = await NativeStreamingEngine.resolveStreams({
+          tmdbId: String(tmdbId),
+          type: 'tv',
+          season: season,
+          episode: episode,
+          localServer: localServer
+        });
+        const sources = res.sources || [];
+        if (sources.length > 0) {
+          let proxyPort = 8000;
+          try {
+            const portRes = await NativeStreamingEngine.getProxyPort();
+            if (portRes && portRes.port) proxyPort = portRes.port;
+          } catch(_) {}
+          
+          const resolvedSources = sources.map((s: any) => {
+            let sUrl = s.url;
+            if (!sUrl.includes('/local-proxy') && !sUrl.startsWith('blob:')) {
+              sUrl = `http://localhost:${proxyPort}/local-proxy?url=${encodeURIComponent(s.url)}&referer=${encodeURIComponent(s.referer || '')}&origin=${encodeURIComponent(s.origin || '')}`;
+            }
+            return {
+              url: sUrl,
+              quality: s.quality || 'auto',
+              isM3U8: s.isM3U8
+            };
+          });
+
+          return {
+            streamUrl: resolvedSources[0].url,
+            type: resolvedSources[0].isM3U8 ? 'm3u8' : 'mp4',
+            quality: resolvedSources[0].quality,
+            subtitles: (res.subtitles || []).map((s: any) => ({
+              file: s.url,
+              label: s.lang || 'Unknown',
+              kind: 'subtitles',
+              default: (s.lang || '').toLowerCase().includes('english')
+            })),
+            provider: 'client/test-server',
+            sources: resolvedSources
+          } as any;
+        }
+      } catch (e: any) {
+        console.warn(`[LocalStream] Client-side test-server TV resolution failed: ${e.message}`);
+      }
+    }
     
     // Attempt 1: Vidlink
     try {
-      const result = await scrapeVidlinkStream(String(tmdbId), 'tv', season, episode);
+      let result;
+      if (Capacitor.isNativePlatform()) {
+        console.log(`[LocalStream] Resolving Vidlink TV S${season}E${episode} natively on Android...`);
+        const nativeRes = await NativeStreamingEngine.resolveVidlink({
+          tmdbId: String(tmdbId),
+          type: 'tv',
+          season: season,
+          episode: episode
+        });
+        result = {
+          sources: (nativeRes.sources || []).map((s: any) => ({
+            url: s.url,
+            quality: s.quality || 'auto',
+            isM3U8: s.isM3U8
+          })),
+          subtitles: (nativeRes.subtitles || []).map((s: any) => ({
+            url: s.url,
+            lang: s.lang || 'Unknown'
+          }))
+        };
+      } else {
+        result = await scrapeVidlinkStream(String(tmdbId), 'tv', season, episode);
+      }
+
       if (result && result.sources && result.sources.length > 0) {
         const bestSource = result.sources[0];
         const subs = (result.subtitles || []).map((s: any) => ({
