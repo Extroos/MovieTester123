@@ -1,7 +1,6 @@
 import React from 'react';
 import { registerPlugin, Capacitor } from '@capacitor/core';
-import type { Movie, TVShow } from '../../../../types';
-import { getEnabledServers } from '../../../../services/streaming/RemoteConfigService';
+import { getEnabledServers, getRemoteConfig } from '../../../../services/streaming/RemoteConfigService';
 
 export interface ServerOption {
   id: 'vidlink-pro' | 'vidsrc-pm' | 'universal' | 'vidsrc-sbs' | 'vidsrc-wtf-1' | 'vidsrc-wtf-2' | 'vidsrc-wtf-3' | 'vidsrc-wtf-4' | 'vidsrc-pk' | 'vidsrc-fyi' | 'test-server';
@@ -193,6 +192,19 @@ export const PlayerSettings = React.memo(function PlayerSettings({
 
   React.useEffect(() => {
     getEnabledServers().then(setEnabledServerIds).catch(() => setEnabledServerIds(null));
+  }, []);
+
+  const [lastUpdated, setLastUpdated] = React.useState<string>('Loading...');
+  React.useEffect(() => {
+    getRemoteConfig()
+      .then(cfg => {
+        if (cfg && cfg.last_updated) {
+          setLastUpdated(cfg.last_updated);
+        } else {
+          setLastUpdated('N/A');
+        }
+      })
+      .catch(() => setLastUpdated('N/A'));
   }, []);
 
   // Filter ALL_SERVERS by the OTA enabled list; if list is null show everything
@@ -665,6 +677,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                             );
                           })
                         )}
+                      </div>
                     </div>
                   )}
 
@@ -676,7 +689,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                     fontFamily: 'monospace',
                     letterSpacing: '0.02em'
                   }}>
-                    Server Engine last updated: 06/28/2026
+                    Server Engine last updated: {lastUpdated}
                   </div>
                 </>
             </div>
