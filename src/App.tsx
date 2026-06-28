@@ -499,6 +499,16 @@ export default function App() {
     refreshMyList
   } = content;
 
+  const combinedTrending = React.useMemo(() => {
+    const list = [];
+    const maxLen = Math.max(trending?.length || 0, trendingTV?.length || 0);
+    for (let i = 0; i < maxLen; i++) {
+      if (trending && i < trending.length) list.push({ ...trending[i], mediaType: 'movie' });
+      if (trendingTV && i < trendingTV.length) list.push({ ...trendingTV[i], mediaType: 'tv' });
+    }
+    return list;
+  }, [trending, trendingTV]);
+
 
   const { activity: friendActivity } = useFriends(); 
 
@@ -1551,15 +1561,7 @@ export default function App() {
                       onBackNewsGenre={() => setSelectedNewsGenre(null)}
                     />
                     <BrowseNewsPage 
-                      trending={React.useMemo(() => {
-                        const list = [];
-                        const maxLen = Math.max(trending.length, trendingTV.length);
-                        for (let i = 0; i < maxLen; i++) {
-                          if (i < trending.length) list.push({ ...trending[i], mediaType: 'movie' });
-                          if (i < trendingTV.length) list.push({ ...trendingTV[i], mediaType: 'tv' });
-                        }
-                        return list;
-                      }, [trending, trendingTV])} 
+                      trending={combinedTrending} 
                       upcoming={upcoming} 
                       onItemClick={(item: any) => { if (item.firstAirDate) { handleTVShowClick(item); } else { handleMovieClick(item); } }} 
                       selectedGenre={selectedNewsGenre}
