@@ -2,6 +2,26 @@ import React from 'react';
 import { registerPlugin, Capacitor } from '@capacitor/core';
 import type { Movie, TVShow } from '../../../../types';
 
+export interface ServerOption {
+  id: 'vidlink-pro' | 'vidsrc-pm' | 'universal' | 'vidsrc-sbs' | 'vidsrc-wtf-1' | 'vidsrc-wtf-2' | 'vidsrc-wtf-3' | 'vidsrc-wtf-4' | 'vidsrc-pk' | 'vidsrc-fyi' | 'test-server';
+  name: string;
+  description: string;
+  badge: string;
+  isAdFree: boolean;
+}
+
+export const ALL_SERVERS: ServerOption[] = [
+  { id: 'vidlink-pro', name: 'Vidlink Pro', description: 'Primary gateway — native ad-free stream', badge: 'Recommended', isAdFree: true },
+  { id: 'test-server', name: 'VidSrc.to', description: 'Local native stream extraction', badge: 'Ad-Free Native', isAdFree: true },
+  { id: 'vidsrc-wtf-2', name: 'VidSrc WTF (Multi Lang)', description: 'Multi-language native stream player', badge: 'Ad-Free Native', isAdFree: true },
+  { id: 'vidsrc-sbs', name: 'VidSrc SBS', description: 'Clean resolved native stream player', badge: 'Ad-Free Native', isAdFree: true },
+  { id: 'vidsrc-pk', name: 'VidSrc PK', description: 'Fast resolved native stream player', badge: 'Ad-Free Native', isAdFree: true },
+  { id: 'vidsrc-fyi', name: 'VidSrc FYI', description: 'Multi-server resolved native stream player', badge: 'Ad-Free Native', isAdFree: true },
+  { id: 'vidsrc-wtf-1', name: 'VidSrc WTF (Multi Server)', description: 'Iframe mirror containing popups & standard video watermarks', badge: 'With Ads', isAdFree: false },
+  { id: 'vidsrc-wtf-3', name: 'VidSrc WTF (Multi Embed)', description: 'Iframe mirror containing popups & standard video watermarks', badge: 'With Ads', isAdFree: false },
+  { id: 'vidsrc-wtf-4', name: 'VidSrc WTF (Premium)', description: 'External premium link list loaded in an iframe fallback', badge: 'With Ads', isAdFree: false }
+];
+
 const NativeStreamingEngine = registerPlugin<any>('NativeStreamingEngine');
 
 const IS_MOBILE_DEVICE = typeof window !== 'undefined' && /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -416,14 +436,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                     Ad-Free Native Streams (Premium Custom Player)
                   </div>
                   <div className="server-cards-grid" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {[
-                      { id: 'vidlink-pro', name: 'Vidlink Pro', description: 'Primary gateway — native ad-free stream', badge: 'Recommended' },
-                      { id: 'test-server', name: 'VidSrc.to', description: 'Local native stream extraction', badge: 'Ad-Free Native' },
-                      { id: 'vidsrc-wtf-2', name: 'VidSrc WTF (Multi Lang)', description: 'Multi-language native stream player', badge: 'Ad-Free Native' },
-                      { id: 'vidsrc-sbs', name: 'VidSrc SBS', description: 'Clean resolved native stream player', badge: 'Ad-Free Native' },
-                      { id: 'vidsrc-pk', name: 'VidSrc PK', description: 'Fast resolved native stream player', badge: 'Ad-Free Native' },
-                      { id: 'vidsrc-fyi', name: 'VidSrc FYI', description: 'Multi-server resolved native stream player', badge: 'Ad-Free Native' },
-                    ].map((srv) => (
+                    {ALL_SERVERS.filter(s => s.isAdFree).map((srv) => (
                       <div key={srv.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <button
                           className="server-card"
@@ -482,11 +495,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                     With Ads / External Iframe Embeds
                   </div>
                   <div className="server-cards-grid" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {[
-                      { id: 'vidsrc-wtf-1', name: 'VidSrc WTF (Multi Server)', description: 'Iframe mirror containing popups & standard video watermarks', badge: 'With Ads' },
-                      { id: 'vidsrc-wtf-3', name: 'VidSrc WTF (Multi Embed)', description: 'Iframe mirror containing popups & standard video watermarks', badge: 'With Ads' },
-                      { id: 'vidsrc-wtf-4', name: 'VidSrc WTF (Premium)', description: 'External premium link list loaded in an iframe fallback', badge: 'With Ads' },
-                    ].map((srv) => (
+                    {ALL_SERVERS.filter(s => !s.isAdFree).map((srv) => (
                       <button
                         key={srv.id}
                         className="server-card"

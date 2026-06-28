@@ -8,7 +8,7 @@ import type { Movie, TVShow } from '../../../../types';
 import { getLocalServerUrl } from '../../../../services/LocalStreamService';
 import { useOfflineDownloader } from '../../downloads/useOfflineDownloader';
 import { usePlayerGestures } from './usePlayerGestures';
-import { PlayerSettings } from './PlayerSettings';
+import { PlayerSettings, ALL_SERVERS } from './PlayerSettings';
 import { PlayerControls } from './PlayerControls';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 const NativeStreamingEngine = registerPlugin<any>('NativeStreamingEngine');
@@ -421,19 +421,13 @@ export default function LocalVideoPlayer({
     return () => window.removeEventListener("message", handleProgressMessage);
   }, [item, season, episode]);
 
-  const SERVER_DISPLAY_NAMES: Record<string, string> = {
-    'vidlink-pro': 'Vidlink Pro',
-    'test-server': 'VidSrc.to',
+  const SERVER_DISPLAY_NAMES: Record<string, string> = ALL_SERVERS.reduce((acc, s) => {
+    acc[s.id] = s.name;
+    return acc;
+  }, {
     'vidsrc-pm': 'VidSrc PM (.m3u8)',
-    'universal': 'Universal Player (.m3u8)',
-    'vidsrc-sbs': 'VidSrc SBS',
-    'vidsrc-wtf-1': 'VidSrc WTF (Multi Server)',
-    'vidsrc-wtf-2': 'VidSrc WTF (Multi Language)',
-    'vidsrc-wtf-3': 'VidSrc WTF (Multi Embed)',
-    'vidsrc-wtf-4': 'VidSrc WTF (Premium)',
-    'vidsrc-pk': 'VidSrc PK',
-    'vidsrc-fyi': 'VidSrc FYI'
-  };
+    'universal': 'Universal Player (.m3u8)'
+  } as Record<string, string>);
 
 
   const handleCancelServerSwitch = () => {
@@ -897,7 +891,7 @@ export default function LocalVideoPlayer({
       console.log(`[LocalVideoPlayer] Playback auto-failover: ${selectedServer} -> ${nextServer}`);
       handleServerChange(nextServer);
     } else if (!iframeFallback && !embedServer) {
-      const isAdFree = ['vidlink-pro', 'vidsrc-wtf-2', 'vidsrc-sbs', 'vidsrc-pk', 'vidsrc-fyi', 'test-server'].includes(selectedServer);
+      const isAdFree = ALL_SERVERS.some(s => s.id === selectedServer && s.isAdFree);
       if (isAdFree) {
         setPlayerToast({
           message: 'All ad-free native servers failed to load. Please select an external iframe server.',
@@ -2337,7 +2331,7 @@ export default function LocalVideoPlayer({
                           return;
                       }
 
-                      const isAdFree = ['vidlink-pro', 'vidsrc-wtf-2', 'vidsrc-sbs', 'vidsrc-pk', 'vidsrc-fyi', 'test-server'].includes(selectedServer);
+                      const isAdFree = ALL_SERVERS.some(s => s.id === selectedServer && s.isAdFree);
                       if (Capacitor.isNativePlatform() && !isAdFree) {
                           console.warn('[LocalVideoPlayer] HLS manifest error on native mobile, falling back to official iframe player embed...');
                           setIframeFallback(true);
@@ -2494,7 +2488,7 @@ export default function LocalVideoPlayer({
               const handleNativeError = () => {
                   const err = videoRef.current?.error;
                   console.error('[LocalVideoPlayer] Native HLS video error:', err?.code, err?.message);
-                  const isAdFree = ['vidlink-pro', 'vidsrc-wtf-2', 'vidsrc-sbs', 'vidsrc-pk', 'vidsrc-fyi', 'test-server'].includes(selectedServer);
+                  const isAdFree = ALL_SERVERS.some(s => s.id === selectedServer && s.isAdFree);
                   if (Capacitor.isNativePlatform() && !isAdFree) {
                       console.warn('[LocalVideoPlayer] Native HLS error on native mobile, falling back to official iframe player embed...');
                       setIframeFallback(true);
@@ -2536,7 +2530,7 @@ export default function LocalVideoPlayer({
           const handleNativeError = () => {
               const err = videoRef.current?.error;
               console.error('[LocalVideoPlayer] Native MP4 video error:', err?.code, err?.message);
-              const isAdFree = ['vidlink-pro', 'vidsrc-wtf-2', 'vidsrc-sbs', 'vidsrc-pk', 'vidsrc-fyi', 'test-server'].includes(selectedServer);
+              const isAdFree = ALL_SERVERS.some(s => s.id === selectedServer && s.isAdFree);
               if (Capacitor.isNativePlatform() && !isAdFree) {
                   console.warn('[LocalVideoPlayer] Native MP4 error on native mobile, falling back to official iframe player embed...');
                   setIframeFallback(true);
