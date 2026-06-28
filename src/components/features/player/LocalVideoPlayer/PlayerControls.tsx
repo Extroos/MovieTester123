@@ -250,8 +250,11 @@ export const PlayerControls = React.memo(function PlayerControls({
     }
   };
 
-  const handleScrubberMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleScrubberPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (hostControlsLocked) return;
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch (err) {}
     isDraggingRef.current = true;
     if (controlsTimeout.current) clearTimeout(controlsTimeout.current);
     const rect = e.currentTarget.getBoundingClientRect();
@@ -262,8 +265,7 @@ export const PlayerControls = React.memo(function PlayerControls({
     handleScrubberAction(e.clientX, e.currentTarget);
   };
 
-  const handleScrubberMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    // mouse movement logic for scrubber preview
+  const handleScrubberPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const percent = Math.max(0, Math.min(1, clickX / rect.width));
@@ -275,35 +277,12 @@ export const PlayerControls = React.memo(function PlayerControls({
     }
   };
 
-  const handleScrubberTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (hostControlsLocked) return;
-    isDraggingRef.current = true;
-    if (controlsTimeout.current) clearTimeout(controlsTimeout.current);
-    if (e.touches.length > 0) {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const touchX = e.touches[0].clientX - rect.left;
-      const percent = Math.max(0, Math.min(1, touchX / rect.width));
-      const hoverTime = percent * (duration || 0);
-      setHoverPosition({ x: touchX, time: hoverTime });
-      handleScrubberAction(e.touches[0].clientX, e.currentTarget);
+  const handleScrubberEnd = (e?: React.PointerEvent<HTMLDivElement>) => {
+    if (e && e.currentTarget && isDraggingRef.current) {
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch (err) {}
     }
-  };
-
-  const handleScrubberTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (e.touches.length > 0) {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const touchX = e.touches[0].clientX - rect.left;
-      const percent = Math.max(0, Math.min(1, touchX / rect.width));
-      const hoverTime = percent * (duration || 0);
-      setHoverPosition({ x: touchX, time: hoverTime });
-
-      if (isDraggingRef.current) {
-        handleScrubberAction(e.touches[0].clientX, e.currentTarget);
-      }
-    }
-  };
-
-  const handleScrubberEnd = () => {
     isDraggingRef.current = false;
     setHoverPosition(null);
     resetControlsTimeout();
@@ -673,15 +652,12 @@ export const PlayerControls = React.memo(function PlayerControls({
         <div 
           data-scrubber="true"
           onClick={(e) => e.stopPropagation()}
-          onMouseDown={handleScrubberMouseDown}
-          onMouseMove={handleScrubberMouseMove}
-          onMouseUp={handleScrubberEnd}
+          onPointerDown={handleScrubberPointerDown}
+          onPointerMove={handleScrubberPointerMove}
+          onPointerUp={handleScrubberEnd}
+          onPointerCancel={handleScrubberEnd}
           onMouseLeave={() => { handleScrubberEnd(); setIsScrubberHovered(false); }}
           onMouseEnter={() => setIsScrubberHovered(true)}
-          onTouchStart={handleScrubberTouchStart}
-          onTouchMove={handleScrubberTouchMove}
-          onTouchEnd={handleScrubberEnd}
-          onTouchCancel={handleScrubberEnd}
           style={{ 
             width: '100%', 
             height: '24px', 
