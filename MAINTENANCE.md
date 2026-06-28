@@ -82,15 +82,34 @@ If a streaming gateway changes its domain name or headers, you do **NOT** need t
 ## 4. How to Add a New Server (Guide for Future AI Agents)
 
 If you are a future AI agent tasked with adding a new server (e.g., `"vidsrc-xyz"`):
-1. **Define it in the Configuration:** Add the new server's default configuration parameters under the `headers` or `gateways` sections inside [config.json](file:///c:/Users/user/Desktop/CineMovie/config.json) (e.g. `"vidsrc_xyz_referer"`).
-2. **Add to the UI:** Add a new server selection card button inside the grid in [PlayerSettings.tsx](file:///c:/Users/user/Desktop/CineMovie/src/components/features/player/LocalVideoPlayer/PlayerSettings.tsx) (inside the server grid component) using the server's unique ID.
-3. **Register Resolution Handler:** Open [LocalStreamService.ts](file:///c:/Users/user/Desktop/CineMovie/src/services/streaming/LocalStreamService.ts) and add the server's switch statement case inside `resolveMovieStream` and `resolveTVStream` to call the appropriate resolver function.
-4. **Implement Scraper/Resolver:** 
-   * If it is a native scraper, implement the scraper method (like `resolveVidsrcTo`) inside [NativeStreamingEnginePlugin.kt](file:///c:/Users/user/Desktop/CineMovie/android/app/src/main/java/com/cinemovie/app/NativeStreamingEnginePlugin.kt).
-   * If it uses a JS-Plugin engine, place the JavaScript decryption script inside the assets directory: `android/app/src/main/assets/plugins/vidsrc_xyz.js`.
-5. **Stage and Push:** Commit your code changes and push to GitHub so that the updates are synchronized. Use:
-   ```bash
-   git add .
-   git commit -m "feat: integrate vidsrc-xyz server"
-   git push origin main
+
+### Step 1: Add it to the UI list
+Open [PlayerSettings.tsx](file:///c:/Users/user/Desktop/CineMovie/src/components/features/player/LocalVideoPlayer/PlayerSettings.tsx) and add it to the server selection list inside the map (under the `"Ad-Free Native Streams"` section or `"With Ads / External Iframe"` section):
+```typescript
+{ id: 'vidsrc-xyz', name: 'VidSrc XYZ', description: 'Description of the server', badge: 'Ad-Free Native' }
+```
+
+### Step 2: Register Display Name & Server ID Types
+Open [index.tsx](file:///c:/Users/user/Desktop/CineMovie/src/components/features/player/LocalVideoPlayer/index.tsx):
+1. Add the server ID to the `selectedServer` type unions.
+2. Add the display name inside `SERVER_DISPLAY_NAMES` map:
+   ```typescript
+   'vidsrc-xyz': 'VidSrc XYZ'
    ```
+3. Update `handleServerChange` to support `vidsrc-xyz` and invoke the scraper.
+4. If the new server is ad-free, add it to the `isAdFree` check array so it doesn't render inside the iframe.
+
+### Step 3: Implement the Scraper
+* **Option A (Native Kotlin Sniffer):** In [NativeStreamingEnginePlugin.kt](file:///c:/Users/user/Desktop/CineMovie/android/app/src/main/java/com/cinemovie/app/NativeStreamingEnginePlugin.kt), add the resolver case to direct the sniffer WebView to load the new embed target.
+* **Option B (Hybrid JS Decrypter):** Create a new javascript file under `android/app/src/main/assets/plugins/` (e.g., `vidsrc_xyz.js`) to handle decryptions.
+
+*Note on `test-server` ID:* The internal ID of `"VidSrc.to"` remains `"test-server"` to maintain compatibility with existing user cache/local storage; modifying it globally would break the default selected server configuration of already installed apps.
+
+### Step 4: Build and Push
+Push all code to GitHub and rebuild the production bundle:
+```bash
+git add .
+git commit -m "feat: add vidsrc-xyz server"
+git push origin main
+npm run build:apk-release
+```
