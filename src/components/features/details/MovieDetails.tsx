@@ -987,7 +987,7 @@ function MovieDetails({ movie, onClose, onListUpdate, onActorClick }: MovieDetai
             </>
           );
         })()}
-        {year && <span>{year}</span>}
+        {year && <span>{year.includes('-') ? year.split('-')[0] : year}</span>}
         <span style={{ 
           border: `1px solid ${inTheaters ? 'rgba(234, 179, 8, 0.4)' : 'rgba(255,255,255,0.2)'}`, 
           padding: '1px 5px', 
@@ -1419,7 +1419,7 @@ function MovieDetails({ movie, onClose, onListUpdate, onActorClick }: MovieDetai
             <div><span style={{ color: '#71717a' }}>{t('status')}: </span>{fullMovie.status}</div>
           )}
           {fullMovie.releaseDate && (
-            <div><span style={{ color: '#71717a' }}>{t('released')}: </span>{year}</div>
+            <div><span style={{ color: '#71717a' }}>{isUpcomingRaw ? 'Releasing' : t('released')}: </span>{year}</div>
           )}
           {fullMovie.budget ? (
             <div><span style={{ color: '#71717a' }}>{t('budget')}: </span>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(fullMovie.budget)}</div>

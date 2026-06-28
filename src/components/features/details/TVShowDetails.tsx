@@ -1196,7 +1196,7 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
             </>
           );
         })()}
-        {year && <span>{year}</span>}
+        {year && <span>{year.includes('-') ? year.split('-')[0] : year}</span>}
         <span style={{ 
           border: '1px solid rgba(255,255,255,0.2)', 
           padding: '1px 5px', 
@@ -1511,7 +1511,7 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
             <div><span style={{ color: '#71717a' }}>{t('status')}: </span>{fullShow.status}</div>
           )}
           {fullShow.firstAirDate && (
-            <div><span style={{ color: '#71717a' }}>{t('first_air')}: </span>{fullShow.firstAirDate}</div>
+            <div><span style={{ color: '#71717a' }}>{isUpcoming ? 'Airing' : t('first_air')}: </span>{fullShow.firstAirDate}</div>
           )}
           {fullShow.lastAirDate && (
             <div><span style={{ color: '#71717a' }}>{t('last_air')}: </span>{fullShow.lastAirDate}</div>
