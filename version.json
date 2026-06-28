@@ -1,5 +1,5 @@
 {
-  "version": "0.5.0",
+  "version": "0.7.0",
   "downloadUrl": "https://github.com/Extroos/CineMovie/releases/latest/download/app-release.apk",
   "releaseNotes": "Major Update 0.5.0!\n- Overhauled page layouts and visual styling for a cleaner look\n- Optimized database progress tracking to significantly improve mobile battery life\n- Replaced background polling loops with reactive event-driven state updates\n- Redesigned watchlist grids and management sheets for maximum fluidity"
 }
