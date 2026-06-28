@@ -1,7 +1,22 @@
 {
+  "enabled_servers": [
+    "vidlink-pro",
+    "test-server",
+    "vidsrc-wtf-2",
+    "vidsrc-sbs",
+    "vidsrc-pk",
+    "vidsrc-fyi",
+    "vidsrc-wtf-1",
+    "vidsrc-wtf-3",
+    "vidsrc-wtf-4"
+  ],
   "gateways": {
     "vidlink": "https://vidlink.pro",
-    "cloudnestra": "https://cloudnestra.com"
+    "cloudnestra": "https://cloudnestra.com",
+    "vidsrc_wtf": "https://vidsrc.wtf",
+    "vidsrc_sbs": "https://vidsrc.sbs",
+    "vidsrc_pk": "https://embed.vidsrc.pk",
+    "vidsrc_fyi": "https://vidsrc.fyi"
   },
   "headers": {
     "vidlink_referer": "https://vidlink.pro/",

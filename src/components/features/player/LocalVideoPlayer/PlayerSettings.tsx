@@ -1,6 +1,7 @@
 import React from 'react';
 import { registerPlugin, Capacitor } from '@capacitor/core';
 import type { Movie, TVShow } from '../../../../types';
+import { getEnabledServers } from '../../../../services/streaming/RemoteConfigService';
 
 export interface ServerOption {
   id: 'vidlink-pro' | 'vidsrc-pm' | 'universal' | 'vidsrc-sbs' | 'vidsrc-wtf-1' | 'vidsrc-wtf-2' | 'vidsrc-wtf-3' | 'vidsrc-wtf-4' | 'vidsrc-pk' | 'vidsrc-fyi' | 'test-server';
@@ -187,6 +188,17 @@ export const PlayerSettings = React.memo(function PlayerSettings({
   const [clickCount, setClickCount] = React.useState(0);
   const [showConsole, setShowConsole] = React.useState(false);
   const [isTransitioning, setIsTransitioning] = React.useState(false);
+  // OTA-controlled server visibility: null = show all (safe fallback if config unavailable)
+  const [enabledServerIds, setEnabledServerIds] = React.useState<string[] | null>(null);
+
+  React.useEffect(() => {
+    getEnabledServers().then(setEnabledServerIds).catch(() => setEnabledServerIds(null));
+  }, []);
+
+  // Filter ALL_SERVERS by the OTA enabled list; if list is null show everything
+  const visibleServers = enabledServerIds
+    ? ALL_SERVERS.filter(s => enabledServerIds.includes(s.id))
+    : ALL_SERVERS;
 
   const handleTitleClick = (e: React.MouseEvent | React.TouchEvent) => {
     e.stopPropagation();
@@ -240,8 +252,13 @@ export const PlayerSettings = React.memo(function PlayerSettings({
   }, [settingsTab, showConsole]);
 
   React.useEffect(() => {
-    if (consoleContainerRef.current) {
-      consoleContainerRef.current.scrollTop = consoleContainerRef.current.scrollHeight;
+    const el = consoleContainerRef.current;
+    if (el) {
+      const isNearBottom = el.scrollHeight - el.clientHeight - el.scrollTop < 40;
+      // Scroll to bottom only if user was already at the bottom or it was the initial load
+      if (isNearBottom || el.scrollTop === 0) {
+        el.scrollTop = el.scrollHeight;
+      }
     }
   }, [logs]);
 
@@ -436,7 +453,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                     Ad-Free Native Streams (Premium Custom Player)
                   </div>
                   <div className="server-cards-grid" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {ALL_SERVERS.filter(s => s.isAdFree).map((srv) => (
+                    {visibleServers.filter(s => s.isAdFree).map((srv) => (
                       <div key={srv.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <button
                           className="server-card"
@@ -495,7 +512,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                     With Ads / External Iframe Embeds
                   </div>
                   <div className="server-cards-grid" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {ALL_SERVERS.filter(s => !s.isAdFree).map((srv) => (
+                    {visibleServers.filter(s => !s.isAdFree).map((srv) => (
                       <button
                         key={srv.id}
                         className="server-card"

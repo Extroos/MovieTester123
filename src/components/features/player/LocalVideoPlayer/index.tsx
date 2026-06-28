@@ -13,6 +13,7 @@ import { PlayerControls } from './PlayerControls';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 const NativeStreamingEngine = registerPlugin<any>('NativeStreamingEngine');
 import { scrapeVidlinkStream, scrapeVidsrcFallback, scrapeVidifyStream, scrapeVidsrcPmStream, scrapeWtfStream } from '../../../../services/ClientScraperService';
+import { getGateway } from '../../../../services/streaming/RemoteConfigService';
 import { WatchTogetherService, type PartyParticipant, type PartySyncEvent } from '../../../../services/watchTogether';
 import { supabase } from '../../../../services/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -530,52 +531,28 @@ export default function LocalVideoPlayer({
       if (Capacitor.isNativePlatform() && (serverId === 'vidlink-pro' || (serverId as any) === 'vidsrc-pm' || serverId === 'vidsrc-sbs' || serverId === 'vidsrc-wtf-2' || serverId === 'vidsrc-pk' || serverId === 'vidsrc-fyi' || serverId === 'test-server')) {
         console.log(`[LocalVideoPlayer] Client-side server switch on native mobile: Resolving ${serverId} for ${tmdbId}...`);
         try {
-          if (serverId === 'test-server') {
+          if (serverId === 'test-server' || serverId === 'vidsrc-wtf-2' || serverId === 'vidsrc-sbs' || serverId === 'vidsrc-pk' || serverId === 'vidsrc-fyi') {
             const res = await NativeStreamingEngine.resolveStreams({
               tmdbId: String(tmdbId),
               type: type,
               season: season || 1,
               episode: episode || 1,
+              server: serverId,
               localServer: localServer
             });
             const sources = res.sources || [];
             if (sources.length === 0) {
-              const errStr = res.errors && res.errors.length > 0 ? res.errors.join(' | ') : "No streams resolved by test-server";
+              const errStr = res.errors && res.errors.length > 0 ? res.errors.join(' | ') : `No streams resolved by ${serverId}`;
               setTestServerDiagnostics(`Failed: ${errStr}. Raw: ${JSON.stringify(res)}`);
               throw new Error(errStr);
             }
             setTestServerDiagnostics(`Success: resolved ${sources.length} sources.`);
 
-            let proxyPort = 8000;
-            try {
-              const portRes = await NativeStreamingEngine.getProxyPort();
-              if (portRes && portRes.port) {
-                proxyPort = portRes.port;
-              }
-            } catch (e) {
-              console.warn('[LocalVideoPlayer] Failed to get dynamic proxy port, fallback to 8000', e);
-            }
-            
             data = {
               sources: sources.map((src: any) => {
-                const referer = src.headers?.Referer || src.headers?.referer || '';
-                const origin = src.headers?.Origin || src.headers?.origin || '';
-                const pcHost = Capacitor.isNativePlatform() ? 'localhost' : (() => {
-                  let host = 'localhost';
-                  try {
-                    const urlObj = new URL(localServer);
-                    host = urlObj.hostname;
-                  } catch (e) {
-                    if (localServer.includes('://')) {
-                      host = localServer.split('://')[1].split(':')[0];
-                    }
-                  }
-                  return host;
-                })();
-                // Hls.js/Html5 Video requires proxy wrapping to pass custom headers on segment loads
-                const proxiedUrl = `http://${pcHost}:${proxyPort}/local-proxy?url=${encodeURIComponent(src.url)}&referer=${encodeURIComponent(referer)}&origin=${encodeURIComponent(origin)}`;
+                // The native resolveStreams already returns the stream URL wrapped in the local proxy with headers
                 return {
-                  url: proxiedUrl,
+                  url: src.url,
                   quality: src.quality || 'auto',
                   isM3U8: src.isM3U8 || src.url.includes('.m3u8')
                 };
@@ -611,33 +588,65 @@ export default function LocalVideoPlayer({
           } else if ((serverId as any) === 'vidsrc-pm') {
             data = await scrapeVidsrcPmStream(String(tmdbId), type, season, episode);
           } else if (serverId === 'vidsrc-wtf-2') {
-            const result = await scrapeWtfStream(String(tmdbId), 'wtf-2', null, isTV, season, episode);
+            // Resolve WTF domain dynamically from OTA config (fallback: vidsrc.wtf)
+            const wtfGw = await getGateway('vidsrc_wtf').catch(() => 'https://vidsrc.wtf');
+            const wtfOrigin = wtfGw.replace(/\/$/, '');
+            const domainToUse = new URL(wtfOrigin).hostname;
+            const result = await scrapeWtfStream(String(tmdbId), 'wtf-2', null, isTV, season, episode, domainToUse);
             if (result && result.ok && result.data && Array.isArray(result.data.streams)) {
-              const streams = result.data.streams.map((stream: any, idx: number) => {
-                const ref = stream.headers?.Referer || 'https://vidsrc.wtf/';
-                const delimiter = stream.url.includes('?') ? '&' : '?';
-                const markedUrl = `${stream.url}${delimiter}origin_referer=${encodeURIComponent(ref)}`;
+              // Wrap HLS URLs in local proxy to send correct Referer/Origin headers natively
+              const streams = await Promise.all(result.data.streams.map(async (stream: any, idx: number) => {
+                const ref = stream.headers?.Referer || `${wtfOrigin}/`;
+                const origin = wtfOrigin;
+                let finalUrl = stream.url;
+                if (Capacitor.isNativePlatform()) {
+                  try {
+                    const portRes = await NativeStreamingEngine.getProxyPort();
+                    const port = portRes?.port || 8000;
+                    finalUrl = `http://localhost:${port}/local-proxy?url=${encodeURIComponent(stream.url)}&referer=${encodeURIComponent(ref)}&origin=${encodeURIComponent(origin)}`;
+                  } catch (e) {}
+                }
                 return {
-                  url: markedUrl,
+                  url: finalUrl,
                   quality: stream.language || `Stream ${idx + 1}`,
                   isM3U8: stream.type === 'hls' || stream.url.includes('.m3u8')
                 };
-              });
+              }));
               data = { sources: streams, subtitles: [] };
             } else {
               throw new Error(result?.error || "Resolution returned empty streams");
             }
           } else {
-            // vidsrc-sbs, vidsrc-pk, vidsrc-fyi: all use wtf-1 decryption natively
-            const result = await scrapeWtfStream(String(tmdbId), 'wtf-1', null, isTV, season, episode);
+            // vidsrc-sbs, vidsrc-pk, vidsrc-fyi: resolve domain from OTA config
+            const gatewayKey =
+              serverId === 'vidsrc-sbs' ? 'vidsrc_sbs' :
+              serverId === 'vidsrc-pk'  ? 'vidsrc_pk'  :
+              serverId === 'vidsrc-fyi' ? 'vidsrc_fyi' :
+              'vidsrc_wtf';
+            const fallbackDomain =
+              serverId === 'vidsrc-sbs' ? 'https://vidsrc.sbs' :
+              serverId === 'vidsrc-pk'  ? 'https://embed.vidsrc.pk' :
+              serverId === 'vidsrc-fyi' ? 'https://vidsrc.fyi' :
+              'https://vidsrc.wtf';
+            const gwUrl = await getGateway(gatewayKey as any).catch(() => fallbackDomain);
+            const gwOrigin = gwUrl.replace(/\/$/, '');
+            const domainToUse = new URL(gwOrigin).hostname;
+            const result = await scrapeWtfStream(String(tmdbId), 'wtf-1', null, isTV, season, episode, domainToUse);
             if (result && result.ok && result.data && result.data.stream) {
               const streamUrl = result.data.stream.url;
-              const ref = 'https://vidsrc.wtf/';
-              const delimiter = streamUrl.includes('?') ? '&' : '?';
-              const markedUrl = `${streamUrl}${delimiter}origin_referer=${encodeURIComponent(ref)}`;
+              const ref = `${gwOrigin}/`;
+              const origin = gwOrigin;
+              let finalUrl = streamUrl;
+              if (Capacitor.isNativePlatform()) {
+                try {
+                  const portRes = await NativeStreamingEngine.getProxyPort();
+                  const port = portRes?.port || 8000;
+                  finalUrl = `http://localhost:${port}/local-proxy?url=${encodeURIComponent(streamUrl)}&referer=${encodeURIComponent(ref)}&origin=${encodeURIComponent(origin)}`;
+                } catch (e) {}
+              }
               data = {
                 sources: [{
-                  url: markedUrl,
+                  url: finalUrl,
                   quality: 'auto',
                   isM3U8: true
                 }],
@@ -664,18 +673,22 @@ export default function LocalVideoPlayer({
           setServerAvailableSources(prev => ({ ...prev, [serverId]: data.sources }));
           if (data.sources.length > 1 || !data.sources[0].isM3U8) {
             const directQualities = data.sources.map((s: any, idx: number) => {
-              const isHeight = !isNaN(parseInt(s.quality));
-              const normHeight = isHeight ? getStandardResolutionHeight(parseInt(s.quality)) : undefined;
+              const parsed = parseInt(s.quality);
+              const isHeight = !isNaN(parsed);
+              const normHeight = isHeight ? getStandardResolutionHeight(parsed) : undefined;
               return {
                 height: normHeight,
                 label: isHeight ? `${normHeight}p` : (s.quality || `Source ${idx + 1}`),
                 index: idx
               };
             });
+            // Sort low → high (360p first, 1080p last). Auto button is always first in UI.
+            directQualities.sort((a, b) => (a.height ?? 0) - (b.height ?? 0));
             setQualities(directQualities);
             setServerQualities(prev => ({ ...prev, [serverId]: directQualities }));
-            setCurrentQuality(0);
-            setServerCurrentQuality(prev => ({ ...prev, [serverId]: 0 }));
+            // Default to Auto so user sees Auto highlighted — plays highest quality URL
+            setCurrentQuality(-1);
+            setServerCurrentQuality(prev => ({ ...prev, [serverId]: -1 }));
           } else {
             setQualities([]);
             setServerQualities(prev => ({ ...prev, [serverId]: [] }));
@@ -715,18 +728,22 @@ export default function LocalVideoPlayer({
             setServerAvailableSources(prev => ({ ...prev, [serverId]: data.sources }));
             if (data.sources.length > 1 || !data.sources[0].isM3U8) {
               const directQualities = data.sources.map((s: any, idx: number) => {
-                const isHeight = !isNaN(parseInt(s.quality));
-                const normHeight = isHeight ? getStandardResolutionHeight(parseInt(s.quality)) : undefined;
+                const parsed = parseInt(s.quality);
+                const isHeight = !isNaN(parsed);
+                const normHeight = isHeight ? getStandardResolutionHeight(parsed) : undefined;
                 return {
                   height: normHeight,
                   label: isHeight ? `${normHeight}p` : (s.quality || `Source ${idx + 1}`),
                   index: idx
                 };
               });
+              // Sort low → high (360p first, 1080p last). Auto button is always first in UI.
+              directQualities.sort((a, b) => (a.height ?? 0) - (b.height ?? 0));
               setQualities(directQualities);
               setServerQualities(prev => ({ ...prev, [serverId]: directQualities }));
-              setCurrentQuality(0);
-              setServerCurrentQuality(prev => ({ ...prev, [serverId]: 0 }));
+              // Default to Auto so user sees Auto highlighted
+              setCurrentQuality(-1);
+              setServerCurrentQuality(prev => ({ ...prev, [serverId]: -1 }));
             } else {
               setQualities([]);
               setServerQualities(prev => ({ ...prev, [serverId]: [] }));
@@ -2129,20 +2146,22 @@ export default function LocalVideoPlayer({
             setServerAvailableSources(prev => ({ ...prev, [selectedServer]: sources }));
             if (!sources[0].isM3U8) {
               const directQualities = sources.map((s: any, idx: number) => {
-                const isHeight = !isNaN(parseInt(s.quality));
-                const normHeight = isHeight ? getStandardResolutionHeight(parseInt(s.quality)) : undefined;
+                const parsed = parseInt(s.quality);
+                const isHeight = !isNaN(parsed);
+                const normHeight = isHeight ? getStandardResolutionHeight(parsed) : undefined;
                 return {
                   height: normHeight || 1080,
                   label: isHeight ? `${normHeight}p` : (s.quality || `Source ${idx + 1}`),
                   index: idx
                 };
               });
+              // Sort low → high (360p first, 1080p last). Auto button is always first in UI.
+              directQualities.sort((a, b) => (a.height ?? 0) - (b.height ?? 0));
               setQualities(directQualities);
               setServerQualities(prev => ({ ...prev, [selectedServer]: directQualities }));
-              const currentIdx = sources.findIndex((s: any) => s.url === currentSrc || s.url === src);
-              const qIdx = currentIdx !== -1 ? currentIdx : 0;
-              setCurrentQuality(qIdx);
-              setServerCurrentQuality(prev => ({ ...prev, [selectedServer]: qIdx }));
+              // Default to Auto — plays highest quality URL (Kotlin sorts sources desc so [0]=1080p)
+              setCurrentQuality(-1);
+              setServerCurrentQuality(prev => ({ ...prev, [selectedServer]: -1 }));
             }
 
             // Populate subtitles

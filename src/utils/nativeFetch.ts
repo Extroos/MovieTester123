@@ -1,4 +1,5 @@
-import { Capacitor, CapacitorHttp } from '@capacitor/core';
+import { Capacitor, CapacitorHttp, registerPlugin } from '@capacitor/core';
+const NativeStreamingEngine = registerPlugin<any>('NativeStreamingEngine');
 
 export function getHeadersForUrl(url: string): Record<string, string> {
   const ua = 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36';
@@ -65,6 +66,30 @@ export function getHeadersForUrl(url: string): Record<string, string> {
       'Accept': '*/*',
     };
   }
+  if (url.includes('vidsrc.sbs')) {
+    return {
+      'User-Agent': ua,
+      'Referer': 'https://vidsrc.sbs/',
+      'Origin': 'https://vidsrc.sbs',
+      'Accept': '*/*',
+    };
+  }
+  if (url.includes('vidsrc.pk')) {
+    return {
+      'User-Agent': ua,
+      'Referer': 'https://embed.vidsrc.pk/',
+      'Origin': 'https://embed.vidsrc.pk',
+      'Accept': '*/*',
+    };
+  }
+  if (url.includes('vidsrc.fyi')) {
+    return {
+      'User-Agent': ua,
+      'Referer': 'https://vidsrc.fyi/',
+      'Origin': 'https://vidsrc.fyi',
+      'Accept': '*/*',
+    };
+  }
   if (url.includes('vidsrc')) {
     return {
       'User-Agent': ua,
@@ -110,31 +135,50 @@ export async function fetchWithCapacitor(
     ...getHeadersForUrl(url),
     ...headers,
   };
-  const response = await CapacitorHttp.get({
-    url,
-    headers: mergedHeaders,
-    responseType: isBinary ? 'blob' : 'text',
-    webFetchExtra: {
-      mode: 'no-cors',
-    } as any,
-  });
+  
+  logToNative(`[Proxy Fetch] Requesting: ${url} (Referer: ${mergedHeaders['Referer'] || 'None'})`);
+  
+  try {
+    const response = await CapacitorHttp.get({
+      url,
+      headers: mergedHeaders,
+      responseType: isBinary ? 'blob' : 'text',
+      webFetchExtra: {
+        mode: 'no-cors',
+      } as any,
+    });
+    
+    logToNative(`[Proxy Fetch] Response status: ${response.status} for ${url}`);
 
-  return {
-    ok: response.status >= 200 && response.status < 300,
-    status: response.status,
-    text: async () => {
-      if (typeof response.data === 'object' && response.data !== null) {
-        return JSON.stringify(response.data);
-      }
-      return response.data;
-    },
-    base64: async () => response.data,
-    arrayBuffer: async () => {
-      let data = response.data;
-      if (typeof data === 'string') {
-        return base64ToArrayBuffer(data);
-      }
-      return data;
-    },
-  };
+    return {
+      ok: response.status >= 200 && response.status < 300,
+      status: response.status,
+      text: async () => {
+        if (typeof response.data === 'object' && response.data !== null) {
+          return JSON.stringify(response.data);
+        }
+        return response.data;
+      },
+      base64: async () => response.data,
+      arrayBuffer: async () => {
+        let data = response.data;
+        if (typeof data === 'string') {
+          return base64ToArrayBuffer(data);
+        }
+        return data;
+      },
+    };
+  } catch (err: any) {
+    logToNative(`[Proxy Fetch] Error: ${err.message} for ${url}`);
+    throw err;
+  }
+}
+
+export function logToNative(message: string) {
+  console.log(message);
+  try {
+    NativeStreamingEngine.addJsLog({ message });
+  } catch (e) {
+    // Fail silently if not on native platform or plugin unregistered
+  }
 }

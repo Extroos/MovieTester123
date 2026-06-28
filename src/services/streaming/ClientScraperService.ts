@@ -1,6 +1,7 @@
 import nacl from 'tweetnacl';
 import { Capacitor } from '@capacitor/core';
 import { getLocalServerUrl } from './LocalStreamService';
+import { logToNative } from '../../utils/nativeFetch';
 
 const KEY_HEX = "c75136c5668bbfe65a7ecad431a745db68b5f381555b38d8f6c699449cf11fcd";
 
@@ -528,7 +529,8 @@ export async function scrapeWtfStream(
   serverName: string | null = null,
   isTv = false,
   season = 1,
-  episode = 1
+  episode = 1,
+  domain = 'vidsrc.wtf'
 ): Promise<any> {
   const chunkRes = await fetch('./wtf_chunk_46_decrypted.js');
   if (!chunkRes.ok) throw new Error("Decryption chunk asset could not be loaded");
@@ -560,7 +562,14 @@ export async function scrapeWtfStream(
     endIdx++;
   }
 
-  const functionBody = 'const _0x53ab = window._0x53ab;\n' + chunkCode.substring(startIdx + startStr.length, endIdx - 1);
+  // Inject domain override directly into the decrypted chunk function scope by rewriting the hardcoded D and z variables
+  let functionBody = 'const _0x53ab = window._0x53ab;\n' + chunkCode.substring(startIdx + startStr.length, endIdx - 1);
+  if (domain !== 'vidsrc.wtf') {
+    // Override local variables z (api base) and D (multilang api base) in the decrypted function body
+    functionBody = functionBody
+      .replace('z=r.yxHOd', `z="https://api.${domain}"`)
+      .replace('D="https://mu"+"ltilang-ap"+"i.vidsrc.w"+"tf"', `D="https://multilang-api.${domain}"`);
+  }
   const moduleFunc = new Function('e', 't', 'n', functionBody);
 
   const mockExports = {} as any;
@@ -568,29 +577,33 @@ export async function scrapeWtfStream(
 
   moduleFunc(mockExports, mockExports, mockRequire);
 
-  let refererUrl = 'https://vidsrc.wtf/';
+  let refererUrl = `https://${domain}/`;
   if (apiType === 'wtf-2') {
     refererUrl = isTv 
-      ? `https://vidsrc.wtf/2/tv/${tmdbId}/${season}/${episode}`
-      : `https://vidsrc.wtf/2/movie/${tmdbId}`;
+      ? `https://${domain}/2/tv/${tmdbId}/${season}/${episode}`
+      : `https://${domain}/2/movie/${tmdbId}`;
   } else if (apiType === 'wtf-4') {
     refererUrl = isTv
-      ? `https://vidsrc.wtf/4/tv/${tmdbId}/${season}/${episode}`
-      : `https://vidsrc.wtf/4/movie/${tmdbId}`;
+      ? `https://${domain}/4/tv/${tmdbId}/${season}/${episode}`
+      : `https://${domain}/4/movie/${tmdbId}`;
   } else {
     refererUrl = isTv
-      ? `https://vidsrc.wtf/1/tv/${tmdbId}/${season}/${episode}`
-      : `https://vidsrc.wtf/1/movie/${tmdbId}`;
+      ? `https://${domain}/1/tv/${tmdbId}/${season}/${episode}`
+      : `https://${domain}/1/movie/${tmdbId}`;
   }
 
   const originalFetch = window.fetch;
 
   window.fetch = async (url: string, options: any = {}) => {
+    let targetUrl = url;
+    if (domain !== 'vidsrc.wtf') {
+      targetUrl = url.replace('vidsrc.wtf', domain);
+    }
     
-    if (url.includes('/altcha-challenge') || url.includes('/bootstrap') || (!url.includes('.wasm') && !url.includes('/makima-manifest.json'))) {
+    if (targetUrl.includes('/altcha-challenge') || targetUrl.includes('/bootstrap') || (!targetUrl.includes('.wasm') && !targetUrl.includes('/makima-manifest.json'))) {
       const nativeFetch = await import('../../utils/nativeFetch');
-      const delimiter = url.includes('?') ? '&' : '?';
-      const decoratedUrl = `${url}${delimiter}origin_referer=${encodeURIComponent(refererUrl)}`;
+      const delimiter = targetUrl.includes('?') ? '&' : '?';
+      const decoratedUrl = `${targetUrl}${delimiter}origin_referer=${encodeURIComponent(refererUrl)}`;
       const res = await nativeFetch.fetchWithCapacitor(decoratedUrl, 'text', options?.headers);
       const text = await res.text();
       
@@ -602,7 +615,7 @@ export async function scrapeWtfStream(
       } as any;
     }
 
-    if (url.includes('.wasm')) {
+    if (targetUrl.includes('.wasm')) {
       return {
         ok: true,
         status: 200,
@@ -610,7 +623,7 @@ export async function scrapeWtfStream(
       } as any;
     }
 
-    if (url.includes('/makima-manifest.json')) {
+    if (targetUrl.includes('/makima-manifest.json')) {
       return {
         ok: true,
         status: 200,
@@ -629,19 +642,22 @@ export async function scrapeWtfStream(
       } as any;
     }
 
-    return originalFetch(url, options);
+    return originalFetch(targetUrl, options);
   };
 
   try {
+    logToNative(`[WTF Resolver] Initializing scraper for TMDB: ${tmdbId} (${isTv ? `TV S${season}E${episode}` : 'Movie'}) using domain: ${domain}`);
+    
     let activeServer = serverName;
     if (!activeServer && (apiType === 'wtf-1' || apiType === 'wtf-3')) {
       try {
         const serversRes = await mockExports.Ot();
         if (serversRes && serversRes.ok && serversRes.data && serversRes.data.length > 0) {
           activeServer = serversRes.data[0].name;
+          logToNative(`[WTF Resolver] Found active sub-servers: ${JSON.stringify(serversRes.data.map((s: any) => s.name))}. Selecting first: ${activeServer}`);
         }
       } catch (e: any) {
-        console.warn("[WTF Resolver Client] Failed to fetch servers list, fallback to Leon:", e.message);
+        logToNative(`[WTF Resolver] Failed to fetch servers list: ${e.message}. Falling back to default Leon.`);
       }
       if (!activeServer) activeServer = 'Leon';
     }
@@ -661,7 +677,16 @@ export async function scrapeWtfStream(
         : await mockExports.dE(tmdbId, activeServer);
     }
 
+    if (decrypted && decrypted.ok) {
+      logToNative(`[WTF Resolver] Successfully decrypted streams!`);
+    } else {
+      logToNative(`[WTF Resolver] Decryption failed or returned empty: ${JSON.stringify(decrypted)}`);
+    }
+
     return decrypted;
+  } catch (err: any) {
+    logToNative(`[WTF Resolver] Fatal error during decryption: ${err.message}`);
+    throw err;
   } finally {
     window.fetch = originalFetch;
   }
