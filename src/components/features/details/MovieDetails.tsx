@@ -132,6 +132,23 @@ function MovieDetails({ movie, onClose, onListUpdate, onActorClick }: MovieDetai
   const [resolvedTracks, setResolvedTracks] = useState<{ file: string; label: string; kind: string; default?: boolean }[]>([]);
   const [showStreamSelector, setShowStreamSelector] = useState(false);
   const [isOverviewExpanded, setIsOverviewExpanded] = useState(false);
+  const [forcePlayUpcoming, setForcePlayUpcoming] = useState(false);
+  const holdTimeoutRef = React.useRef<any>(null);
+
+  const handleHoldStart = (e: React.MouseEvent | React.TouchEvent) => {
+    if (holdTimeoutRef.current) return;
+    holdTimeoutRef.current = setTimeout(() => {
+      triggerHaptic('medium');
+      setForcePlayUpcoming(true);
+    }, 3000);
+  };
+
+  const handleHoldEnd = () => {
+    if (holdTimeoutRef.current) {
+      clearTimeout(holdTimeoutRef.current);
+      holdTimeoutRef.current = null;
+    }
+  };
 
   // Track app language to re-fetch details when user changes language
   const [appLanguage, setAppLanguage] = useState(() => SettingsService.get('appLanguage') || 'en');
@@ -737,8 +754,9 @@ function MovieDetails({ movie, onClose, onListUpdate, onActorClick }: MovieDetai
   const trailer = videos.find(v => v.type === 'Trailer' && v.site === 'YouTube') || videos[0];
 
   const year = fullMovie.releaseDate || '';
-  const isUpcoming = !!(fullMovie.releaseDate && new Date(fullMovie.releaseDate).getTime() > Date.now());
-  const inTheaters = !!fullMovie.inTheaters && !isUpcoming;
+  const isUpcomingRaw = !!(fullMovie.releaseDate && new Date(fullMovie.releaseDate).getTime() > Date.now());
+  const isUpcoming = isUpcomingRaw && !forcePlayUpcoming;
+  const inTheaters = !!fullMovie.inTheaters && !isUpcomingRaw;
   const runtime = fullMovie.runtime
     ? `${Math.floor(fullMovie.runtime / 60)}h ${fullMovie.runtime % 60}m`
     : '';
@@ -999,27 +1017,45 @@ function MovieDetails({ movie, onClose, onListUpdate, onActorClick }: MovieDetai
             <span>Currently in theaters. Streams will be "Cam" quality (not HD).</span>
           </div>
         )}
-        {isUpcoming && fullMovie.releaseDate && (
-          <div style={{
-            fontSize: '0.8rem',
-            color: '#e4e4e7',
-            background: 'rgba(255, 255, 255, 0.03)',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
-            borderRadius: '8px',
-            padding: '10px 14px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            marginBottom: '12px',
-          }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255, 255, 255, 0.5)" strokeWidth="2.5" style={{ flexShrink: 0 }}>
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-              <line x1="16" y1="2" x2="16" y2="6"/>
-              <line x1="8" y1="2" x2="8" y2="6"/>
-              <line x1="3" y1="10" x2="21" y2="10"/>
-            </svg>
+        {isUpcomingRaw && fullMovie.releaseDate && (
+          <div 
+            onMouseDown={handleHoldStart}
+            onMouseUp={handleHoldEnd}
+            onTouchStart={handleHoldStart}
+            onTouchEnd={handleHoldEnd}
+            onMouseLeave={handleHoldEnd}
+            style={{
+              fontSize: '0.8rem',
+              color: forcePlayUpcoming ? '#4ade80' : '#e4e4e7',
+              background: forcePlayUpcoming ? 'rgba(74, 222, 128, 0.05)' : 'rgba(255, 255, 255, 0.03)',
+              border: forcePlayUpcoming ? '1px solid rgba(74, 222, 128, 0.2)' : '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: '8px',
+              padding: '10px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              marginBottom: '12px',
+              cursor: 'pointer',
+              userSelect: 'none'
+            }}
+          >
+            {forcePlayUpcoming ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" style={{ flexShrink: 0 }}>
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                <polyline points="22 4 12 14.01 9 11.01"/>
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255, 255, 255, 0.5)" strokeWidth="2.5" style={{ flexShrink: 0 }}>
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                <line x1="16" y1="2" x2="16" y2="6"/>
+                <line x1="8" y1="2" x2="8" y2="6"/>
+                <line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
+            )}
             <span style={{ fontWeight: 600 }}>
-              Upcoming Release • Releasing on {new Date(fullMovie.releaseDate).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
+              {forcePlayUpcoming 
+                ? "Leaked movie overwrite watch" 
+                : `Upcoming Release • Releasing on ${new Date(fullMovie.releaseDate).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}`}
             </span>
           </div>
         )}
