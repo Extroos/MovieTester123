@@ -155,6 +155,10 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults }: 
 
   const handleSearch = async (e?: React.FormEvent) => {
     e?.preventDefault();
+    inputRef.current?.blur();
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     const term = query.trim();
     if (!term) return;
     triggerHaptic('medium');
@@ -378,7 +382,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults }: 
       }}>
         {/* Back Button */}
         <button 
-          onClick={onClose} 
+          onClick={() => { inputRef.current?.blur(); onClose(); }} 
           aria-label="Back"
           className="search-overlay-back-btn"
           style={{ 
