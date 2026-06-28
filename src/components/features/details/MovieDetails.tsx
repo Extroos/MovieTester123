@@ -1416,7 +1416,7 @@ function MovieDetails({ movie, onClose, onListUpdate, onActorClick }: MovieDetai
         )}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', opacity: 0.85 }}>
           {fullMovie.status && (
-            <div><span style={{ color: '#71717a' }}>{t('status')}: </span>{fullMovie.status}</div>
+            <div><span style={{ color: '#71717a' }}>{t('status')}: </span>{isUpcomingRaw ? 'Upcoming' : fullMovie.status}</div>
           )}
           {fullMovie.releaseDate && (
             <div><span style={{ color: '#71717a' }}>{isUpcomingRaw ? 'Releasing' : t('released')}: </span>{year}</div>

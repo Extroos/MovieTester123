@@ -1508,7 +1508,7 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
         )}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', opacity: 0.85 }}>
           {fullShow.status && (
-            <div><span style={{ color: '#71717a' }}>{t('status')}: </span>{fullShow.status}</div>
+            <div><span style={{ color: '#71717a' }}>{t('status')}: </span>{isUpcoming ? 'Upcoming' : fullShow.status}</div>
           )}
           {fullShow.firstAirDate && (
             <div><span style={{ color: '#71717a' }}>{isUpcoming ? 'Airing' : t('first_air')}: </span>{fullShow.firstAirDate}</div>
