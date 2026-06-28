@@ -897,7 +897,17 @@ export default function LocalVideoPlayer({
       console.log(`[LocalVideoPlayer] Playback auto-failover: ${selectedServer} -> ${nextServer}`);
       handleServerChange(nextServer);
     } else if (!iframeFallback && !embedServer) {
-
+      const isAdFree = ['vidlink-pro', 'vidsrc-wtf-2', 'vidsrc-sbs', 'vidsrc-pk', 'vidsrc-fyi', 'test-server'].includes(selectedServer);
+      if (isAdFree) {
+        setPlayerToast({
+          message: 'All ad-free native servers failed to load. Please select an external iframe server.',
+          isError: true
+        });
+        setServerError('All localized stream servers failed to respond.');
+        setShowSettings(true);
+        setSettingsTab('servers');
+        return;
+      }
       setPlayerToast({
         message: 'All localized stream servers failed to respond. Launching web fallback...',
         isError: true
@@ -2327,7 +2337,8 @@ export default function LocalVideoPlayer({
                           return;
                       }
 
-                      if (Capacitor.isNativePlatform()) {
+                      const isAdFree = ['vidlink-pro', 'vidsrc-wtf-2', 'vidsrc-sbs', 'vidsrc-pk', 'vidsrc-fyi', 'test-server'].includes(selectedServer);
+                      if (Capacitor.isNativePlatform() && !isAdFree) {
                           console.warn('[LocalVideoPlayer] HLS manifest error on native mobile, falling back to official iframe player embed...');
                           setIframeFallback(true);
                           setIsInitialLoading(false);
@@ -2348,6 +2359,7 @@ export default function LocalVideoPlayer({
                       setIsSwitchingServer(false);
                       setBuffering(false);
                       setShowSettings(true);
+                      setSettingsTab('servers');
                       return;
                   }
 
@@ -2368,7 +2380,7 @@ export default function LocalVideoPlayer({
                           hls.recoverMediaError();
                           break;
                       default:
-                          if (Capacitor.isNativePlatform()) {
+                          if (Capacitor.isNativePlatform() && !isAdFree) {
                               console.warn('[LocalVideoPlayer] Unrecoverable HLS error on native mobile, falling back to official iframe player embed...');
                               setIframeFallback(true);
                               setIsInitialLoading(false);
@@ -2482,7 +2494,8 @@ export default function LocalVideoPlayer({
               const handleNativeError = () => {
                   const err = videoRef.current?.error;
                   console.error('[LocalVideoPlayer] Native HLS video error:', err?.code, err?.message);
-                  if (Capacitor.isNativePlatform()) {
+                  const isAdFree = ['vidlink-pro', 'vidsrc-wtf-2', 'vidsrc-sbs', 'vidsrc-pk', 'vidsrc-fyi', 'test-server'].includes(selectedServer);
+                  if (Capacitor.isNativePlatform() && !isAdFree) {
                       console.warn('[LocalVideoPlayer] Native HLS error on native mobile, falling back to official iframe player embed...');
                       setIframeFallback(true);
                       setIsInitialLoading(false);
@@ -2492,6 +2505,7 @@ export default function LocalVideoPlayer({
                   setServerError(msg);
                   if (selectedServer === 'vidlink-pro') setVidlinkDiagnostics(msg);
                   setShowSettings(true);
+                  setSettingsTab('servers');
                   setIsInitialLoading(false);
               };
               videoRef.current.addEventListener('loadedmetadata', handleLoadedMetadata);
@@ -2522,7 +2536,8 @@ export default function LocalVideoPlayer({
           const handleNativeError = () => {
               const err = videoRef.current?.error;
               console.error('[LocalVideoPlayer] Native MP4 video error:', err?.code, err?.message);
-              if (Capacitor.isNativePlatform()) {
+              const isAdFree = ['vidlink-pro', 'vidsrc-wtf-2', 'vidsrc-sbs', 'vidsrc-pk', 'vidsrc-fyi', 'test-server'].includes(selectedServer);
+              if (Capacitor.isNativePlatform() && !isAdFree) {
                   console.warn('[LocalVideoPlayer] Native MP4 error on native mobile, falling back to official iframe player embed...');
                   setIframeFallback(true);
                   setIsInitialLoading(false);
@@ -2532,6 +2547,7 @@ export default function LocalVideoPlayer({
               setServerError(msg);
               if (selectedServer === 'vidlink-pro') setVidlinkDiagnostics(msg);
               setShowSettings(true);
+              setSettingsTab('servers');
               setIsInitialLoading(false);
           };
           videoRef.current.addEventListener('loadedmetadata', handleLoadedMetadata);
