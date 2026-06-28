@@ -665,9 +665,19 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                             );
                           })
                         )}
-                      </div>
                     </div>
                   )}
+
+                  <div style={{
+                    marginTop: '20px',
+                    textAlign: 'center',
+                    fontSize: '0.68rem',
+                    color: 'rgba(255,255,255,0.3)',
+                    fontFamily: 'monospace',
+                    letterSpacing: '0.02em'
+                  }}>
+                    Server Engine last updated: 06/28/2026
+                  </div>
                 </>
             </div>
           )}
