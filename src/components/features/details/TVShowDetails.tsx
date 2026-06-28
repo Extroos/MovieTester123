@@ -2007,7 +2007,7 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
                       {episodes.map((ep) => {
-                        const stillUrl = getStillUrl(ep.stillPath);
+                        const stillUrl = getStillUrl(ep.stillPath) || getBackdropUrl(fullShow.backdropPath) || getPosterUrl(fullShow.posterPath);
                         const isCurrentResumeEp = resumeEpisode && resumeEpisode.season === selectedSeason && resumeEpisode.episode === ep.episodeNumber;
                         return (
                           <div 
@@ -2110,6 +2110,21 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                                     {ep.airDate || 'TBA'}
                                   </span>
                                 </div>
+                                {ep.overview && (
+                                  <p style={{ 
+                                    margin: '6px 0 0', 
+                                    fontSize: '0.75rem', 
+                                    color: 'rgba(255, 255, 255, 0.5)', 
+                                    lineHeight: '1.4',
+                                    display: '-webkit-box', 
+                                    WebkitLineClamp: 2, 
+                                    WebkitBoxOrient: 'vertical', 
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis'
+                                  }}>
+                                    {ep.overview}
+                                  </p>
+                                )}
                               </div>
 
                               {/* Episode Download/Watch Action */}
