@@ -166,8 +166,13 @@ export const PlayerSettings = React.memo(function PlayerSettings({
   const consoleContainerRef = React.useRef<HTMLDivElement>(null);
   const [clickCount, setClickCount] = React.useState(0);
   const [showConsole, setShowConsole] = React.useState(false);
+  const [isTransitioning, setIsTransitioning] = React.useState(false);
+
   const handleTitleClick = (e: React.MouseEvent | React.TouchEvent) => {
     e.stopPropagation();
+    if (e.cancelable) {
+      e.preventDefault();
+    }
     setClickCount(prev => {
       const next = prev + 1;
       if (next >= 3) {
@@ -175,6 +180,15 @@ export const PlayerSettings = React.memo(function PlayerSettings({
       }
       return next;
     });
+  };
+
+  const handleTabClick = (tabId: any) => {
+    setIsTransitioning(true);
+    import('../../../../utils/haptics').then(m => m.triggerHaptic('light'));
+    setSettingsTab(tabId);
+    setTimeout(() => {
+      setIsTransitioning(false);
+    }, 280);
   };
 
   const [configUrl, setConfigUrl] = React.useState(() => {
@@ -338,10 +352,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
             <button
               key={tab.id}
               className="settings-tab-btn"
-              onClick={() => {
-                import('../../../../utils/haptics').then(m => m.triggerHaptic('light'));
-                setSettingsTab(tab.id as any);
-              }}
+              onClick={() => handleTabClick(tab.id)}
               style={{
                 flexShrink: 0,
                 padding: '8px 12px',
@@ -360,7 +371,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
           ))}
         </div>
 
-        <div className="player-settings-content" style={{ flex: 1, overflowY: 'auto', height: '420px', maxHeight: '55vh', scrollbarWidth: 'none' }}>
+        <div className="player-settings-content" style={{ flex: 1, overflowY: 'auto', height: '420px', maxHeight: '55vh', scrollbarWidth: 'none', pointerEvents: isTransitioning ? 'none' : 'auto' }}>
           {settingsTab === 'servers' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {isSwitchingServer && (
