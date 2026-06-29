@@ -444,7 +444,7 @@ export default function LocalVideoPlayer({
     setShowSettings(true);
   };
 
-  const handleServerChange = async (serverId: 'vidlink-pro' | 'vidsrc-sbs' | 'vidsrc-wtf-1' | 'vidsrc-wtf-2' | 'vidsrc-wtf-3' | 'vidsrc-wtf-4' | 'vidsrc-pk' | 'vidsrc-fyi' | 'test-server') => {
+  const handleServerChange = async (serverId: 'vidlink-pro' | 'vidsrc-sbs' | 'vidsrc-wtf-1' | 'vidsrc-wtf-2' | 'vidsrc-wtf-3' | 'vidsrc-wtf-4' | 'vidsrc-pk' | 'vidsrc-fyi' | 'test-server', isInitial = false) => {
 
     if (isOfflineMode || (typeof navigator !== 'undefined' && !navigator.onLine)) {
       setPlayerToast({ message: 'You are offline. Server switching is not available.', isError: true });
@@ -484,13 +484,15 @@ export default function LocalVideoPlayer({
     setEmbedServer(null);
 
 
-    setIsSwitchingServer(true);
-    setConnectingServerName(SERVER_DISPLAY_NAMES[serverId] || serverId);
+    if (!isInitial) {
+      setIsSwitchingServer(true);
+      setConnectingServerName(SERVER_DISPLAY_NAMES[serverId] || serverId);
+      setShowSettings(false);
+      setCurrentSrc("");
+    }
     setServerError(null);
     setVidlinkDiagnostics(null);
     setTestServerDiagnostics(null);
-    setShowSettings(false);
-    setCurrentSrc("");
 
     // Clear current quality and available sources on server change to prevent leaks/flashes
     setQualities([]);
@@ -2129,7 +2131,7 @@ export default function LocalVideoPlayer({
       initialLoadRef.current = loadKey;
       
       console.log(`[LocalVideoPlayer] Initializing play for ${selectedServer} (item: ${item.id})...`);
-      handleServerChange(selectedServer).catch(err => {
+      handleServerChange(selectedServer, true).catch(err => {
         console.error('[LocalVideoPlayer] Failed initial server load:', err);
       });
     }, [item?.id, selectedServer, season, episode, isOfflineMode]);
@@ -3092,7 +3094,7 @@ export default function LocalVideoPlayer({
                   ? `https://vidsrc.fyi/embed/tv/${idToUse}/${season}/${episode}`
                   : `https://vidsrc.fyi/embed/movie/${idToUse}`;
               }
-              if (currentSrv === 'universal') {
+              if (currentSrv === 'universal' || currentSrv === 'test-server') {
                 return season || episode
                   ? `https://vidsrc.to/embed/tv/${item?.id}/${season}/${episode}`
                   : `https://vidsrc.to/embed/movie/${item?.id}`;
