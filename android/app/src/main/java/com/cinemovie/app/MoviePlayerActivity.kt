@@ -49,23 +49,35 @@ class MoviePlayerActivity : AppCompatActivity() {
         )
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        // Force display to keep refresh rate at least at 60Hz to prevent ColorOS / aggressive ARR
+        // Force display to keep refresh rate at least at the display's maximum supported rate to prevent ColorOS / aggressive ARR
         // from throttling native ExoPlayer video playback down to 30Hz when no touch interaction is detected.
-        try {
-            val params = window.attributes
-            if (android.os.Build.VERSION.SDK_INT >= 31) { // Android 12 (S)
-                val fieldMin = params.javaClass.getField("preferredMinDisplayRefreshRate")
-                fieldMin.set(params, 60.0f)
-                val fieldMax = params.javaClass.getField("preferredMaxDisplayRefreshRate")
-                fieldMax.set(params, 120.0f)
-            } else if (android.os.Build.VERSION.SDK_INT >= 30) { // Android 11 (R)
-                val field = params.javaClass.getField("preferredFrameRate")
-                field.set(params, 60.0f)
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            try {
+                val display = display
+                if (display != null) {
+                    val modes = display.supportedModes
+                    var maxRate = 60.0f
+                    for (mode in modes) {
+                        if (mode.refreshRate > maxRate) {
+                            maxRate = mode.refreshRate
+                        }
+                    }
+                    val params = window.attributes
+                    if (android.os.Build.VERSION.SDK_INT >= 31) {
+                        val fieldMin = params.javaClass.getField("preferredMinDisplayRefreshRate")
+                        fieldMin.set(params, maxRate)
+                        val fieldMax = params.javaClass.getField("preferredMaxDisplayRefreshRate")
+                        fieldMax.set(params, maxRate)
+                    } else {
+                        val field = params.javaClass.getField("preferredFrameRate")
+                        field.set(params, maxRate)
+                    }
+                    window.attributes = params
+                    Log.d("MoviePlayerActivity", "Locked display refresh rate to max: $maxRate")
+                }
+            } catch (e: Exception) {
+                Log.w("MoviePlayerActivity", "Failed to lock refresh rate to max: ${e.message}")
             }
-            window.attributes = params
-            Log.d("MoviePlayerActivity", "Successfully set window refresh rate parameters via reflection")
-        } catch (e: Exception) {
-            Log.w("MoviePlayerActivity", "Could not set window refresh rate parameters: ${e.message}")
         }
 
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager

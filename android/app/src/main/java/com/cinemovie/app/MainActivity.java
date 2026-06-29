@@ -23,23 +23,35 @@ public class MainActivity extends BridgeActivity {
         // Keep screen on during video playback
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-        // Force display to keep refresh rate at least at 60Hz to prevent ColorOS / aggressive ARR
-        // from throttling WebView video playback down to 30Hz when no touch interaction is detected.
-        try {
-            WindowManager.LayoutParams params = getWindow().getAttributes();
-            if (android.os.Build.VERSION.SDK_INT >= 31) { // Android 12 (S)
-                java.lang.reflect.Field fieldMin = params.getClass().getField("preferredMinDisplayRefreshRate");
-                fieldMin.setFloat(params, 60.0f);
-                java.lang.reflect.Field fieldMax = params.getClass().getField("preferredMaxDisplayRefreshRate");
-                fieldMax.setFloat(params, 120.0f);
-            } else if (android.os.Build.VERSION.SDK_INT >= 30) { // Android 11 (R)
-                java.lang.reflect.Field field = params.getClass().getField("preferredFrameRate");
-                field.setFloat(params, 60.0f);
+        // Dynamically lock refresh rate to the display's maximum supported rate (e.g., 90Hz, 120Hz)
+        // to bypass aggressive ColorOS/OPPO battery-saver refresh rate throttling.
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            try {
+                android.view.Display display = getDisplay();
+                if (display != null) {
+                    android.view.Display.Mode[] modes = display.getSupportedModes();
+                    float maxRate = 60.0f;
+                    for (android.view.Display.Mode mode : modes) {
+                        if (mode.getRefreshRate() > maxRate) {
+                            maxRate = mode.getRefreshRate();
+                        }
+                    }
+                    WindowManager.LayoutParams params = getWindow().getAttributes();
+                    if (android.os.Build.VERSION.SDK_INT >= 31) {
+                        java.lang.reflect.Field fieldMin = params.getClass().getField("preferredMinDisplayRefreshRate");
+                        fieldMin.setFloat(params, maxRate);
+                        java.lang.reflect.Field fieldMax = params.getClass().getField("preferredMaxDisplayRefreshRate");
+                        fieldMax.setFloat(params, maxRate);
+                    } else {
+                        java.lang.reflect.Field field = params.getClass().getField("preferredFrameRate");
+                        field.setFloat(params, maxRate);
+                    }
+                    getWindow().setAttributes(params);
+                    android.util.Log.d("MainActivity", "Locked display refresh rate to max: " + maxRate);
+                }
+            } catch (Exception e) {
+                android.util.Log.e("MainActivity", "Failed to lock refresh rate to max: " + e.getMessage());
             }
-            getWindow().setAttributes(params);
-            android.util.Log.d("MainActivity", "Successfully set WebView preferred refresh rate via reflection");
-        } catch (Exception e) {
-            android.util.Log.w("MainActivity", "Failed to set preferred refresh rate: " + e.getMessage());
         }
 
         // Allow default hardware-accelerated surface rendering (View.LAYER_TYPE_NONE)
@@ -61,78 +73,6 @@ public class MainActivity extends BridgeActivity {
         getWindow().getDecorView().setOnSystemUiVisibilityChangeListener(visibility -> {
             hideSystemBarsIfNeeded();
         });
-
-        // Create an isolated dummy View to consume simulated touch events so they don't interfere with the WebView
-        try {
-            dummyTouchView = new View(this);
-            dummyTouchView.setLayoutParams(new android.view.ViewGroup.LayoutParams(1, 1));
-            dummyTouchView.setVisibility(View.VISIBLE);
-            dummyTouchView.setOnTouchListener((v, e) -> true); // Completely consume events locally
-            ((android.view.ViewGroup) getWindow().getDecorView()).addView(dummyTouchView);
-        } catch (Exception e) {
-            android.util.Log.e("MainActivity", "Failed to add dummyTouchView: " + e.getMessage());
-        }
-    }
-
-    private View dummyTouchView;
-    private boolean isUserTouching = false;
-    private final android.os.Handler touchBoostHandler = new android.os.Handler();
-    private final Runnable resumeTouchBoostRunnable = () -> {
-        isUserTouching = false;
-    };
-
-    private final Runnable touchBoostRunnable = new Runnable() {
-        @Override
-        public void run() {
-            try {
-                if (NativeStreamingEnginePlugin.isTouchBoostActive && !isUserTouching && dummyTouchView != null) {
-                    long now = android.os.SystemClock.uptimeMillis();
-                    android.view.MotionEvent event = android.view.MotionEvent.obtain(
-                        now,
-                        now,
-                        android.view.MotionEvent.ACTION_MOVE,
-                        0.5f,
-                        0.5f,
-                        0
-                    );
-                    dummyTouchView.dispatchTouchEvent(event);
-                    event.recycle();
-                }
-            } catch (Exception e) {}
-            touchBoostHandler.postDelayed(this, 120);
-        }
-    };
-
-    @Override
-    public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
-        switch (ev.getActionMasked()) {
-            case android.view.MotionEvent.ACTION_DOWN:
-            case android.view.MotionEvent.ACTION_POINTER_DOWN:
-            case android.view.MotionEvent.ACTION_MOVE:
-                isUserTouching = true;
-                touchBoostHandler.removeCallbacks(resumeTouchBoostRunnable);
-                break;
-            case android.view.MotionEvent.ACTION_UP:
-            case android.view.MotionEvent.ACTION_POINTER_UP:
-            case android.view.MotionEvent.ACTION_CANCEL:
-                // Delay resuming the fake touch loop to let the user's gesture finish completely
-                touchBoostHandler.removeCallbacks(resumeTouchBoostRunnable);
-                touchBoostHandler.postDelayed(resumeTouchBoostRunnable, 500);
-                break;
-        }
-        return super.dispatchTouchEvent(ev);
-    }
-
-    @Override
-    public void onResume() {
-        super.onResume();
-        touchBoostHandler.postDelayed(touchBoostRunnable, 1000);
-    }
-
-    @Override
-    public void onPause() {
-        super.onPause();
-        touchBoostHandler.removeCallbacks(touchBoostRunnable);
     }
 
 
