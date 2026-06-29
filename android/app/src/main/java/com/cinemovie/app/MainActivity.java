@@ -75,6 +75,68 @@ public class MainActivity extends BridgeActivity {
         });
     }
 
+    private boolean isUserTouching = false;
+    private final android.os.Handler touchBoostHandler = new android.os.Handler();
+    private final Runnable resumeTouchBoostRunnable = () -> {
+        isUserTouching = false;
+    };
+
+    private final Runnable touchBoostRunnable = new Runnable() {
+        @Override
+        public void run() {
+            try {
+                if (NativeStreamingEnginePlugin.isTouchBoostActive && !isUserTouching) {
+                    WebView webView = getBridge().getWebView();
+                    if (webView != null) {
+                        long now = android.os.SystemClock.uptimeMillis();
+                        android.view.MotionEvent event = android.view.MotionEvent.obtain(
+                            now,
+                            now,
+                            android.view.MotionEvent.ACTION_MOVE,
+                            1.0f,
+                            1.0f,
+                            0
+                        );
+                        webView.dispatchTouchEvent(event);
+                        event.recycle();
+                    }
+                }
+            } catch (Exception e) {}
+            touchBoostHandler.postDelayed(this, 120);
+        }
+    };
+
+    @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
+        switch (ev.getActionMasked()) {
+            case android.view.MotionEvent.ACTION_DOWN:
+            case android.view.MotionEvent.ACTION_POINTER_DOWN:
+            case android.view.MotionEvent.ACTION_MOVE:
+                isUserTouching = true;
+                touchBoostHandler.removeCallbacks(resumeTouchBoostRunnable);
+                break;
+            case android.view.MotionEvent.ACTION_UP:
+            case android.view.MotionEvent.ACTION_POINTER_UP:
+            case android.view.MotionEvent.ACTION_CANCEL:
+                touchBoostHandler.removeCallbacks(resumeTouchBoostRunnable);
+                touchBoostHandler.postDelayed(resumeTouchBoostRunnable, 500);
+                break;
+        }
+        return super.dispatchTouchEvent(ev);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        touchBoostHandler.postDelayed(touchBoostRunnable, 1000);
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        touchBoostHandler.removeCallbacks(touchBoostRunnable);
+    }
+
 
 
 
