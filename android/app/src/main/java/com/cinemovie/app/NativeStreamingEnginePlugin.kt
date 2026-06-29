@@ -48,6 +48,7 @@ class NativeStreamingEnginePlugin : Plugin() {
     private var proxyServer: java.net.ServerSocket? = null
     private var proxyRunning = false
     private var proxyPort = 8000
+    private val ENABLE_REMOTE_OTA = false
 
     private val defaultConfigJson = """
     {
@@ -129,6 +130,23 @@ class NativeStreamingEnginePlugin : Plugin() {
     }
 
     private fun loadOtaConfig() {
+        if (!ENABLE_REMOTE_OTA) {
+            addLog("[OTA] Remote OTA config fetch is disabled. Reading bundled config.json from assets.")
+            try {
+                val inputStream = context.assets.open("public/config.json")
+                val size = inputStream.available()
+                val buffer = ByteArray(size)
+                inputStream.read(buffer)
+                inputStream.close()
+                val jsonStr = String(buffer, Charsets.UTF_8)
+                remoteConfig = org.json.JSONObject(jsonStr)
+                addLog("[OTA] Successfully loaded local config.json from assets")
+                return
+            } catch (e: Exception) {
+                addLog("[OTA] Failed to load local config.json from assets: ${e.message}")
+            }
+        }
+
         val cached = getCachedConfig()
         if (cached != null) {
             try {
@@ -419,15 +437,38 @@ class NativeStreamingEnginePlugin : Plugin() {
                     val lines = m3u8Content.split("\n")
                     val rewritten = StringBuilder()
                     for (line in lines) {
-                        val trimmed = line.trim()
+                        var processedLine = line
+                        // 1. Rewrite URI="..." attributes (e.g. for decryption keys or media groups)
+                        val uriRegex = Regex("""URI=["']([^"']+)["']""")
+                        val matchResult = uriRegex.find(processedLine)
+                        if (matchResult != null) {
+                            val originalUri = matchResult.groupValues[1]
+                            val resolvedUri = if (originalUri.startsWith("http://") || originalUri.startsWith("https://")) {
+                                originalUri
+                            } else if (originalUri.startsWith("/") && !originalUri.startsWith("//")) {
+                                "${lastProxyScheme}://${lastProxyHost}${originalUri}"
+                            } else {
+                                originalUri
+                            }
+                            
+                            val proxiedUri = "http://localhost:$proxyPort/local-proxy?url=${java.net.URLEncoder.encode(resolvedUri, "UTF-8")}&referer=${java.net.URLEncoder.encode(referer, "UTF-8")}&origin=${java.net.URLEncoder.encode(origin, "UTF-8")}"
+                            processedLine = processedLine.replace(originalUri, proxiedUri)
+                        }
+                        
+                        // 2. Rewrite line-based HLS segment / playlist URLs
+                        val trimmed = processedLine.trim()
                         if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-                            rewritten.append("http://localhost:$proxyPort/local-proxy?url=")
-                                     .append(java.net.URLEncoder.encode(trimmed, "UTF-8"))
-                                     .append("&referer=")
-                                     .append(java.net.URLEncoder.encode(referer, "UTF-8"))
-                                     .append("&origin=")
-                                     .append(java.net.URLEncoder.encode(origin, "UTF-8"))
-                                     .append("\n")
+                            if (!trimmed.contains("localhost") && !trimmed.contains("127.0.0.1")) {
+                                rewritten.append("http://localhost:$proxyPort/local-proxy?url=")
+                                         .append(java.net.URLEncoder.encode(trimmed, "UTF-8"))
+                                         .append("&referer=")
+                                         .append(java.net.URLEncoder.encode(referer, "UTF-8"))
+                                         .append("&origin=")
+                                         .append(java.net.URLEncoder.encode(origin, "UTF-8"))
+                                         .append("\n")
+                            } else {
+                                rewritten.append(processedLine).append("\n")
+                            }
                         } else if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
                             val absUrl = "${lastProxyScheme}://${lastProxyHost}${trimmed}"
                             rewritten.append("http://localhost:$proxyPort/local-proxy?url=")
@@ -438,7 +479,7 @@ class NativeStreamingEnginePlugin : Plugin() {
                                      .append(java.net.URLEncoder.encode(origin, "UTF-8"))
                                      .append("\n")
                         } else {
-                            rewritten.append(line).append("\n")
+                            rewritten.append(processedLine).append("\n")
                         }
                     }
                     bodyBytes = rewritten.toString().toByteArray(Charsets.UTF_8)

@@ -1,5 +1,11 @@
 # CineMovie OTA Configuration and Extractor Maintenance Guide
 
+> [!WARNING]
+> **LOCAL TESTING MODE ACTIVE:** Remote OTA configuration fetching is currently turned off to allow local configuration testing.
+> To re-enable fetching from GitHub before building production release APKs, set `ENABLE_REMOTE_OTA = true` in these files:
+> 1. **Frontend:** [RemoteConfigService.ts](file:///c:/Users/user/Desktop/CineMovie/src/services/streaming/RemoteConfigService.ts) (line 15)
+> 2. **Native Engine:** [NativeStreamingEnginePlugin.kt](file:///c:/Users/user/Desktop/CineMovie/android/app/src/main/java/com/cinemovie/app/NativeStreamingEnginePlugin.kt) (line 51)
+
 This document maps out the system architecture and explains how to update the dynamic extractors, domains, headers, and endpoints Over-The-Air (OTA) without requiring app rebuilds or APK re-releases.
 
 ---

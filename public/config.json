@@ -1,0 +1,38 @@
+{
+  "last_updated": "06/28/2026",
+  "enabled_servers": [
+    "vidlink-pro",
+    "test-server",
+    "vidsrc-wtf-2",
+    "vidsrc-sbs",
+    "vidsrc-pk",
+    "vidsrc-fyi",
+    "vidsrc-wtf-1",
+    "vidsrc-wtf-3",
+    "vidsrc-wtf-4"
+  ],
+  "gateways": {
+    "vidlink": "https://vidlink.pro",
+    "cloudnestra": "https://cloudnestra.com",
+    "vidsrc_wtf": "https://vidsrc.wtf",
+    "vidsrc_sbs": "https://vidsrc.sbs",
+    "vidsrc_pk": "https://embed.vidsrc.pk",
+    "vidsrc_fyi": "https://vidsrc.fyi"
+  },
+  "headers": {
+    "vidlink_referer": "https://vidlink.pro/",
+    "vidlink_origin": "https://vidlink.pro",
+    "cloudnestra_referer": "https://cloudnestra.com/",
+    "cloudnestra_origin": "https://cloudnestra.com",
+    "vidsrc_wtf_referer": "https://vidsrc.wtf/",
+    "vidsrc_wtf_origin": "https://vidsrc.wtf",
+    "vidsrc_sbs_referer": "https://vidsrc.sbs/",
+    "vidsrc_sbs_origin": "https://vidsrc.sbs",
+    "vidsrc_pk_referer": "https://embed.vidsrc.pk/",
+    "vidsrc_pk_origin": "https://embed.vidsrc.pk",
+    "vidsrc_me_referer": "https://vidsrc.me/",
+    "vidsrc_me_origin": "https://vidsrc.me",
+    "brightpath_referer": "https://brightpathsignals.com/",
+    "brightpath_origin": "https://brightpathsignals.com"
+  }
+}

@@ -40,6 +40,9 @@ class BackgroundRequestObserver(private val context: Context) {
         val observerWebView = WebView(context).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
+            settings.databaseEnabled = true
+            settings.mediaPlaybackRequiresUserGesture = false
+            settings.userAgentString = "Mozilla/5.0 (Linux; Android 13; SM-S901B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
             settings.blockNetworkImage = true // Save bandwidth during validation
         }
 

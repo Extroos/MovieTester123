@@ -6,12 +6,18 @@
  * so they can be updated via a git push without reinstalling the app.
  */
 
+import localConfig from '../../../config.json';
+
 const CONFIG_URL_KEY = 'cinemovie_ota_config_url';
 const CONFIG_CACHE_KEY = 'cinemovie_ota_config_cache';
 const CONFIG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const CONFIG_CACHE_TS_KEY = 'cinemovie_ota_config_cache_ts';
 
 const DEFAULT_CONFIG_URL = 'https://raw.githubusercontent.com/Extroos/MovieTester123/main/config.json';
+
+// Toggle to enable/disable remote OTA configuration fetching from GitHub.
+// Set to 'false' to use the local bundled config.json file for testing.
+export const ENABLE_REMOTE_OTA = false;
 
 interface GatewayConfig {
   vidlink: string;
@@ -72,6 +78,10 @@ function saveCachedConfig(config: RemoteConfig): void {
 }
 
 async function fetchRemoteConfig(): Promise<RemoteConfig> {
+  if (!ENABLE_REMOTE_OTA) {
+    _cachedConfig = localConfig as RemoteConfig;
+    return _cachedConfig;
+  }
   const url = getConfigUrl();
   try {
     const res = await fetch(url, { cache: 'no-store' });
@@ -96,6 +106,9 @@ async function fetchRemoteConfig(): Promise<RemoteConfig> {
  * Uses in-memory cache first, then localStorage cache, then fetches remotely.
  */
 export async function getRemoteConfig(): Promise<RemoteConfig> {
+  if (!ENABLE_REMOTE_OTA) {
+    return localConfig as RemoteConfig;
+  }
   if (_cachedConfig) return _cachedConfig;
 
   const cached = loadCachedConfig();
