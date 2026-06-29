@@ -641,7 +641,7 @@ video::-webkit-media-text-track-container {
 video::cue {
   background-color: rgba(0, 0, 0, var(--subtitle-bg-opacity, 0.78)) !important;
   color: var(--subtitle-color, #ffffff) !important;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "SF Pro Arabic", "Helvetica Neue", system-ui, sans-serif !important;
   font-size: var(--subtitle-font-size, calc(15px + 0.55vw)) !important;
   font-weight: 600 !important;
   text-shadow: 0 1.5px 3px rgba(0, 0, 0, 0.9) !important;
