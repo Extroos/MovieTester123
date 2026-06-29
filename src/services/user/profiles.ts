@@ -10,6 +10,7 @@ export interface Profile {
   haptics?: boolean;
   notifyFriendActivity?: boolean;
   notifyNewContent?: boolean;
+  appLanguage?: string;
 }
 
 const ACTIVE_PROFILE_KEY = 'watchmovie_active_profile_id';
@@ -74,7 +75,8 @@ export const ProfileService = {
         avatar: p.avatar,
         isKids: p.is_kids,
         autoplay: p.autoplay,
-        haptics: p.haptics
+        haptics: p.haptics,
+        appLanguage: p.app_language || undefined
       }));
     } catch (e: any) {
       console.error('Profile fetch error:', e);
@@ -232,6 +234,7 @@ export const ProfileService = {
           if (updates.haptics !== undefined) dbUpdates.haptics = updates.haptics;
           if (updates.notifyFriendActivity !== undefined) dbUpdates.notify_friend_activity = updates.notifyFriendActivity;
           if (updates.notifyNewContent !== undefined) dbUpdates.notify_new_content = updates.notifyNewContent;
+          if (updates.appLanguage !== undefined) dbUpdates.app_language = updates.appLanguage;
 
           const { error } = await supabase
               .from('profiles')

@@ -1,3 +1,5 @@
+import { supabase } from '../../lib/supabase';
+
 export interface AppSettings {
   minimalHome: boolean;
   autoNext: boolean;
@@ -75,19 +77,65 @@ export class SettingsService {
     const settings = this.getAll();
     settings[key] = value;
     this.save();
-    
+
     if (key === 'theme') {
       this.applyTheme(value as any);
     }
 
     // Notify app of changes
     window.dispatchEvent(new CustomEvent('settingsChanged', { detail: { key, value } }));
+
+    // Sync language to Supabase so it survives reinstall for logged-in users
+    if (key === 'appLanguage') {
+      this.syncLanguage(value as string).catch(() => {});
+    }
   }
 
   static applyTheme(theme: AppSettings['theme']): void {
     const body = document.body;
     body.setAttribute('data-theme', theme);
     body.style.removeProperty('background-color');
+  }
+
+  /**
+   * Push the current language preference to the active Supabase profile so that
+   * it can be restored on reinstall for authenticated users.
+   */
+  static async syncLanguage(lang: string): Promise<void> {
+    try {
+      const isGuest = localStorage.getItem('cinemovie_is_guest') === 'true';
+      if (isGuest) return;
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const activeProfileId = localStorage.getItem('watchmovie_active_profile_id');
+      if (!activeProfileId) return;
+
+      // Silently update the active profile's app_language column.
+      // If the column doesn't exist yet, the error is swallowed gracefully.
+      await supabase
+        .from('profiles')
+        .update({ app_language: lang })
+        .eq('id', activeProfileId);
+    } catch (_) {
+      // Non-critical — do not surface errors to the user
+    }
+  }
+
+  /**
+   * Restore the language from a cloud profile into local settings.
+   * Call this after a profile is selected/loaded on app start.
+   */
+  static restoreLanguageFromProfile(appLanguage?: string): void {
+    if (!appLanguage) return;
+    const validLangs = ['en', 'fr', 'es', 'de', 'it', 'pt', 'ru'];
+    if (!validLangs.includes(appLanguage)) return;
+    const settings = this.getAll();
+    if (settings.appLanguage === appLanguage) return; // already in sync
+    settings.appLanguage = appLanguage as AppSettings['appLanguage'];
+    this.save();
+    window.dispatchEvent(new CustomEvent('settingsChanged', { detail: { key: 'appLanguage', value: appLanguage } }));
   }
 
   private static save(): void {
@@ -104,4 +152,3 @@ export class SettingsService {
     this.save();
   }
 }
-

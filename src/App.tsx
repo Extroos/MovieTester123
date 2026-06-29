@@ -809,6 +809,8 @@ export default function App() {
     setActiveProfile(profile);
     setShowProfileSelector(false);
     setCurrentView('home');
+    // Restore the user's saved language preference from their cloud profile
+    SettingsService.restoreLanguageFromProfile((profile as any).appLanguage);
   };
 
   const handleActivityReaction = useCallback(async (itemId: string, mediaType: string, targetUserId: string, emoji: string) => {
