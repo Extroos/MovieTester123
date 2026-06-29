@@ -48,6 +48,18 @@ class MoviePlayerActivity : AppCompatActivity() {
         )
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
+        // Force display to keep refresh rate at least at 60Hz to prevent ColorOS / aggressive ARR
+        // from throttling native ExoPlayer video playback down to 30Hz when no touch interaction is detected.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            val params = window.attributes
+            params.preferredMinDisplayRefreshRate = 60.0f
+            window.attributes = params
+        } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            val params = window.attributes
+            params.preferredFrameRate = 60.0f
+            window.attributes = params
+        }
+
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         brightness = window.attributes.screenBrightness
         if (brightness < 0) brightness = 0.5f

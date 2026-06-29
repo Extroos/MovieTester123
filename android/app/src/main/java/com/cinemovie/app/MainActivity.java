@@ -23,6 +23,18 @@ public class MainActivity extends BridgeActivity {
         // Keep screen on during video playback
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
+        // Force display to keep refresh rate at least at 60Hz to prevent ColorOS / aggressive ARR
+        // from throttling WebView video playback down to 30Hz when no touch interaction is detected.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            WindowManager.LayoutParams params = getWindow().getAttributes();
+            params.preferredMinDisplayRefreshRate = 60.0f;
+            getWindow().setAttributes(params);
+        } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            WindowManager.LayoutParams params = getWindow().getAttributes();
+            params.preferredFrameRate = 60.0f;
+            getWindow().setAttributes(params);
+        }
+
         // Allow default hardware-accelerated surface rendering (View.LAYER_TYPE_NONE)
         // instead of forcing off-screen hardware texture layers, which breaks native video decoding sync.
         WebView webView = getBridge().getWebView();
