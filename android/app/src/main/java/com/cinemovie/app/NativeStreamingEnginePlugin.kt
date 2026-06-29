@@ -23,7 +23,7 @@ class NativeStreamingEnginePlugin : Plugin() {
     companion object {
         private val logsList = java.util.concurrent.CopyOnWriteArrayList<String>()
         
-        @Volatile var isTouchBoostActive = false
+        @JvmField @Volatile var isTouchBoostActive = false
         @Volatile private var lastProxyHost = ""
         @Volatile private var lastProxyScheme = "https"
         @Volatile private var lastReferer = ""
