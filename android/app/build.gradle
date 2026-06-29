@@ -35,7 +35,7 @@ android {
     applicationVariants.all { variant ->
         variant.outputs.all { output ->
             if (variant.buildType.name == "release") {
-                outputFileName = "Cinemovie.v0.6.5.apk"
+                outputFileName = "Cinemovie.v0.7.0.apk"
             }
         }
     }
