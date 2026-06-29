@@ -197,21 +197,7 @@ export default function LocalVideoPlayer({
     } catch (e) {}
   }, []);
 
-  // Enforce touch boost for OPPO / ColorOS refresh rate pacing only during active video playback
-  useEffect(() => {
-    if (Capacitor.isNativePlatform()) {
-      if (playing && !isOfflineMode) {
-        NativeStreamingEngine.setTouchBoostActive({ enabled: true }).catch(() => {});
-      } else {
-        NativeStreamingEngine.setTouchBoostActive({ enabled: false }).catch(() => {});
-      }
-    }
-    return () => {
-      if (Capacitor.isNativePlatform()) {
-        NativeStreamingEngine.setTouchBoostActive({ enabled: false }).catch(() => {});
-      }
-    };
-  }, [playing, isOfflineMode]);
+
 
   // Join the real-time sync channel when in party mode
   useEffect(() => {
@@ -3622,9 +3608,29 @@ export default function LocalVideoPlayer({
         )}
       </AnimatePresence>
 
+      {playing && (
+        <div
+          style={{
+            position: 'absolute',
+            width: '1px',
+            height: '1px',
+            top: '-10px',
+            left: '-10px',
+            opacity: 0.001,
+            pointerEvents: 'none',
+            willChange: 'transform',
+            animation: 'force-compositor 0.05s linear infinite'
+          }}
+        />
+      )}
+
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        @keyframes force-compositor {
+          0% { transform: translate3d(0, 0, 0) rotate(0deg); }
+          100% { transform: translate3d(0, 0, 0) rotate(360deg); }
+        }
       `}</style>
     </div>
   );
