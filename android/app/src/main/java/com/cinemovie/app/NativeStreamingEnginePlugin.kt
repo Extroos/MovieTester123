@@ -595,7 +595,13 @@ class NativeStreamingEnginePlugin : Plugin() {
 
         addLog("[Engine] resolveStreams started with BackgroundRequestObserver targeting: $targetUrl")
 
-        val observer = BackgroundRequestObserver(context)
+        val currentActivity = activity
+        if (currentActivity == null) {
+            call.reject("Activity context is not available")
+            return
+        }
+
+        val observer = BackgroundRequestObserver(currentActivity)
         observer.startObservation(targetUrl, patterns, object : BackgroundRequestObserver.ObserverListener {
             override fun onResourceIntercepted(url: String) {
                 addLog("[Engine] BackgroundRequestObserver intercepted resource: $url")
@@ -662,6 +668,10 @@ class NativeStreamingEnginePlugin : Plugin() {
                         call.reject("Resolution failed: ${e.message}", e)
                     }
                 }
+            }
+
+            override fun onLog(msg: String) {
+                addLog(msg)
             }
         })
     }

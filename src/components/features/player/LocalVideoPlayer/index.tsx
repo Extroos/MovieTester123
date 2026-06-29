@@ -139,6 +139,8 @@ export default function LocalVideoPlayer({
   const iframeLastTickRef = useRef<number>(Date.now());
   // Throttle timeupdate → setCurrentTime calls to avoid excessive re-renders on mobile
   const lastTimeUpdateStateRef = useRef<number>(0);
+  const hlsNetworkRetryCountRef = useRef<number>(0);
+  const initialLoadRef = useRef<string | null>(null);
   
   // Dynamic stream / server selector states
   const [currentSrc, setCurrentSrc] = useState(src);
@@ -2121,131 +2123,18 @@ export default function LocalVideoPlayer({
     };
   }, [showSettings]);
 
-  useEffect(() => {
-    if (!isOfflineMode && item?.id) {
-      const isTV = !!season || !!episode;
-      const type = isTV ? 'tv' : 'movie';
-      const tmdbId = item.id;
+    useEffect(() => {
+      if (isOfflineMode || !item?.id) return;
       
-      if (Capacitor.isNativePlatform() && selectedServer === 'vidlink-pro') {
-        console.log(`[LocalVideoPlayer] Pre-fetching native qualities for Vidlink...`);
-        NativeStreamingEngine.resolveVidlink({
-          tmdbId: String(tmdbId),
-          imdbId: (item as any)?.imdbId || (item as any)?.imdb_id || '',
-          type: type,
-          season: season || 1,
-          episode: episode || 1
-        }).then(nativeRes => {
-          if (nativeRes && nativeRes.sources && nativeRes.sources.length > 0) {
-            const sources = (nativeRes.sources || []).map((s: any) => ({
-              url: s.url,
-              quality: s.quality || 'auto',
-              isM3U8: s.isM3U8
-            }));
-            setAvailableSources(sources);
-            setServerAvailableSources(prev => ({ ...prev, [selectedServer]: sources }));
-            if (!sources[0].isM3U8) {
-              const directQualities = sources.map((s: any, idx: number) => {
-                const parsed = parseInt(s.quality);
-                const isHeight = !isNaN(parsed);
-                const normHeight = isHeight ? getStandardResolutionHeight(parsed) : undefined;
-                return {
-                  height: normHeight || 1080,
-                  label: isHeight ? `${normHeight}p` : (s.quality || `Source ${idx + 1}`),
-                  index: idx
-                };
-              });
-              // Sort low → high (360p first, 1080p last). Auto button is always first in UI.
-              directQualities.sort((a, b) => (a.height ?? 0) - (b.height ?? 0));
-              setQualities(directQualities);
-              setServerQualities(prev => ({ ...prev, [selectedServer]: directQualities }));
-              // Default to Auto — plays highest quality URL (Kotlin sorts sources desc so [0]=1080p)
-              setCurrentQuality(-1);
-              setServerCurrentQuality(prev => ({ ...prev, [selectedServer]: -1 }));
-            }
-
-            // Populate subtitles
-            if (nativeRes.subtitles && Array.isArray(nativeRes.subtitles) && nativeRes.subtitles.length > 0) {
-              const newTracks = nativeRes.subtitles.map((sub: any) => ({
-                file: sub.url,
-                label: sub.label || sub.lang || 'Unknown',
-                kind: 'subtitles',
-                default: (sub.lang || '').toLowerCase().includes('english') && !sub.isBackup,
-                isBackup: !!sub.isBackup
-              }));
-              const defaultIndex = newTracks.findIndex((t: any) => t.default);
-              setServerSubtitleTracks(prev => ({
-                ...prev,
-                [selectedServer]: newTracks
-              }));
-              setServerActiveTrackIndices(prev => ({
-                ...prev,
-                [selectedServer]: defaultIndex !== -1 ? defaultIndex : -1
-              }));
-            } else {
-              // Fallback to YTS subtitles
-              const imdbId = (item as any)?.imdbId || (item as any)?.imdb_id;
-              if (type === 'movie' && imdbId) {
-                const localServer = getLocalServerUrl();
-                const ytsUrl = `${localServer}/movies/yts-subtitles/${imdbId}`;
-                fetch(ytsUrl)
-                  .then(res => res.ok ? res.json() : null)
-                  .then(ytsSubs => {
-                    if (Array.isArray(ytsSubs) && ytsSubs.length > 0) {
-                      const newTracks = ytsSubs.map((sub: any) => ({
-                        file: `${localServer}/movies/yts-subtitles/download?link=${encodeURIComponent(sub.link)}`,
-                        label: `${sub.language} (Auto YTS)`,
-                        kind: 'subtitles',
-                        default: sub.language.toLowerCase().includes('english')
-                      }));
-                      const defaultIndex = newTracks.findIndex((t: any) => t.default);
-                      setServerSubtitleTracks(prev => ({
-                        ...prev,
-                        [selectedServer]: newTracks
-                      }));
-                      setServerActiveTrackIndices(prev => ({
-                        ...prev,
-                        [selectedServer]: defaultIndex !== -1 ? defaultIndex : -1
-                      }));
-                    }
-                  })
-                  .catch(e => console.warn('[LocalVideoPlayer] Failed to pre-fetch YTS subtitles:', e));
-              }
-            }
-          }
-        }).catch(e => console.warn('[LocalVideoPlayer] Failed to pre-fetch native qualities:', e));
-      } else {
-        const localServer = getLocalServerUrl();
-        const titleToUse = (item as any)?.title || (item as any)?.name || '';
-        let watchUrl = `${localServer}/meta/tmdb/watch/${tmdbId}?type=${type}&server=${selectedServer}&title=${encodeURIComponent(titleToUse)}`;
-        if (isTV) {
-          watchUrl += `&s=${season}&e=${episode}`;
-        }
-        
-        fetch(watchUrl)
-          .then(res => res.ok ? res.json() : null)
-          .then(data => {
-            if (data && data.sources && Array.isArray(data.sources) && data.sources.length > 0) {
-              setAvailableSources(data.sources);
-              setServerAvailableSources(prev => ({ ...prev, [selectedServer]: data.sources }));
-              if (!data.sources[0].isM3U8) {
-                const directQualities = data.sources.map((s, idx) => ({
-                  height: parseInt(s.quality) || 1080,
-                  index: idx
-                }));
-                setQualities(directQualities);
-                setServerQualities(prev => ({ ...prev, [selectedServer]: directQualities }));
-                const currentIdx = data.sources.findIndex(s => s.url === currentSrc || s.url === src);
-                const qIdx = currentIdx !== -1 ? currentIdx : 0;
-                setCurrentQuality(qIdx);
-                setServerCurrentQuality(prev => ({ ...prev, [selectedServer]: qIdx }));
-              }
-            }
-          })
-          .catch(e => console.warn('[LocalVideoPlayer] Failed to pre-fetch qualities:', e));
-      }
-    }
-  }, [src, item?.id, selectedServer]);
+      const loadKey = `${item.id}_${selectedServer}_${season || 1}_${episode || 1}`;
+      if (initialLoadRef.current === loadKey) return;
+      initialLoadRef.current = loadKey;
+      
+      console.log(`[LocalVideoPlayer] Initializing play for ${selectedServer} (item: ${item.id})...`);
+      handleServerChange(selectedServer).catch(err => {
+        console.error('[LocalVideoPlayer] Failed initial server load:', err);
+      });
+    }, [item?.id, selectedServer, season, episode, isOfflineMode]);
 
 
   // Handle HLS Playback Setup
@@ -2385,8 +2274,21 @@ export default function LocalVideoPlayer({
                               return;
                           }
                           // Transient network hiccup (segment failed, etc.) — try recovering
-                          console.warn('[LocalVideoPlayer] Fatal HLS network error, attempting to recover loading...');
-                          hls.startLoad();
+                          if (hlsNetworkRetryCountRef.current < 3) {
+                              hlsNetworkRetryCountRef.current++;
+                              console.warn(`[LocalVideoPlayer] Fatal HLS network error, attempting to recover loading (attempt ${hlsNetworkRetryCountRef.current}/3)...`);
+                              hls.startLoad();
+                          } else {
+                              console.error('[LocalVideoPlayer] Max HLS network recovery attempts reached. Reporting fatal error.');
+                              hlsNetworkRetryCountRef.current = 0;
+                              const netErrorMsg = `HLS Network Error: The streaming server failed to respond. Please try another server.`;
+                              setServerError(netErrorMsg);
+                              setIsInitialLoading(false);
+                              setIsSwitchingServer(false);
+                              setBuffering(false);
+                              setShowSettings(true);
+                              setSettingsTab('servers');
+                          }
                           break;
                       case Hls.ErrorTypes.MEDIA_ERROR:
                           console.warn('[LocalVideoPlayer] Fatal HLS media error, attempting to recover media element...');
@@ -2415,6 +2317,7 @@ export default function LocalVideoPlayer({
               });
 
               hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                  hlsNetworkRetryCountRef.current = 0;
                   markStarted();
                   setBuffering(false);
                   setIsInitialLoading(false);
