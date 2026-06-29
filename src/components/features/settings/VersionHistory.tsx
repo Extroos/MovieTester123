@@ -9,14 +9,14 @@ interface VersionHistoryProps {
 const versionData = [
   {
     version: 'v0.7.0',
-    date: '2026-06-28',
+    date: '2026-06-29',
     changes: [
-      'Huge Performance Boost: Improved overall app performance and stability by 60% for a lag-free experience.',
-      'New Server Architecture: You can now add, name, or update streaming servers instantly without needing to reinstall the app.',
-      'Server Upgrades: Added and updated the brand new servers "VidSrc.to" and "VidLink.pro" in the player options.',
-      'Smooth Scrubber Seek: Fixed the progress bar bug where dragging or clicking would skip to the end of the movie or go to 0:00.',
-      'Keyboard Auto-Dismiss: Fixed the keyboard staying on the screen when clicking on search results.',
-      'Navigation Fixes: Fixed the Back button on the actor details page so it takes you back to the movie/tv show details instead of the homepage.'
+      'More Streaming Servers: Added two new backup servers so you always have a working stream when one fails.',
+      'Watchlist Performance: The saved movies/shows list now loads and scrolls much faster — no more lag when browsing your library.',
+      'Login Page Improvements: The sign-in screen now fits perfectly on smaller phones with bigger buttons and inputs for easier typing.',
+      'Episode Loading Indicator: Tapping an episode now shows a visible loading spinner so you know it\'s working before the player opens.',
+      'Downloads Page Notice: Offline downloads are temporarily paused while we optimize the feature — a message now clearly explains this.',
+      'Stability & Bug Fixes: Various under-the-hood improvements for smoother navigation and fewer crashes.',
     ]
   },
   {
