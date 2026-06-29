@@ -63,6 +63,42 @@ public class MainActivity extends BridgeActivity {
         });
     }
 
+    private final android.os.Handler touchBoostHandler = new android.os.Handler();
+    private final Runnable touchBoostRunnable = new Runnable() {
+        @Override
+        public void run() {
+            WebView webView = getBridge().getWebView();
+            if (webView != null) {
+                long now = android.os.SystemClock.uptimeMillis();
+                android.view.MotionEvent event = android.view.MotionEvent.obtain(
+                    now,
+                    now,
+                    android.view.MotionEvent.ACTION_MOVE,
+                    1.0f,
+                    1.0f,
+                    0
+                );
+                try {
+                    webView.dispatchTouchEvent(event);
+                } catch (Exception e) {}
+                event.recycle();
+            }
+            touchBoostHandler.postDelayed(this, 120);
+        }
+    };
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        touchBoostHandler.postDelayed(touchBoostRunnable, 1000);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        touchBoostHandler.removeCallbacks(touchBoostRunnable);
+    }
+
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
