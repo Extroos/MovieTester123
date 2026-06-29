@@ -411,6 +411,9 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
     triggerHaptic('heavy');
     setSelectedEpisode(episodeNum);
     const se = seasonNum ?? selectedSeason;
+    if (seasonNum !== undefined) {
+      setSelectedSeason(seasonNum);
+    }
     
     let url = await VidSrcService.getTVEmbed(fullShow.id, se, episodeNum);
     if (resume && resumeEpisode && resumeEpisode.season === se && resumeEpisode.episode === episodeNum && savedProgressTime && savedProgressTime > 10) {
@@ -1198,8 +1201,8 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
     </>
   );
 
-  const playingEpisodeForPlayer = pendingEpisodeNum !== null ? pendingEpisodeNum : (resumeEpisode?.episode ?? 1);
-  const playingSeasonForPlayer = pendingEpisodeNum !== null ? selectedSeason : (resumeEpisode?.season ?? selectedSeason);
+  const playingEpisodeForPlayer = selectedEpisode;
+  const playingSeasonForPlayer = selectedSeason;
 
   const isCurrentlyPlayingResumeEp = resumeEpisode && resumeEpisode.season === playingSeasonForPlayer && resumeEpisode.episode === playingEpisodeForPlayer;
   const currentStartTime = playbackMode === 'resume' && isCurrentlyPlayingResumeEp && savedProgressTime ? savedProgressTime : 0;
