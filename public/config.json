@@ -1,27 +1,75 @@
 {
-  "last_updated": "06/28/2026",
-  "enabled_servers": [
-    "vidlink-pro",
-    "test-server",
-    "vidsrc-wtf-2",
-    "vidsrc-sbs",
-    "vidsrc-pk",
-    "vidsrc-fyi",
-    "vidsrc-wtf-1",
-    "vidsrc-wtf-3",
-    "vidsrc-wtf-4"
+  "last_updated": "06/29/2026",
+  "servers": [
+    {
+      "id": "vidlink-pro",
+      "name": "Vidlink Pro",
+      "description": "Primary gateway — native ad-free stream",
+      "badge": "Recommended",
+      "isAdFree": true
+    },
+    {
+      "id": "vidsrc-pm",
+      "name": "VidSrc PM",
+      "description": "Adaptive HLS via VidSrc PM — multi-CDN mirrors",
+      "badge": "HD",
+      "isAdFree": true
+    },
+    {
+      "id": "vidsrc-wtf-2",
+      "name": "VidSrc Multi-Lang",
+      "description": "Multi-language HLS via native decryption engine",
+      "badge": "Multi",
+      "isAdFree": true
+    },
+    {
+      "id": "vidsrc-sbs",
+      "name": "VidSrc SBS",
+      "description": "Third-party mirror — alternative content hosting",
+      "badge": "ADS",
+      "isAdFree": false
+    },
+    {
+      "id": "universal",
+      "name": "Vidsrc.to (Universal)",
+      "description": "Third-party embed — supports multi-language subtitles",
+      "badge": "ADS",
+      "isAdFree": false
+    },
+    {
+      "id": "vidsrc-fyi",
+      "name": "Vidsrc FYI",
+      "description": "Alternative third-party gateway",
+      "badge": "ADS",
+      "isAdFree": false
+    }
   ],
   "gateways": {
     "vidlink": "https://vidlink.pro",
     "cloudnestra": "https://cloudnestra.com",
+    "vidsrc_pm": "https://streamdata.vaplayer.ru",
     "vidsrc_wtf": "https://vidsrc.wtf",
     "vidsrc_sbs": "https://vidsrc.sbs",
     "vidsrc_pk": "https://embed.vidsrc.pk",
     "vidsrc_fyi": "https://vidsrc.fyi"
   },
+  "embed_urls": {
+    "vidsrc_pm_gateways": [
+      "https://streamdata.vaplayer.ru",
+      "https://streamdata2.vaplayer.ru"
+    ],
+    "vidlink_gateways": [
+      "https://vidlink.pro",
+      "https://vidlink.me",
+      "https://vidlink.org",
+      "https://vidlink.net"
+    ]
+  },
   "headers": {
     "vidlink_referer": "https://vidlink.pro/",
     "vidlink_origin": "https://vidlink.pro",
+    "vidsrc_pm_referer": "https://brightpathsignals.com/",
+    "vidsrc_pm_origin": "https://brightpathsignals.com",
     "cloudnestra_referer": "https://cloudnestra.com/",
     "cloudnestra_origin": "https://cloudnestra.com",
     "vidsrc_wtf_referer": "https://vidsrc.wtf/",

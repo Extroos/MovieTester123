@@ -692,4 +692,171 @@ export async function scrapeWtfStream(
   }
 }
 
+// ============================================
+// Vidzee Stream Resolver
+// ============================================
+
+function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64.replace(/\s+/g, ""));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function decryptApiKeyWebCrypto(encryptedBase64: string, keyStr: string): Promise<string> {
+  const binaryStr = base64ToBytes(encryptedBase64);
+  if (binaryStr.length <= 28) throw new Error("Invalid cipher length");
+  
+  const iv = binaryStr.subarray(0, 12);
+  const tag = binaryStr.subarray(12, 28);
+  const ciphertext = binaryStr.subarray(28);
+
+  const combined = new Uint8Array(ciphertext.length + tag.length);
+  combined.set(ciphertext, 0);
+  combined.set(tag, ciphertext.length);
+
+  const keyHash = await window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(keyStr));
+  
+  const cryptoKey = await window.crypto.subtle.importKey(
+    "raw",
+    keyHash,
+    { name: "AES-GCM" },
+    false,
+    ["decrypt"]
+  );
+
+  const decrypted = await window.crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: iv, tagLength: 128 },
+    cryptoKey,
+    combined
+  );
+
+  return new TextDecoder().decode(decrypted);
+}
+
+async function decryptStreamUrlWebCrypto(encryptedLink: string, keyStr: string): Promise<string> {
+  const decoded = atob(encryptedLink);
+  const parts = decoded.split(':');
+  if (parts.length !== 2) throw new Error("Invalid stream link format");
+
+  const iv = base64ToBytes(parts[0]);
+  const ciphertext = base64ToBytes(parts[1]);
+
+  const paddedKey = new Uint8Array(32);
+  const keyBytes = new TextEncoder().encode(keyStr);
+  paddedKey.set(keyBytes.subarray(0, 32));
+
+  const cryptoKey = await window.crypto.subtle.importKey(
+    "raw",
+    paddedKey,
+    { name: "AES-CBC" },
+    false,
+    ["decrypt"]
+  );
+
+  const decrypted = await window.crypto.subtle.decrypt(
+    { name: "AES-CBC", iv: iv },
+    cryptoKey,
+    ciphertext
+  );
+
+  return new TextDecoder().decode(decrypted);
+}
+
+async function fetchTextRaw(url: string): Promise<string> {
+  if (Capacitor.isNativePlatform()) {
+    const { fetchWithCapacitor } = await import('../../utils/nativeFetch');
+    const capRes = await fetchWithCapacitor(url, 'text');
+    if (!capRes.ok) throw new Error(`Failed to fetch text from ${url}`);
+    return await capRes.text();
+  } else {
+    const localServer = getLocalServerUrl() || 'http://localhost:3001';
+    const proxiedUrl = `${localServer}/local-proxy?url=${encodeURIComponent(url)}`;
+    let res;
+    try {
+      res = await fetch(proxiedUrl);
+    } catch (e) {
+      const cloudProxy = 'https://cinemovie-proxy.abderrahmanchakkouri.workers.dev';
+      const fallbackUrl = `${cloudProxy}/local-proxy?url=${encodeURIComponent(url)}`;
+      res = await fetch(fallbackUrl);
+    }
+    if (!res.ok) throw new Error(`Failed to fetch text from ${url}`);
+    return await res.text();
+  }
+}
+
+export async function scrapeVidzeeStream(
+  tmdbId: string,
+  type: 'movie' | 'tv',
+  season = 1,
+  episode = 1
+): Promise<any> {
+  try {
+    console.log(`[Client Vidzee] Fetching encrypted API key...`);
+    const encryptedKey = await fetchTextRaw('https://core.vidzee.wtf/api-key');
+    const HARDCODED_KEY_HEX = "c4a8f1d7e2b9a6c3d0f5e8a1b7c4d9e2";
+    const decryptedKey = await decryptApiKeyWebCrypto(encryptedKey, HARDCODED_KEY_HEX);
+    console.log(`[Client Vidzee] Decrypted API key: ${decryptedKey}`);
+
+    const referer = `https://player.vidzee.wtf/embed/${type}/${tmdbId}`;
+    const sources: any[] = [];
+    const errors: string[] = [];
+
+    // Query Tcloud (0), IpCloud (1), Achilles (2), Nflix (3), Drag (4)
+    const serversToTest = [0, 1, 3, 4];
+    const promises = serversToTest.map(async (sr) => {
+      let url = `https://player.vidzee.wtf/api/server?id=${tmdbId}&sr=${sr}`;
+      if (type === 'tv') {
+        url += `&ss=${season}&ep=${episode}`;
+      }
+      try {
+        const res = await fetchWithTimeout(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Referer': referer,
+            'Accept': 'application/json'
+          }
+        }, 5000);
+        
+        if (res && res.url && res.url.length > 0) {
+          for (const item of res.url) {
+            try {
+              const decryptedStream = await decryptStreamUrlWebCrypto(item.link, decryptedKey);
+              if (decryptedStream) {
+                sources.push({
+                  url: decryptedStream,
+                  quality: item.name || `Server ${sr}`,
+                  isM3U8: decryptedStream.includes('.m3u8')
+                });
+              }
+            } catch (decErr: any) {
+              console.warn(`[Client Vidzee] Link decryption failed for server ${sr}:`, decErr.message);
+            }
+          }
+        }
+      } catch (err: any) {
+        errors.push(`Server ${sr} fetch failed: ${err.message}`);
+      }
+    });
+
+    await Promise.allSettled(promises);
+
+    if (sources.length === 0) {
+      throw new Error(`No streams resolved. Errors:\n${errors.join('\n')}`);
+    }
+
+    console.log(`[Client Vidzee] Successfully resolved ${sources.length} sources`);
+    return {
+      sources,
+      subtitles: []
+    };
+  } catch (e: any) {
+    console.error(`[Client Vidzee] Scraper failed:`, e.message);
+    throw e;
+  }
+}
+
+
 

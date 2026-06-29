@@ -1,5 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
-import { scrapeVidlinkStream, scrapeVidsrcPmStream } from './ClientScraperService';
+import { scrapeVidlinkStream, scrapeVidsrcPmStream, scrapeVidzeeStream } from './ClientScraperService';
 
 const NativeStreamingEngine = registerPlugin<any>('NativeStreamingEngine');
 
@@ -195,7 +195,27 @@ export async function resolveMovieStream(
         console.warn(`[LocalStream] Client-side test-server movie resolution failed: ${e.message}`);
       }
     }
-    
+
+    if (selectedServer === 'vidzee') {
+      try {
+        console.log(`[LocalStream] Resolving via Vidzee client scraper...`);
+        const result = await scrapeVidzeeStream(String(tmdbId), 'movie');
+        if (result && result.sources && result.sources.length > 0) {
+          const bestSource = result.sources[0];
+          return {
+            streamUrl: bestSource.url,
+            type: bestSource.isM3U8 ? 'm3u8' : 'mp4',
+            quality: bestSource.quality || 'auto',
+            subtitles: result.subtitles || [],
+            provider: 'client/vidzee',
+            sources: result.sources
+          } as any;
+        }
+      } catch (e: any) {
+        console.warn(`[LocalStream] Client-side Vidzee movie resolution failed: ${e.message}`);
+      }
+    }
+
     // Attempt 1: Vidlink
     try {
       const vidlinkId = String(tmdbId).startsWith('tt') ? '' : String(tmdbId);
@@ -395,7 +415,27 @@ export async function resolveTVStream(
         console.warn(`[LocalStream] Client-side test-server TV resolution failed: ${e.message}`);
       }
     }
-    
+
+    if (selectedServer === 'vidzee') {
+      try {
+        console.log(`[LocalStream] Resolving TV S${season}E${episode} via Vidzee client scraper...`);
+        const result = await scrapeVidzeeStream(String(tmdbId), 'tv', season, episode);
+        if (result && result.sources && result.sources.length > 0) {
+          const bestSource = result.sources[0];
+          return {
+            streamUrl: bestSource.url,
+            type: bestSource.isM3U8 ? 'm3u8' : 'mp4',
+            quality: bestSource.quality || 'auto',
+            subtitles: result.subtitles || [],
+            provider: 'client/vidzee',
+            sources: result.sources
+          } as any;
+        }
+      } catch (e: any) {
+        console.warn(`[LocalStream] Client-side Vidzee TV resolution failed: ${e.message}`);
+      }
+    }
+
     // Attempt 1: Vidlink
     try {
       let result;
