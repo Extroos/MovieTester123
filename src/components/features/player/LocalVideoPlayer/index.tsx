@@ -461,7 +461,7 @@ export default function LocalVideoPlayer({
     const timeoutId = setTimeout(() => {
       console.warn(`[LocalVideoPlayer] Server switch to ${serverId} timed out. Aborting.`);
       controller.abort();
-    }, 8000);
+    }, 20000);
 
     const iframeServers = ['vidsrc-wtf-1', 'vidsrc-wtf-3', 'vidsrc-wtf-4'];
     if (iframeServers.includes(serverId)) {
@@ -886,10 +886,8 @@ export default function LocalVideoPlayer({
       setIsSwitchingServer(false);
     } finally {
       clearTimeout(timeoutId);
-      if (!controller.signal.aborted) {
-        setIsSwitchingServer(false);
-        setConnectingServerName(null);
-      }
+      setIsSwitchingServer(false);
+      setConnectingServerName(null);
     }
   };
 
