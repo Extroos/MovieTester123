@@ -192,7 +192,7 @@ export default function AppearanceSubPage({
               className="active-press"
             >
               <img
-                src={`https://flagcdn.com/w80/${lang.code === 'en' ? 'us' : lang.code}.png`}
+                src={`https://flagcdn.com/w80/${lang.code === 'en' ? 'us' : (lang.code === 'ar' ? 'sa' : lang.code)}.png`}
                 alt={lang.name}
                 style={{
                   width: '44px',
