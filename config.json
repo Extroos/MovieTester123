@@ -49,6 +49,13 @@
       "description": "Multi-language native HLS mirrors",
       "badge": "NEW",
       "isAdFree": true
+    },
+    {
+      "id": "vidsrc-top",
+      "name": "VidSrc Top",
+      "description": "Third-party mirror — supports IMDB/TMDB inputs",
+      "badge": "ADS",
+      "isAdFree": false
     }
   ],
   "gateways": {
@@ -60,7 +67,8 @@
     "vidsrc_pk": "https://embed.vidsrc.pk",
     "vidsrc_fyi": "https://vidsrc.fyi",
     "vidzee": "https://player.vidzee.wtf",
-    "vidzee_core": "https://core.vidzee.wtf"
+    "vidzee_core": "https://core.vidzee.wtf",
+    "vidsrc_top": "https://vid-src.top"
   },
   "embed_urls": {
     "vidsrc_pm_gateways": [

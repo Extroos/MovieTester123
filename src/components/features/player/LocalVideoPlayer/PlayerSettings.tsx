@@ -1,9 +1,10 @@
 import React from 'react';
 import { registerPlugin, Capacitor } from '@capacitor/core';
-import { getEnabledServers, getRemoteConfig } from '../../../../services/streaming/RemoteConfigService';
+import { getEnabledServers, getRemoteConfig, getRemoteServers } from '../../../../services/streaming/RemoteConfigService';
+import type { Movie, TVShow } from '../../../../types';
 
 export interface ServerOption {
-  id: 'vidlink-pro' | 'vidsrc-pm' | 'universal' | 'vidsrc-sbs' | 'vidsrc-wtf-1' | 'vidsrc-wtf-2' | 'vidsrc-wtf-3' | 'vidsrc-wtf-4' | 'vidsrc-pk' | 'vidsrc-fyi' | 'test-server';
+  id: string;
   name: string;
   description: string;
   badge: string;
@@ -12,14 +13,13 @@ export interface ServerOption {
 
 export const ALL_SERVERS: ServerOption[] = [
   { id: 'vidlink-pro', name: 'Vidlink Pro', description: 'Primary gateway — native ad-free stream', badge: 'Recommended', isAdFree: true },
-  { id: 'test-server', name: 'VidSrc.to', description: 'Local native stream extraction', badge: 'Ad-Free Native', isAdFree: true },
-  { id: 'vidsrc-wtf-2', name: 'VidSrc WTF (Multi Lang)', description: 'Multi-language native stream player', badge: 'Ad-Free Native', isAdFree: true },
-  { id: 'vidsrc-sbs', name: 'VidSrc SBS', description: 'Clean resolved native stream player', badge: 'Ad-Free Native', isAdFree: true },
-  { id: 'vidsrc-pk', name: 'VidSrc PK', description: 'Fast resolved native stream player', badge: 'Ad-Free Native', isAdFree: true },
-  { id: 'vidsrc-fyi', name: 'VidSrc FYI', description: 'Multi-server resolved native stream player', badge: 'Ad-Free Native', isAdFree: true },
-  { id: 'vidsrc-wtf-1', name: 'VidSrc WTF (Multi Server)', description: 'Iframe mirror containing popups & standard video watermarks', badge: 'With Ads', isAdFree: false },
-  { id: 'vidsrc-wtf-3', name: 'VidSrc WTF (Multi Embed)', description: 'Iframe mirror containing popups & standard video watermarks', badge: 'With Ads', isAdFree: false },
-  { id: 'vidsrc-wtf-4', name: 'VidSrc WTF (Premium)', description: 'External premium link list loaded in an iframe fallback', badge: 'With Ads', isAdFree: false }
+  { id: 'vidsrc-pm', name: 'VidSrc PM', description: 'Adaptive HLS via VidSrc PM — multi-CDN mirrors', badge: 'HD', isAdFree: true },
+  { id: 'vidsrc-wtf-2', name: 'VidSrc Multi-Lang', description: 'Multi-language HLS via native decryption engine', badge: 'Multi', isAdFree: true },
+  { id: 'vidzee', name: 'Vidzee', description: 'Multi-language native HLS mirrors', badge: 'NEW', isAdFree: true },
+  { id: 'universal', name: 'Vidsrc.to (Universal)', description: 'Third-party embed — supports multi-language subtitles', badge: 'ADS', isAdFree: false },
+  { id: 'vidsrc-sbs', name: 'Vidsrc SBS', description: 'Third-party mirror — alternative content hosting', badge: 'ADS', isAdFree: false },
+  { id: 'vidsrc-fyi', name: 'Vidsrc FYI', description: 'Alternative third-party gateway', badge: 'ADS', isAdFree: false },
+  { id: 'vidsrc-top', name: 'VidSrc Top', description: 'Third-party mirror — supports IMDB/TMDB inputs', badge: 'ADS', isAdFree: false }
 ];
 
 const NativeStreamingEngine = registerPlugin<any>('NativeStreamingEngine');
@@ -31,8 +31,8 @@ interface PlayerSettingsProps {
   setShowSettings: (show: boolean) => void;
   settingsTab: 'quality' | 'subtitles' | 'speed' | 'servers' | 'download' | 'diagnostics';
   setSettingsTab: React.Dispatch<React.SetStateAction<'quality' | 'subtitles' | 'speed' | 'servers' | 'download' | 'diagnostics'>>;
-  selectedServer: 'vidlink-pro' | 'vidsrc-pm' | 'universal' | 'vidsrc-sbs' | 'vidsrc-wtf-1' | 'vidsrc-wtf-2' | 'vidsrc-wtf-3' | 'vidsrc-wtf-4' | 'vidsrc-pk' | 'vidsrc-fyi' | 'test-server';
-  handleServerChange: (serverId: 'vidlink-pro' | 'vidsrc-pm' | 'universal' | 'vidsrc-sbs' | 'vidsrc-wtf-1' | 'vidsrc-wtf-2' | 'vidsrc-wtf-3' | 'vidsrc-wtf-4' | 'vidsrc-pk' | 'vidsrc-fyi' | 'test-server') => Promise<void>;
+  selectedServer: string;
+  handleServerChange: (serverId: string) => Promise<void>;
   isSwitchingServer: boolean;
   connectingServerName: string | null;
   serverError: string | null;
@@ -99,6 +99,7 @@ interface PlayerSettingsProps {
   setOnlineSearchError: React.Dispatch<React.SetStateAction<string | null>>;
   setOnlineSubs: React.Dispatch<React.SetStateAction<any[]>>;
   vidlinkDiagnostics?: string | null;
+  vidsrcPmDiagnostics?: string | null;
   testServerDiagnostics?: string | null;
 }
 
@@ -187,11 +188,17 @@ export const PlayerSettings = React.memo(function PlayerSettings({
   const [clickCount, setClickCount] = React.useState(0);
   const [showConsole, setShowConsole] = React.useState(false);
   const [isTransitioning, setIsTransitioning] = React.useState(false);
-  // OTA-controlled server visibility: null = show all (safe fallback if config unavailable)
+  // OTA-controlled server list and visibility
+  const [serversList, setServersList] = React.useState<ServerOption[]>(ALL_SERVERS);
   const [enabledServerIds, setEnabledServerIds] = React.useState<string[] | null>(null);
 
   React.useEffect(() => {
     getEnabledServers().then(setEnabledServerIds).catch(() => setEnabledServerIds(null));
+    getRemoteServers().then(res => {
+      if (res && res.length > 0) {
+        setServersList(res);
+      }
+    }).catch(() => {});
   }, []);
 
   const [lastUpdated, setLastUpdated] = React.useState<string>('Loading...');
@@ -207,10 +214,10 @@ export const PlayerSettings = React.memo(function PlayerSettings({
       .catch(() => setLastUpdated('N/A'));
   }, []);
 
-  // Filter ALL_SERVERS by the OTA enabled list; if list is null show everything
+  // Filter dynamic/OTA servers by the enabled list; if list is null show all loaded
   const visibleServers = enabledServerIds
-    ? ALL_SERVERS.filter(s => enabledServerIds.includes(s.id))
-    : ALL_SERVERS;
+    ? serversList.filter(s => enabledServerIds.includes(s.id))
+    : serversList;
 
   const handleTitleClick = (e: React.MouseEvent | React.TouchEvent) => {
     e.stopPropagation();
@@ -695,41 +702,92 @@ export const PlayerSettings = React.memo(function PlayerSettings({
             </div>
           )}
 
-          {settingsTab === 'quality' && qualities.length > 0 && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: '8px' }}>
-              {selectedServer !== 'vidsrc-wtf-2' && (
-                <button 
-                  onClick={() => handleQualitySelect(-1)}
-                  style={{ 
-                    padding: '14px', borderRadius: '12px', 
-                    background: currentQuality === -1 ? '#ffffff' : 'rgba(255,255,255,0.05)', 
-                    border: 'none',
-                    color: currentQuality === -1 ? '#000000' : '#ffffff', 
-                    textAlign: 'center', cursor: 'pointer', fontWeight: 700,
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  Auto
-                </button>
-              )}
-              {qualities.map((q) => (
-                <button 
-                  key={q.index}
-                  onClick={() => handleQualitySelect(q.index)}
-                  style={{ 
-                    padding: '14px', borderRadius: '12px', 
-                    background: currentQuality === q.index ? '#ffffff' : 'rgba(255,255,255,0.05)', 
-                    border: 'none',
-                    color: currentQuality === q.index ? '#000000' : '#ffffff', 
-                    textAlign: 'center', cursor: 'pointer', fontWeight: 700,
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  {q.label || `${q.height}p`}
-                </button>
-              ))}
-            </div>
-          )}
+          {settingsTab === 'quality' && qualities.length > 0 && (() => {
+            const isLangMode = selectedServer === 'vidsrc-wtf-2';
+            // Lazy-load the stored preference label (sync, no hook needed)
+            let savedLangPref = '';
+            try {
+              const raw = localStorage.getItem('watchmovie_settings_v1');
+              if (raw) savedLangPref = (JSON.parse(raw).preferredAudioLanguage || '');
+            } catch (_) {}
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {isLangMode && savedLangPref && (
+                  <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', letterSpacing: '0.05em', marginBottom: '-4px' }}>
+                    Default: <span style={{ color: '#a78bfa', fontWeight: 700 }}>{savedLangPref}</span> — tap a language then ★ to change
+                  </div>
+                )}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: '8px' }}>
+                  {!isLangMode && (
+                    <button
+                      onClick={() => handleQualitySelect(-1)}
+                      style={{
+                        padding: '14px', borderRadius: '12px',
+                        background: currentQuality === -1 ? '#ffffff' : 'rgba(255,255,255,0.05)',
+                        border: 'none',
+                        color: currentQuality === -1 ? '#000000' : '#ffffff',
+                        textAlign: 'center', cursor: 'pointer', fontWeight: 700,
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      Auto
+                    </button>
+                  )}
+                  {qualities.map((q) => {
+                    const isDefault = isLangMode && savedLangPref &&
+                      q.label.toLowerCase().includes(savedLangPref.toLowerCase());
+                    return (
+                      <div key={q.index} style={{ position: 'relative' }}>
+                        <button
+                          onClick={() => handleQualitySelect(q.index)}
+                          style={{
+                            width: '100%',
+                            padding: '14px', borderRadius: '12px',
+                            background: currentQuality === q.index ? '#ffffff' : 'rgba(255,255,255,0.05)',
+                            border: isDefault ? '1.5px solid #a78bfa' : 'none',
+                            color: currentQuality === q.index ? '#000000' : '#ffffff',
+                            textAlign: 'center', cursor: 'pointer', fontWeight: 700,
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          {q.label || `${q.height}p`}
+                          {isDefault && (
+                            <span style={{ marginLeft: '4px', fontSize: '0.7rem', color: currentQuality === q.index ? '#7c3aed' : '#a78bfa' }}>★</span>
+                          )}
+                        </button>
+                        {/* Show "Set as Default" button when this language is actively selected and in lang mode */}
+                        {isLangMode && currentQuality === q.index && !isDefault && (
+                          <button
+                            onClick={() => {
+                              try {
+                                const raw = localStorage.getItem('watchmovie_settings_v1');
+                                const parsed = raw ? JSON.parse(raw) : {};
+                                parsed.preferredAudioLanguage = q.label;
+                                localStorage.setItem('watchmovie_settings_v1', JSON.stringify(parsed));
+                              } catch (_) {}
+                            }}
+                            style={{
+                              position: 'absolute', top: '-8px', right: '-6px',
+                              background: '#7c3aed', border: 'none', borderRadius: '20px',
+                              color: '#fff', fontSize: '0.62rem', fontWeight: 800,
+                              padding: '2px 7px', cursor: 'pointer', whiteSpace: 'nowrap',
+                              boxShadow: '0 2px 8px rgba(124,58,237,0.5)',
+                              zIndex: 2
+                            }}
+                            title={`Always start with ${q.label}`}
+                          >
+                            ★ Set Default
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
 
           {settingsTab === 'subtitles' && !isSearchingOnline && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>

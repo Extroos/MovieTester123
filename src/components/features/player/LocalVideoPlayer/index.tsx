@@ -13,7 +13,7 @@ import { PlayerControls } from './PlayerControls';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 const NativeStreamingEngine = registerPlugin<any>('NativeStreamingEngine');
 import { scrapeVidlinkStream, scrapeVidsrcFallback, scrapeVidifyStream, scrapeVidsrcPmStream, scrapeWtfStream } from '../../../../services/ClientScraperService';
-import { getGateway } from '../../../../services/streaming/RemoteConfigService';
+import { getGateway, getRemoteServers } from '../../../../services/streaming/RemoteConfigService';
 import { WatchTogetherService, type PartyParticipant, type PartySyncEvent } from '../../../../services/watchTogether';
 import { supabase } from '../../../../services/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -144,7 +144,7 @@ export default function LocalVideoPlayer({
   
   // Dynamic stream / server selector states
   const [currentSrc, setCurrentSrc] = useState(src);
-  const [selectedServer, setSelectedServer] = useState<'vidlink-pro' | 'test-server' | 'vidsrc-sbs' | 'vidsrc-wtf-1' | 'vidsrc-wtf-2' | 'vidsrc-wtf-3' | 'vidsrc-wtf-4' | 'vidsrc-pk' | 'vidsrc-fyi'>(() => {
+  const [selectedServer, setSelectedServer] = useState<string>(() => {
     return 'vidlink-pro';
   });
   const selectedServerRef = useRef(selectedServer);
@@ -170,6 +170,13 @@ export default function LocalVideoPlayer({
   const [playerToast, setPlayerToast] = useState<{ message: string; isError?: boolean } | null>(null);
   const [iframeFallback, setIframeFallback] = useState(false);
   const [embedServer, setEmbedServer] = useState<string | null>(null);
+  const [remoteServers, setRemoteServers] = useState<any[]>([]);
+  useEffect(() => {
+    getRemoteServers().then(res => {
+      if (res && res.length > 0) setRemoteServers(res);
+    }).catch(() => {});
+  }, []);
+
   const [isInitialLoading, setIsInitialLoading] = useState(true);
 
   // --- Real-Time Co-Watching State ---
@@ -444,7 +451,7 @@ export default function LocalVideoPlayer({
     setShowSettings(true);
   };
 
-  const handleServerChange = async (serverId: 'vidlink-pro' | 'vidsrc-sbs' | 'vidsrc-wtf-1' | 'vidsrc-wtf-2' | 'vidsrc-wtf-3' | 'vidsrc-wtf-4' | 'vidsrc-pk' | 'vidsrc-fyi' | 'test-server') => {
+  const handleServerChange = async (serverId: string) => {
 
     if (isOfflineMode || (typeof navigator !== 'undefined' && !navigator.onLine)) {
       setPlayerToast({ message: 'You are offline. Server switching is not available.', isError: true });
@@ -463,18 +470,6 @@ export default function LocalVideoPlayer({
       controller.abort();
     }, 20000);
 
-    const iframeServers = ['vidsrc-wtf-1', 'vidsrc-wtf-3', 'vidsrc-wtf-4'];
-    if (iframeServers.includes(serverId)) {
-      import('../../../../utils/haptics').then(m => m.triggerHaptic('medium'));
-      setSelectedServer(serverId);
-      setIframeFallback(true);
-      setEmbedServer(serverId);
-      setIsSwitchingServer(false);
-      setIsInitialLoading(false);
-      setShowSettings(false);
-      return;
-    }
-
     import('../../../../utils/haptics').then(m => m.triggerHaptic('medium'));
     setSelectedServer(serverId);
     try {
@@ -488,6 +483,7 @@ export default function LocalVideoPlayer({
     setConnectingServerName(SERVER_DISPLAY_NAMES[serverId] || serverId);
     setServerError(null);
     setVidlinkDiagnostics(null);
+    setVidsrcPmDiagnostics(null);
     setTestServerDiagnostics(null);
     setShowSettings(false);
     setCurrentSrc("");
@@ -506,6 +502,12 @@ export default function LocalVideoPlayer({
 
     if (videoRef.current) {
       videoRef.current.pause();
+      // Force disable any native parsed text track modes
+      if (videoRef.current.textTracks) {
+        for (let i = 0; i < videoRef.current.textTracks.length; i++) {
+          videoRef.current.textTracks[i].mode = 'disabled';
+        }
+      }
       videoRef.current.removeAttribute('src');
       videoRef.current.load();
     }
@@ -528,178 +530,104 @@ export default function LocalVideoPlayer({
       let data = null;
       let bestSource = null;
 
-      // On native mobile, all three scrapers run directly from the phone.
-      // Segment Referer headers are injected natively by NativeHlsLoader — cloudnestra CDN is bypassed.
-      if (Capacitor.isNativePlatform() && (serverId === 'vidlink-pro' || (serverId as any) === 'vidsrc-pm' || serverId === 'vidsrc-sbs' || serverId === 'vidsrc-wtf-2' || serverId === 'vidsrc-pk' || serverId === 'vidsrc-fyi' || serverId === 'test-server')) {
-        console.log(`[LocalVideoPlayer] Client-side server switch on native mobile: Resolving ${serverId} for ${tmdbId}...`);
-        try {
-          if (serverId === 'test-server' || serverId === 'vidsrc-wtf-2' || serverId === 'vidsrc-sbs' || serverId === 'vidsrc-pk' || serverId === 'vidsrc-fyi') {
-            const res = await NativeStreamingEngine.resolveStreams({
-              tmdbId: String(tmdbId),
-              type: type,
-              season: season || 1,
-              episode: episode || 1,
-              server: serverId,
-              localServer: localServer
-            });
-            const sources = res.sources || [];
-            if (sources.length === 0) {
-              const errStr = res.errors && res.errors.length > 0 ? res.errors.join(' | ') : `No streams resolved by ${serverId}`;
-              setTestServerDiagnostics(`Failed: ${errStr}. Raw: ${JSON.stringify(res)}`);
-              throw new Error(errStr);
-            }
-            setTestServerDiagnostics(`Success: resolved ${sources.length} sources.`);
-
-            data = {
-              sources: sources.map((src: any) => {
-                // The native resolveStreams already returns the stream URL wrapped in the local proxy with headers
-                return {
-                  url: src.url,
-                  quality: src.quality || 'auto',
-                  isM3U8: src.isM3U8 || src.url.includes('.m3u8')
-                };
-              }),
-              subtitles: res.subtitles || []
-            };
-          } else if (serverId === 'vidlink-pro') {
-            if (Capacitor.isNativePlatform()) {
-              console.log(`[LocalVideoPlayer] Resolving Vidlink S${season}E${episode} natively on Android...`);
-              const nativeRes = await NativeStreamingEngine.resolveVidlink({
-                tmdbId: String(tmdbId),
-                imdbId: (item as any)?.imdbId || (item as any)?.imdb_id || '',
-                type: type,
-                season: season,
-                episode: episode
-              });
-              data = {
-                sources: (nativeRes.sources || []).map((s: any) => ({
-                  url: s.url,
-                  quality: s.quality || 'auto',
-                  isM3U8: s.isM3U8
-                })),
-                subtitles: (nativeRes.subtitles || []).map((s: any) => ({
-                  url: s.url,
-                  lang: s.lang || 'Unknown',
-                  isBackup: !!s.isBackup
-                }))
-              };
-            } else {
-              data = await scrapeVidlinkStream(String(tmdbId), type, season, episode, 'https://vidlink.pro');
-            }
-            setVidlinkDiagnostics("Success: resolved stream sources successfully.");
-          } else if ((serverId as any) === 'vidsrc-pm') {
-            data = await scrapeVidsrcPmStream(String(tmdbId), type, season, episode);
-          } else if (serverId === 'vidsrc-wtf-2') {
-            // Resolve WTF domain dynamically from OTA config (fallback: vidsrc.wtf)
-            const wtfGw = await getGateway('vidsrc_wtf').catch(() => 'https://vidsrc.wtf');
-            const wtfOrigin = wtfGw.replace(/\/$/, '');
-            const domainToUse = new URL(wtfOrigin).hostname;
-            const result = await scrapeWtfStream(String(tmdbId), 'wtf-2', null, isTV, season, episode, domainToUse);
-            if (result && result.ok && result.data && Array.isArray(result.data.streams)) {
-              // Wrap HLS URLs in local proxy to send correct Referer/Origin headers natively
-              const streams = await Promise.all(result.data.streams.map(async (stream: any, idx: number) => {
-                const ref = stream.headers?.Referer || `${wtfOrigin}/`;
-                const origin = wtfOrigin;
-                let finalUrl = stream.url;
-                if (Capacitor.isNativePlatform()) {
-                  try {
-                    const portRes = await NativeStreamingEngine.getProxyPort();
-                    const port = portRes?.port || 8000;
-                    finalUrl = `http://localhost:${port}/local-proxy?url=${encodeURIComponent(stream.url)}&referer=${encodeURIComponent(ref)}&origin=${encodeURIComponent(origin)}`;
-                  } catch (e) {}
-                }
-                return {
-                  url: finalUrl,
-                  quality: stream.language || `Stream ${idx + 1}`,
-                  isM3U8: stream.type === 'hls' || stream.url.includes('.m3u8')
-                };
-              }));
-              data = { sources: streams, subtitles: [] };
-            } else {
-              throw new Error(result?.error || "Resolution returned empty streams");
-            }
-          } else {
-            // vidsrc-sbs, vidsrc-pk, vidsrc-fyi: resolve domain from OTA config
-            const gatewayKey =
-              serverId === 'vidsrc-sbs' ? 'vidsrc_sbs' :
-              serverId === 'vidsrc-pk'  ? 'vidsrc_pk'  :
-              serverId === 'vidsrc-fyi' ? 'vidsrc_fyi' :
-              'vidsrc_wtf';
-            const fallbackDomain =
-              serverId === 'vidsrc-sbs' ? 'https://vidsrc.sbs' :
-              serverId === 'vidsrc-pk'  ? 'https://embed.vidsrc.pk' :
-              serverId === 'vidsrc-fyi' ? 'https://vidsrc.fyi' :
-              'https://vidsrc.wtf';
-            const gwUrl = await getGateway(gatewayKey as any).catch(() => fallbackDomain);
-            const gwOrigin = gwUrl.replace(/\/$/, '');
-            const domainToUse = new URL(gwOrigin).hostname;
-            const result = await scrapeWtfStream(String(tmdbId), 'wtf-1', null, isTV, season, episode, domainToUse);
-            if (result && result.ok && result.data && result.data.stream) {
-              const streamUrl = result.data.stream.url;
-              const ref = `${gwOrigin}/`;
-              const origin = gwOrigin;
-              let finalUrl = streamUrl;
-              if (Capacitor.isNativePlatform()) {
-                try {
-                  const portRes = await NativeStreamingEngine.getProxyPort();
-                  const port = portRes?.port || 8000;
-                  finalUrl = `http://localhost:${port}/local-proxy?url=${encodeURIComponent(streamUrl)}&referer=${encodeURIComponent(ref)}&origin=${encodeURIComponent(origin)}`;
-                } catch (e) {}
-              }
-              data = {
-                sources: [{
-                  url: finalUrl,
-                  quality: 'auto',
-                  isM3U8: true
-                }],
-                subtitles: []
-              };
-            } else {
-              throw new Error(result?.error || "Resolution returned empty stream");
-            }
-          }
-        } catch (scrapingErr: any) {
-          console.warn(`[LocalVideoPlayer] Native client resolution error for ${serverId}:`, scrapingErr.message);
-          if (serverId === 'vidlink-pro' && !vidlinkDiagnostics) {
-            setVidlinkDiagnostics(scrapingErr.message);
-          }
-          if (serverId === 'test-server' && !testServerDiagnostics) {
-            setTestServerDiagnostics(scrapingErr.message);
-          }
-          throw scrapingErr;
-        }
-        
-        if (data && data.sources && Array.isArray(data.sources) && data.sources.length > 0) {
-          bestSource = data.sources[0].url;
-          setAvailableSources(data.sources);
-          setServerAvailableSources(prev => ({ ...prev, [serverId]: data.sources }));
-          if (data.sources.length > 1 || !data.sources[0].isM3U8) {
-            const directQualities = data.sources.map((s: any, idx: number) => {
-              const parsed = parseInt(s.quality);
-              const isHeight = !isNaN(parsed);
-              const normHeight = isHeight ? getStandardResolutionHeight(parsed) : undefined;
+      // On native mobile, dispatch to the correct native resolver
+      if (Capacitor.isNativePlatform()) {
+        const srv = (remoteServers.length > 0 ? remoteServers : ALL_SERVERS).find(s => s.id === serverId);
+        const isIframeSrv = srv ? !srv.isAdFree : (serverId !== 'vidlink-pro' && serverId !== 'vidsrc-pm' && serverId !== 'vidsrc-sbs' && serverId !== 'vidzee');
+        if (isIframeSrv) {
+          setIframeFallback(true);
+          setEmbedServer(serverId);
+          setIsInitialLoading(false);
+          setIsSwitchingServer(false);
+          setShowSettings(false);
+          resetControlsTimeout();
+          return;
+        } else if (serverId === 'vidsrc-pm') {
+          console.log(`[LocalVideoPlayer] Resolving VidSrc PM natively on Android...`);
+          const nativeRes = await NativeStreamingEngine.resolveVidsrcPm({
+            tmdbId: String(tmdbId),
+            imdbId: (item as any)?.imdbId || (item as any)?.imdb_id || '',
+            type: type,
+            season: season,
+            episode: episode
+          });
+          data = {
+            sources: (nativeRes.sources || []).map((s: any) => ({
+              url: s.url,
+              quality: s.quality || 'auto',
+              isM3U8: s.isM3U8
+            })),
+            subtitles: (nativeRes.subtitles || []).map((s: any) => ({
+              url: s.url,
+              lang: s.lang || 'Unknown',
+              isBackup: !!s.isBackup
+            }))
+          };
+          setVidsrcPmDiagnostics('Success: resolved stream sources successfully.');
+        } else if (serverId === 'vidsrc-wtf-2') {
+          console.log(`[LocalVideoPlayer] Resolving WTF-2 stream client-side in WebView...`);
+          const decrypted = await scrapeWtfStream(
+            String(tmdbId),
+            'wtf-2',
+            null,
+            isTV,
+            season,
+            episode
+          );
+          if (decrypted && decrypted.ok && decrypted.data?.streams && decrypted.data.streams.length > 0) {
+            const sources = decrypted.data.streams.map((stream: any, idx: number) => {
+              const ref = stream.headers?.Referer || 'https://vidsrc.wtf/';
+              const origin = new URL(stream.url).origin;
+              const proxiedUrl = `http://localhost:8000/local-proxy?url=${encodeURIComponent(stream.url)}&referer=${encodeURIComponent(ref)}&origin=${encodeURIComponent(origin)}`;
               return {
-                height: normHeight,
-                label: isHeight ? `${normHeight}p` : (s.quality || `Source ${idx + 1}`),
-                index: idx
+                url: proxiedUrl,
+                quality: stream.language || `Stream ${idx + 1}`,
+                isM3U8: stream.type === 'hls' || stream.url.includes('.m3u8')
               };
             });
-            // Sort low → high (360p first, 1080p last). Auto button is always first in UI.
-            directQualities.sort((a, b) => (a.height ?? 0) - (b.height ?? 0));
-            setQualities(directQualities);
-            setServerQualities(prev => ({ ...prev, [serverId]: directQualities }));
-            // Default to Auto so user sees Auto highlighted — plays highest quality URL
-            setCurrentQuality(-1);
-            setServerCurrentQuality(prev => ({ ...prev, [serverId]: -1 }));
+            data = {
+              sources: sources,
+              subtitles: []
+            };
           } else {
-            setQualities([]);
-            setServerQualities(prev => ({ ...prev, [serverId]: [] }));
-            setCurrentQuality(-1);
-            setServerCurrentQuality(prev => ({ ...prev, [serverId]: -1 }));
+            throw new Error("No streams found in Multi Language response");
           }
+        } else {
+          // vidlink-pro native resolution
+          console.log(`[LocalVideoPlayer] Resolving Vidlink S${season}E${episode} natively on Android...`);
+          const nativeRes = await NativeStreamingEngine.resolveVidlink({
+            tmdbId: String(tmdbId),
+            imdbId: (item as any)?.imdbId || (item as any)?.imdb_id || '',
+            type: type,
+            season: season,
+            episode: episode
+          });
+          data = {
+            sources: (nativeRes.sources || []).map((s: any) => ({
+              url: s.url,
+              quality: s.quality || 'auto',
+              isM3U8: s.isM3U8
+            })),
+            subtitles: (nativeRes.subtitles || []).map((s: any) => ({
+              url: s.url,
+              lang: s.lang || 'Unknown',
+              isBackup: !!s.isBackup
+            }))
+          };
+          setVidlinkDiagnostics('Success: resolved stream sources successfully.');
         }
-
       } else {
+        const srv = (remoteServers.length > 0 ? remoteServers : ALL_SERVERS).find(s => s.id === serverId);
+        const isIframeSrv = srv ? !srv.isAdFree : (serverId !== 'vidlink-pro' && serverId !== 'vidsrc-pm' && serverId !== 'vidsrc-sbs' && serverId !== 'vidzee');
+        if (isIframeSrv) {
+          setIframeFallback(true);
+          setEmbedServer(serverId);
+          setIsInitialLoading(false);
+          setIsSwitchingServer(false);
+          setShowSettings(false);
+          resetControlsTimeout();
+          return;
+        }
         // On web/desktop, route through the Express server proxy.
         let watchUrl = `${localServer}/meta/tmdb/watch/${tmdbId}?type=${type}&server=${serverId}&title=${encodeURIComponent(titleToUse)}`;
         if (isTV) {
@@ -711,18 +639,17 @@ export default function LocalVideoPlayer({
         try {
           res = await fetch(watchUrl, { signal: controller.signal });
         } catch (fetchErr: any) {
-          if (serverId === 'vidlink-pro') {
-            setVidlinkDiagnostics(`Failed to connect to local server: ${fetchErr.message}`);
-          }
+          setVidlinkDiagnostics(`Failed to connect to local server: ${fetchErr.message}`);
           throw fetchErr;
         }
   
         if (res.ok) {
           data = await res.json();
           bestSource = data.sources?.[0]?.url;
-          
-          if (serverId === 'vidlink-pro') {
-            setVidlinkDiagnostics("Success: Resolved stream sources via localized server.");
+          if (serverId === 'vidsrc-pm') {
+            setVidsrcPmDiagnostics('Success: Resolved stream sources via localized server.');
+          } else {
+            setVidlinkDiagnostics('Success: Resolved stream sources via localized server.');
           }
 
           if (data.sources && Array.isArray(data.sources) && data.sources.length > 0) {
@@ -739,13 +666,33 @@ export default function LocalVideoPlayer({
                   index: idx
                 };
               });
-              // Sort low → high (360p first, 1080p last). Auto button is always first in UI.
-              directQualities.sort((a, b) => (a.height ?? 0) - (b.height ?? 0));
+              // Only sort by height for numeric quality levels; language labels keep server order
+              const hasNumericQualities = directQualities.some(q => q.height !== undefined);
+              if (hasNumericQualities) {
+                directQualities.sort((a, b) => (a.height ?? 0) - (b.height ?? 0));
+              }
               setQualities(directQualities);
               setServerQualities(prev => ({ ...prev, [serverId]: directQualities }));
-              // Default to Auto so user sees Auto highlighted
-              setCurrentQuality(-1);
-              setServerCurrentQuality(prev => ({ ...prev, [serverId]: -1 }));
+
+              // Auto-select the user's preferred audio language if present
+              const { SettingsService } = await import('../../../../services/settings');
+              const preferred = SettingsService.get('preferredAudioLanguage');
+              if (preferred) {
+                const preferredIdx = data.sources.findIndex((s: any) =>
+                  (s.quality || '').toLowerCase().includes(preferred.toLowerCase())
+                );
+                if (preferredIdx !== -1) {
+                  setCurrentQuality(preferredIdx);
+                  setServerCurrentQuality(prev => ({ ...prev, [serverId]: preferredIdx }));
+                  bestSource = data.sources[preferredIdx].url;
+                } else {
+                  setCurrentQuality(-1);
+                  setServerCurrentQuality(prev => ({ ...prev, [serverId]: -1 }));
+                }
+              } else {
+                setCurrentQuality(-1);
+                setServerCurrentQuality(prev => ({ ...prev, [serverId]: -1 }));
+              }
             } else {
               setQualities([]);
               setServerQualities(prev => ({ ...prev, [serverId]: [] }));
@@ -753,7 +700,6 @@ export default function LocalVideoPlayer({
               setServerCurrentQuality(prev => ({ ...prev, [serverId]: -1 }));
             }
           }
-
         } else {
           let errText = '';
           try { errText = await res.text(); } catch (_) {}
@@ -764,15 +710,71 @@ export default function LocalVideoPlayer({
           } catch (_) {
             parsedMsg = errText;
           }
-          
           const finalErrMsg = parsedMsg ? `Server HTTP ${res.status}: ${parsedMsg}` : `Server HTTP ${res.status}`;
-          if (serverId === 'vidlink-pro') {
+          if (serverId === 'vidsrc-pm') {
+            setVidsrcPmDiagnostics(finalErrMsg);
+          } else {
             setVidlinkDiagnostics(finalErrMsg);
           }
           throw new Error(finalErrMsg);
         }
       }
-      
+
+      // On native path, bestSource is not set inside the if/else branches — set it here from data
+      if (!bestSource && data?.sources?.[0]?.url) {
+        bestSource = data.sources[0].url;
+        // Mirror the web path: build qualities and auto-select preferred language
+        if (data.sources && Array.isArray(data.sources) && data.sources.length > 0) {
+          setAvailableSources(data.sources);
+          setServerAvailableSources(prev => ({ ...prev, [serverId]: data.sources }));
+
+          if (data.sources.length > 1 || !data.sources[0].isM3U8) {
+            const directQualities = data.sources.map((s: any, idx: number) => {
+              const parsed = parseInt(s.quality);
+              const isHeight = !isNaN(parsed);
+              const normHeight = isHeight ? getStandardResolutionHeight(parsed) : undefined;
+              return {
+                height: normHeight,
+                label: isHeight ? `${normHeight}p` : (s.quality || `Source ${idx + 1}`),
+                index: idx
+              };
+            });
+            // Only sort by height for numeric quality levels; language labels keep server order
+            const hasNumericQualities = directQualities.some(q => q.height !== undefined);
+            if (hasNumericQualities) {
+              directQualities.sort((a, b) => (a.height ?? 0) - (b.height ?? 0));
+            }
+            setQualities(directQualities);
+            setServerQualities(prev => ({ ...prev, [serverId]: directQualities }));
+
+            // Auto-select the user's preferred audio language if present
+            try {
+              const { SettingsService } = await import('../../../../services/settings');
+              const preferred = SettingsService.get('preferredAudioLanguage');
+              if (preferred) {
+                const preferredIdx = data.sources.findIndex((s: any) =>
+                  (s.quality || '').toLowerCase().includes(preferred.toLowerCase())
+                );
+                if (preferredIdx !== -1) {
+                  bestSource = data.sources[preferredIdx].url;
+                  setCurrentQuality(preferredIdx);
+                  setServerCurrentQuality(prev => ({ ...prev, [serverId]: preferredIdx }));
+                } else {
+                  setCurrentQuality(-1);
+                  setServerCurrentQuality(prev => ({ ...prev, [serverId]: -1 }));
+                }
+              } else {
+                setCurrentQuality(-1);
+                setServerCurrentQuality(prev => ({ ...prev, [serverId]: -1 }));
+              }
+            } catch (_) {
+              setCurrentQuality(-1);
+              setServerCurrentQuality(prev => ({ ...prev, [serverId]: -1 }));
+            }
+          }
+        }
+      }
+
       if (!bestSource) {
         throw new Error('No streaming sources found. The server may be temporarily unavailable.');
       }
@@ -861,24 +863,18 @@ export default function LocalVideoPlayer({
         }
       }
       
-      if (serverId === 'vidsrc-wtf-2') {
-        setSettingsTab('quality');
-        setShowSettings(true);
-      } else {
-        setShowSettings(false);
-      }
+      setShowSettings(false);
       resetControlsTimeout();
     } catch (err: any) {
       if (err.name === 'AbortError') {
         console.warn('[LocalVideoPlayer] Server switch fetch timed out or was aborted.');
         const msg = 'Connection timed out. The streaming server is taking too long to respond.';
         setServerError(msg);
-        if (serverId === 'vidlink-pro') setVidlinkDiagnostics(msg);
+        if (serverId === 'vidsrc-pm') setVidsrcPmDiagnostics(msg); else setVidlinkDiagnostics(msg);
       } else {
         console.error('[LocalVideoPlayer] Failed to switch server:', err);
-        setServerError(err.message || 'Resolution failed. Please try another server.');
-        if (serverId === 'vidlink-pro' && !vidlinkDiagnostics) setVidlinkDiagnostics(err.message || 'Resolution failed.');
-        if (serverId === 'test-server' && !testServerDiagnostics) setTestServerDiagnostics(err.message || 'Resolution failed.');
+        setServerError(err.message || 'Resolution failed. Please try again.');
+        if (serverId === 'vidsrc-pm') setVidsrcPmDiagnostics(err.message || 'Resolution failed.'); else setVidlinkDiagnostics(err.message || 'Resolution failed.');
       }
       setSettingsTab('servers');
       setShowSettings(true);
@@ -896,44 +892,22 @@ export default function LocalVideoPlayer({
       setPlayerToast({ message: 'Playback failed. You are currently offline.', isError: true });
       return;
     }
-    const servers: ('vidlink-pro' | 'vidsrc-sbs' | 'vidsrc-wtf-1' | 'vidsrc-wtf-2' | 'vidsrc-wtf-3' | 'vidsrc-wtf-4' | 'vidsrc-pk' | 'vidsrc-fyi')[] = ['vidlink-pro', 'vidsrc-wtf-2', 'vidsrc-sbs', 'vidsrc-pk', 'vidsrc-fyi'];
-    const currentIndex = servers.indexOf(selectedServer as any);
-    const nextIndex = currentIndex + 1;
-    if (nextIndex < servers.length) {
-      const nextServer = servers[nextIndex];
+    
+    if (selectedServer === 'vidlink-pro') {
       setPlayerToast({
-        message: `Connection to ${SERVER_DISPLAY_NAMES[selectedServer]} failed. Switching to ${SERVER_DISPLAY_NAMES[nextServer]}...`,
+        message: 'Vidlink stream failed. Switching to VidSrc PM automatically...',
+        isError: false
+      });
+      console.log('[LocalVideoPlayer] Direct stream load failed. Performing auto-failover to VidSrc PM...');
+      handleServerChange('vidsrc-pm');
+    } else {
+      setPlayerToast({
+        message: 'Stream failed to load. Please try another server.',
         isError: true
       });
-      console.log(`[LocalVideoPlayer] Playback auto-failover: ${selectedServer} -> ${nextServer}`);
-      handleServerChange(nextServer);
-    } else if (!iframeFallback && !embedServer) {
-      const isAdFree = ALL_SERVERS.some(s => s.id === selectedServer && s.isAdFree);
-      if (isAdFree) {
-        setPlayerToast({
-          message: 'All ad-free native servers failed to load. Please select an external iframe server.',
-          isError: true
-        });
-        setServerError('All localized stream servers failed to respond.');
-        setShowSettings(true);
-        setSettingsTab('servers');
-        return;
-      }
-      setPlayerToast({
-        message: 'All localized stream servers failed to respond. Launching web fallback...',
-        isError: true
-      });
-      console.log('[LocalVideoPlayer] Playback auto-failover: All servers exhausted. Triggering iframeFallback.');
-      
-      if (item && videoRef.current) {
-        const finalTime = videoRef.current.currentTime;
-        const finalDuration = videoRef.current.duration;
-        if (finalTime > 0 && finalDuration > 0) {
-          WatchProgressService.saveProgress(item, finalTime, finalDuration, season, episode);
-        }
-      }
-
-      setIframeFallback(true);
+      setServerError('Stream failed to load. Please try again.');
+      setShowSettings(true);
+      setSettingsTab('servers');
     }
   };
 
@@ -948,75 +922,31 @@ export default function LocalVideoPlayer({
   const [subtitleError, setSubtitleError] = useState<string | null>(null);
   const [lastAttemptedTrack, setLastAttemptedTrack] = useState<{ file: string; label: string; kind: string; default?: boolean } | null>(null);
   const [vidlinkDiagnostics, setVidlinkDiagnostics] = useState<string | null>(null);
+  const [vidsrcPmDiagnostics, setVidsrcPmDiagnostics] = useState<string | null>(null);
   const [testServerDiagnostics, setTestServerDiagnostics] = useState<string | null>(null);
 
   // Server subtitle settings memory
   const [serverSubtitleTracks, setServerSubtitleTracks] = useState<Record<string, { file: string; label: string; kind: string; default?: boolean }[]>>({
     'vidlink-pro': [],
-    'vidsrc-pm': [],
-    'universal': [],
-    'vidsrc-sbs': [],
-    'vidsrc-wtf-1': [],
-    'vidsrc-wtf-2': [],
-    'vidsrc-wtf-3': [],
-    'vidsrc-wtf-4': [],
-    'vidsrc-pk': [],
-    'vidsrc-fyi': [],
-    'test-server': []
+    'vidsrc-pm': []
   });
   const [serverActiveTrackIndices, setServerActiveTrackIndices] = useState<Record<string, number>>({
     'vidlink-pro': -1,
-    'vidsrc-pm': -1,
-    'universal': -1,
-    'vidsrc-sbs': -1,
-    'vidsrc-wtf-1': -1,
-    'vidsrc-wtf-2': -1,
-    'vidsrc-wtf-3': -1,
-    'vidsrc-wtf-4': -1,
-    'vidsrc-pk': -1,
-    'vidsrc-fyi': -1,
-    'test-server': -1
+    'vidsrc-pm': -1
   });
 
   // Server qualities and sources memory
   const [serverQualities, setServerQualities] = useState<Record<string, {height: number, index: number}[]>>({
     'vidlink-pro': [],
-    'vidsrc-pm': [],
-    'universal': [],
-    'vidsrc-sbs': [],
-    'vidsrc-wtf-1': [],
-    'vidsrc-wtf-2': [],
-    'vidsrc-wtf-3': [],
-    'vidsrc-wtf-4': [],
-    'vidsrc-pk': [],
-    'vidsrc-fyi': [],
-    'test-server': []
+    'vidsrc-pm': []
   });
   const [serverCurrentQuality, setServerCurrentQuality] = useState<Record<string, number>>({
     'vidlink-pro': -1,
-    'vidsrc-pm': -1,
-    'universal': -1,
-    'vidsrc-sbs': -1,
-    'vidsrc-wtf-1': -1,
-    'vidsrc-wtf-2': -1,
-    'vidsrc-wtf-3': -1,
-    'vidsrc-wtf-4': -1,
-    'vidsrc-pk': -1,
-    'vidsrc-fyi': -1,
-    'test-server': -1
+    'vidsrc-pm': -1
   });
   const [serverAvailableSources, setServerAvailableSources] = useState<Record<string, {url: string; quality: string; isM3U8: boolean}[]>>({
     'vidlink-pro': [],
-    'vidsrc-pm': [],
-    'universal': [],
-    'vidsrc-sbs': [],
-    'vidsrc-wtf-1': [],
-    'vidsrc-wtf-2': [],
-    'vidsrc-wtf-3': [],
-    'vidsrc-wtf-4': [],
-    'vidsrc-pk': [],
-    'vidsrc-fyi': [],
-    'test-server': []
+    'vidsrc-pm': []
   });
 
   // Synchronize server-isolated settings to local active states on server switch
@@ -1199,8 +1129,8 @@ export default function LocalVideoPlayer({
 
   useEffect(() => {
     const initTracks = async () => {
-      const servers: ('vidlink-pro' | 'test-server' | 'vidsrc-sbs' | 'vidsrc-wtf-1' | 'vidsrc-wtf-2' | 'vidsrc-wtf-3' | 'vidsrc-wtf-4' | 'vidsrc-pk' | 'vidsrc-fyi')[] = [
-        'vidlink-pro', 'test-server', 'vidsrc-sbs', 'vidsrc-wtf-1', 'vidsrc-wtf-2', 'vidsrc-wtf-3', 'vidsrc-wtf-4', 'vidsrc-pk', 'vidsrc-fyi'
+      const servers: ('vidlink-pro' | 'test-server' | 'vidsrc-sbs' | 'vidsrc-wtf-1' | 'vidsrc-wtf-2' | 'vidsrc-wtf-3' | 'vidsrc-wtf-4' | 'vidsrc-pk' | 'vidsrc-fyi' | 'vidzee' | 'vidsrc-top')[] = [
+        'vidlink-pro', 'test-server', 'vidsrc-sbs', 'vidsrc-wtf-1', 'vidsrc-wtf-2', 'vidsrc-wtf-3', 'vidsrc-wtf-4', 'vidsrc-pk', 'vidsrc-fyi', 'vidzee', 'vidsrc-top'
       ];
       if (tracks && tracks.length > 0) {
         const defaultIndex = tracks.findIndex(t => t.default);
@@ -1325,9 +1255,11 @@ export default function LocalVideoPlayer({
       const trackElement = video.querySelector('track');
       const sideLoadedTrack = trackElement ? trackElement.track : null;
 
+      // Disable/hide any text track that doesn't correspond to the currently active sideloaded track file
+      const currentActiveTrack = localTracks[activeTrackIndex];
       for (let i = 0; i < textTracks.length; i++) {
         const textTrack = textTracks[i];
-        if (sideLoadedTrack && textTrack === sideLoadedTrack) {
+        if (sideLoadedTrack && textTrack === sideLoadedTrack && currentActiveTrack) {
           textTrack.mode = 'showing';
         } else {
           textTrack.mode = 'hidden';
@@ -1338,7 +1270,7 @@ export default function LocalVideoPlayer({
     syncTracks();
     const timer = setTimeout(syncTracks, 100);
     return () => clearTimeout(timer);
-  }, [localTracks, activeTrackIndex]);
+  }, [localTracks, activeTrackIndex, selectedServer]);
 
   const convertSrtToVtt = (srtText: string): string => {
     let vtt = srtText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -1739,10 +1671,10 @@ export default function LocalVideoPlayer({
   const durationRef = useRef(duration);
   const isHls = currentSrc.includes('.m3u8') || 
                 currentSrc.includes('type=m3u8') || 
-                ((selectedServer === 'vidlink-pro' || selectedServer === 'test-server' || selectedServer === 'vidsrc-sbs' || selectedServer === 'vidsrc-wtf-2' || selectedServer === 'vidsrc-pk' || selectedServer === 'vidsrc-fyi') && 
+                ((selectedServer === 'vidlink-pro' || selectedServer === 'vidsrc-pm' || selectedServer === 'test-server' || selectedServer === 'vidsrc-sbs' || selectedServer === 'vidsrc-wtf-2' || selectedServer === 'vidsrc-pk' || selectedServer === 'vidsrc-fyi' || selectedServer === 'vidzee' || selectedServer === 'vidsrc-top') && 
                   !currentSrc.includes('type=mp4') && 
                   !currentSrc.includes('.mp4')) || 
-                ((currentSrc.includes('vodvidl.site') || currentSrc.includes('vidlink') || currentSrc.includes('vidsrc') || currentSrc.includes('cloudnestra') || currentSrc.includes('brightpath') || currentSrc.includes('yonderunyielding') || currentSrc.includes('unctuousundertow')) && 
+                ((currentSrc.includes('vodvidl.site') || currentSrc.includes('vidlink') || currentSrc.includes('vidsrc') || currentSrc.includes('cloudnestra') || currentSrc.includes('brightpath') || currentSrc.includes('yonderunyielding') || currentSrc.includes('unctuousundertow') || currentSrc.includes('conversionfocusedstudio') || currentSrc.includes('onlinevisibilitysystem') || currentSrc.includes('quietmidnightgardeningideas') || currentSrc.includes('visionaryfounderslab')) && 
                   !currentSrc.includes('type=mp4') && 
                   !currentSrc.includes('.mp4')) || 
                 (isOfflineMode && !currentSrc.includes('type=mp4') && !currentSrc.startsWith('blob:') && !currentSrc.includes('.mp4'));
@@ -2365,7 +2297,7 @@ export default function LocalVideoPlayer({
 
                       const hlsErrorMsg = `HLS Stream Error [${data.details}]: The resolved direct file is failing to load. ` +
                         (data.response ? `Response Code: ${data.response.code}. ` : "") +
-                        "This generally happens when the video hosting server blocks the request (e.g. invalid referer, security tokens expired, or Cloudflare WAF block).";
+                        "This generally happens when the video hosting server blocks the request.";
                       console.error('[LocalVideoPlayer]', hlsErrorMsg);
                       if (selectedServer === 'vidlink-pro') {
                         setVidlinkDiagnostics(hlsErrorMsg);
@@ -2374,8 +2306,7 @@ export default function LocalVideoPlayer({
                       setIsInitialLoading(false);
                       setIsSwitchingServer(false);
                       setBuffering(false);
-                      setShowSettings(true);
-                      setSettingsTab('servers');
+                      triggerAutoFailover();
                       return;
                   }
 
@@ -2395,21 +2326,22 @@ export default function LocalVideoPlayer({
                           } else {
                               console.error('[LocalVideoPlayer] Max HLS network recovery attempts reached. Reporting fatal error.');
                               hlsNetworkRetryCountRef.current = 0;
-                              const netErrorMsg = `HLS Network Error: The streaming server failed to respond. Please try another server.`;
+                              const netErrorMsg = `HLS Network Error: The streaming server failed to respond.`;
                               setServerError(netErrorMsg);
                               setIsInitialLoading(false);
                               setIsSwitchingServer(false);
                               setBuffering(false);
-                              setShowSettings(true);
-                              setSettingsTab('servers');
+                              triggerAutoFailover();
                           }
                           break;
                       case Hls.ErrorTypes.MEDIA_ERROR:
                           console.warn('[LocalVideoPlayer] Fatal HLS media error, attempting to recover media element...');
                           hls.recoverMediaError();
                           break;
-                      default:
-                          if (Capacitor.isNativePlatform() && !isAdFree) {
+                       default:
+                           const srv = (remoteServers.length > 0 ? remoteServers : ALL_SERVERS).find(s => s.id === selectedServer);
+                           const isAdFree = srv ? srv.isAdFree : (selectedServer === 'vidlink-pro' || selectedServer === 'vidsrc-pm' || selectedServer === 'vidsrc-wtf-2');
+                           if (Capacitor.isNativePlatform() && !isAdFree) {
                               console.warn('[LocalVideoPlayer] Unrecoverable HLS error on native mobile, falling back to official iframe player embed...');
                               setIframeFallback(true);
                               setIsInitialLoading(false);
@@ -2425,7 +2357,7 @@ export default function LocalVideoPlayer({
                           setIsInitialLoading(false);
                           setIsSwitchingServer(false);
                           setBuffering(false);
-                          setShowSettings(true);
+                          triggerAutoFailover();
                           break;
                   }
               });
@@ -2474,7 +2406,9 @@ export default function LocalVideoPlayer({
                       }
                   }
                   if (startPos > 10) {
-
+                      if (videoRef.current) {
+                          videoRef.current.currentTime = startPos;
+                      }
                       setCurrentTime(startPos);
                       seekedOnStartRef.current = true;
                   }
@@ -2534,9 +2468,8 @@ export default function LocalVideoPlayer({
                   const msg = `Native HLS playback error: ${err?.message || 'Video segment download failed.'} (Code ${err?.code || 'unknown'})`;
                   setServerError(msg);
                   if (selectedServer === 'vidlink-pro') setVidlinkDiagnostics(msg);
-                  setShowSettings(true);
-                  setSettingsTab('servers');
                   setIsInitialLoading(false);
+                  triggerAutoFailover();
               };
               videoRef.current.addEventListener('loadedmetadata', handleLoadedMetadata);
               videoRef.current.addEventListener('durationchange', handleDurationChange);
@@ -3043,6 +2976,7 @@ export default function LocalVideoPlayer({
 
 
   const handleMouseClick = (e: React.MouseEvent) => {
+    if (iframeFallback || embedServer) return; // Allow pass-through to third-party player controls
     if (isLocked) {
       handleLockedScreenTap(e);
       return;
@@ -3080,24 +3014,19 @@ export default function LocalVideoPlayer({
 
   const handleDoubleClick = (e: React.MouseEvent) => {
     if (isLocked || iframeFallback || !!embedServer) return;
+    
     e.stopPropagation();
-
     const container = containerRef.current;
     if (!container) return;
-
+    
     const rect = container.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const width = rect.width;
-
-    const isLeft = x < width * 0.4;
-    const isRight = x > width * 0.6;
-
-    if (isLeft) {
+    
+    if (x < width * 0.4) {
       handleRewind();
-    } else if (isRight) {
+    } else if (x > width * 0.6) {
       handleForward();
-    } else {
-      toggleFullScreen();
     }
   };
 
@@ -3170,6 +3099,11 @@ export default function LocalVideoPlayer({
               const imdbId = (item as any)?.imdbId || (item as any)?.imdb_id;
               const idToUse = imdbId || item?.id;
 
+               if (currentSrv === 'vidsrc-top') {
+                return season || episode
+                  ? `https://vid-src.top/embed/tv/${idToUse}/${season}/${episode}`
+                  : `https://vid-src.top/embed/movie/${idToUse}`;
+              }
               if (currentSrv === 'vidsrc-sbs') {
                 return season || episode
                   ? `https://vidsrc.sbs/embed/tv/${item?.id}/${season}/${episode}`
@@ -3223,7 +3157,10 @@ export default function LocalVideoPlayer({
             height: '100%',
             border: 'none',
             backgroundColor: '#000000',
-            zIndex: 1
+            zIndex: 10012,
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'auto'
           }}
           allowFullScreen
           allow="autoplay; encrypted-media; picture-in-picture"
@@ -3633,6 +3570,7 @@ export default function LocalVideoPlayer({
         setOnlineSearchError={setOnlineSearchError}
         setOnlineSubs={setOnlineSubs}
         vidlinkDiagnostics={vidlinkDiagnostics}
+        vidsrcPmDiagnostics={vidsrcPmDiagnostics}
         testServerDiagnostics={testServerDiagnostics}
       />
 
