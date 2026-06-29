@@ -23,7 +23,6 @@ class NativeStreamingEnginePlugin : Plugin() {
     companion object {
         private val logsList = java.util.concurrent.CopyOnWriteArrayList<String>()
         
-        @JvmField @Volatile var isTouchBoostActive = false
         @Volatile private var lastProxyHost = ""
         @Volatile private var lastProxyScheme = "https"
         @Volatile private var lastReferer = ""
@@ -1175,12 +1174,6 @@ class NativeStreamingEnginePlugin : Plugin() {
         call.resolve()
     }
 
-    @PluginMethod
-    fun setTouchBoostActive(call: PluginCall) {
-        val enabled = call.getBoolean("enabled") ?: false
-        isTouchBoostActive = enabled
-        call.resolve()
-    }
 
     @PluginMethod
     fun getProxyPort(call: PluginCall) {
