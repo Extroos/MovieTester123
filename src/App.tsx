@@ -976,21 +976,26 @@ export default function App() {
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
     }
-    setSelectedTVShow(show);
-    // REMOVED: setSearchResultsOpen(false) - Preserve context for back navigation
+    setTimeout(() => {
+      setSelectedTVShow(show);
+    }, 120);
   }, []);
 
   const handleMovieClick = useCallback((movie: Movie | TVShow | any) => {
+    // Blur any focused input first (e.g. search bar) so the keyboard is dismissed
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
     }
     const isTv = movie.mediaType === 'tv' || movie.type === 'tv' || movie.media_type === 'tv' || 'firstAirDate' in movie || 'name' in movie;
-    if (isTv) {
+    // Small delay lets Android's IME fully dismiss before the details page mounts,
+    // preventing the keyboard from re-appearing on the new screen.
+    setTimeout(() => {
+      if (isTv) {
         handleTVShowClick(movie as any);
         return;
-    }
-    setSelectedMovie(movie);
-    // REMOVED: setSearchResultsOpen(false) - Preserve context for back navigation
+      }
+      setSelectedMovie(movie);
+    }, 120);
   }, [handleTVShowClick]);
 
   const handleShowSearchResults = useCallback((query: string, results: Movie[]) => {
