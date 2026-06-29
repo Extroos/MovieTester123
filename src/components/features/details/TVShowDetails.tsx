@@ -557,6 +557,7 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
       return true;
     } finally {
       setLocalStreamLoading(false);
+      setPendingEpisodeNum(null);
     }
   }, [fullShow.id, fullShow.name, resumeEpisode, selectedSeason, savedProgressTime]);
 
@@ -1711,16 +1712,23 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                                 <div style={{ 
                                   position: 'absolute', inset: 0, 
                                   display: 'flex', alignItems: 'center', justifyContent: 'center', 
-                                  background: 'rgba(0,0,0,0.1)' 
+                                  background: 'rgba(0,0,0,0.2)' 
                                 }}>
                                   <div style={{ 
                                     width: '30px', height: '30px', 
                                     borderRadius: '50%', 
-                                    background: 'rgba(0,0,0,0.5)', 
+                                    background: 'rgba(0,0,0,0.7)', 
                                     border: '1.5px solid #fff', 
                                     display: 'flex', alignItems: 'center', justifyContent: 'center' 
                                   }}>
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="#fff" style={{ marginLeft: '1px' }}><path d="M8 5v14l11-7z"/></svg>
+                                    {localStreamLoading && pendingEpisodeNum === ep.episodeNumber ? (
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" className="spinner-rotate" style={{ animation: 'spin 1s linear infinite' }}>
+                                        <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.2)" />
+                                        <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
+                                      </svg>
+                                    ) : (
+                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="#fff" style={{ marginLeft: '1px' }}><path d="M8 5v14l11-7z"/></svg>
+                                    )}
                                   </div>
                                 </div>
                               </div>
