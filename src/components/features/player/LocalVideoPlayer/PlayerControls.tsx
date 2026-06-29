@@ -725,7 +725,7 @@ export const PlayerControls = React.memo(function PlayerControls({
                 bottom: 0,
                 width: `${playedPercent}%`,
                 maxWidth: '100%',
-                background: '#ffffff',
+                background: '#ef4444',
                 borderRadius: '3px'
               }}
             />
@@ -738,8 +738,8 @@ export const PlayerControls = React.memo(function PlayerControls({
                 width: '12px',
                 height: '12px',
                 borderRadius: '50%',
-                background: '#ffffff',
-                border: '1.5px solid #ffffff',
+                background: '#ef4444',
+                border: '1.5px solid #ef4444',
                 transform: isScrubbingActive ? 'translate(-50%, -50%) scale(1.35)' : 'translate(-50%, -50%) scale(0.65)',
                 transition: isDraggingRef.current ? 'transform 0.15s ease' : 'left 0.1s linear, transform 0.15s ease'
               }}
