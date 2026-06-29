@@ -61,28 +61,37 @@ public class MainActivity extends BridgeActivity {
         getWindow().getDecorView().setOnSystemUiVisibilityChangeListener(visibility -> {
             hideSystemBarsIfNeeded();
         });
+
+        // Create an isolated dummy View to consume simulated touch events so they don't interfere with the WebView
+        try {
+            dummyTouchView = new View(this);
+            dummyTouchView.setLayoutParams(new android.view.ViewGroup.LayoutParams(1, 1));
+            dummyTouchView.setVisibility(View.VISIBLE);
+            dummyTouchView.setOnTouchListener((v, e) -> true); // Completely consume events locally
+            ((android.view.ViewGroup) getWindow().getDecorView()).addView(dummyTouchView);
+        } catch (Exception e) {
+            android.util.Log.e("MainActivity", "Failed to add dummyTouchView: " + e.getMessage());
+        }
     }
 
+    private View dummyTouchView;
     private final android.os.Handler touchBoostHandler = new android.os.Handler();
     private final Runnable touchBoostRunnable = new Runnable() {
         @Override
         public void run() {
             try {
-                if (NativeStreamingEnginePlugin.isTouchBoostActive) {
-                    WebView webView = getBridge().getWebView();
-                    if (webView != null) {
-                        long now = android.os.SystemClock.uptimeMillis();
-                        android.view.MotionEvent event = android.view.MotionEvent.obtain(
-                            now,
-                            now,
-                            android.view.MotionEvent.ACTION_MOVE,
-                            1.0f,
-                            1.0f,
-                            0
-                        );
-                        webView.dispatchTouchEvent(event);
-                        event.recycle();
-                    }
+                if (NativeStreamingEnginePlugin.isTouchBoostActive && dummyTouchView != null) {
+                    long now = android.os.SystemClock.uptimeMillis();
+                    android.view.MotionEvent event = android.view.MotionEvent.obtain(
+                        now,
+                        now,
+                        android.view.MotionEvent.ACTION_MOVE,
+                        0.5f,
+                        0.5f,
+                        0
+                    );
+                    dummyTouchView.dispatchTouchEvent(event);
+                    event.recycle();
                 }
             } catch (Exception e) {}
             touchBoostHandler.postDelayed(this, 120);
