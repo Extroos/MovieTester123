@@ -63,6 +63,44 @@ public class MainActivity extends BridgeActivity {
         });
     }
 
+    private final android.os.Handler touchBoostHandler = new android.os.Handler();
+    private final Runnable touchBoostRunnable = new Runnable() {
+        @Override
+        public void run() {
+            try {
+                if (NativeStreamingEnginePlugin.isTouchBoostActive) {
+                    WebView webView = getBridge().getWebView();
+                    if (webView != null) {
+                        long now = android.os.SystemClock.uptimeMillis();
+                        android.view.MotionEvent event = android.view.MotionEvent.obtain(
+                            now,
+                            now,
+                            android.view.MotionEvent.ACTION_MOVE,
+                            1.0f,
+                            1.0f,
+                            0
+                        );
+                        webView.dispatchTouchEvent(event);
+                        event.recycle();
+                    }
+                }
+            } catch (Exception e) {}
+            touchBoostHandler.postDelayed(this, 120);
+        }
+    };
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        touchBoostHandler.postDelayed(touchBoostRunnable, 1000);
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        touchBoostHandler.removeCallbacks(touchBoostRunnable);
+    }
+
 
 
     @Override

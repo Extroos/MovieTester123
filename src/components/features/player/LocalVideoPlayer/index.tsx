@@ -197,6 +197,22 @@ export default function LocalVideoPlayer({
     } catch (e) {}
   }, []);
 
+  // Enforce touch boost for OPPO / ColorOS refresh rate pacing only during active video playback
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      if (playing && !isOfflineMode) {
+        NativeStreamingEngine.setTouchBoostActive({ enabled: true }).catch(() => {});
+      } else {
+        NativeStreamingEngine.setTouchBoostActive({ enabled: false }).catch(() => {});
+      }
+    }
+    return () => {
+      if (Capacitor.isNativePlatform()) {
+        NativeStreamingEngine.setTouchBoostActive({ enabled: false }).catch(() => {});
+      }
+    };
+  }, [playing, isOfflineMode]);
+
   // Join the real-time sync channel when in party mode
   useEffect(() => {
     if (!isPartyMode || !partySessionId || isGuestModeActive) return;

@@ -23,6 +23,7 @@ class NativeStreamingEnginePlugin : Plugin() {
     companion object {
         private val logsList = java.util.concurrent.CopyOnWriteArrayList<String>()
         
+        @Volatile var isTouchBoostActive = false
         @Volatile private var lastProxyHost = ""
         @Volatile private var lastProxyScheme = "https"
         @Volatile private var lastReferer = ""
@@ -1171,6 +1172,13 @@ class NativeStreamingEnginePlugin : Plugin() {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         context.startActivity(intent)
+        call.resolve()
+    }
+
+    @PluginMethod
+    fun setTouchBoostActive(call: PluginCall) {
+        val enabled = call.getBoolean("enabled") ?: false
+        isTouchBoostActive = enabled
         call.resolve()
     }
 
