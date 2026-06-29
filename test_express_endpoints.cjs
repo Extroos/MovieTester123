@@ -10,8 +10,12 @@ const testCases = [
     url: 'http://localhost:3001/meta/tmdb/watch/1301421?type=movie&server=auto&title=Three%20Bags%20Full'
   },
   {
+    name: 'Movie: Avengers Endgame (TMDb 299534)',
+    url: 'http://localhost:3001/meta/tmdb/watch/299534?type=movie&server=vidsrc-wtf-2&title=Avengers%20Endgame'
+  },
+  {
     name: 'Movie: Batman Begins (TMDb 272)',
-    url: 'http://localhost:3001/meta/tmdb/watch/272?type=movie&server=vidlink&title=Batman%20Begins'
+    url: 'http://localhost:3001/meta/tmdb/watch/272?type=movie&server=vidlink-pro&title=Batman%20Begins'
   },
   {
     name: 'TV Show: Wednesday Season 1 Episode 1 (TMDb 94605)',

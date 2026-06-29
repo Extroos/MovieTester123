@@ -40,6 +40,8 @@ interface SettingsPageProps {
   onShowVersionHistoryChange: (show: boolean) => void;
   onMovieClick?: (movie: any) => void;
   isVisible?: boolean;
+  updateAvailable?: any;
+  onClearUpdate?: () => void;
 }
 
 export default function SettingsPage({ 
@@ -53,7 +55,9 @@ export default function SettingsPage({
   showVersionHistory,
   onShowVersionHistoryChange,
   onMovieClick,
-  isVisible = true
+  isVisible = true,
+  updateAvailable,
+  onClearUpdate
 }: SettingsPageProps) {
   const [settings, setSettings] = useState<AppSettings>({ ...SettingsService.getAll() });
   const [isEditingName, setIsEditingName] = useState(false);
@@ -77,6 +81,9 @@ export default function SettingsPage({
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [showPasswordChangeForm, setShowPasswordChangeForm] = useState(false);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloadState, setDownloadState] = useState<'idle' | 'downloading' | 'installing' | 'error'>('idle');
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -647,72 +654,121 @@ export default function SettingsPage({
       {!activeSubPage ? (
         <>
           {/* Compact Header for Settings */}
-          {isMobile ? (
-            <div style={{
-              padding: 'calc(80px + env(safe-area-inset-top, 0px)) 16px 12px 16px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '2px'
-            }}>
-              <h1 style={{ 
-                margin: 0, 
-                fontSize: '1.65rem', 
-                fontWeight: 900,
-                letterSpacing: '-0.03em'
-              }}>Settings</h1>
-              <p 
-                onClick={() => {
-                  triggerHaptic('light');
-                  onShowVersionHistoryChange(true);
-                }}
-                className="settings-version-label"
-              >Cinemovie v{packageJson.version}</p>
-            </div>
-          ) : (
-            <div style={{ 
-              position: 'relative', 
-              height: '34vh', 
-              maxHeight: '320px',
-              overflow: 'hidden' 
-            }}>
-              {heroBackground && (
-                <img 
-                  src={getBackdropUrl(heroBackground.backdropPath, 'original')} 
-                  alt="" 
-                  style={{ 
-                    width: '100%', 
-                    height: '100%', 
-                    objectFit: 'cover', 
-                    opacity: 0.3,
-                    filter: 'brightness(0.6) contrast(1.2) saturate(1.1)'
-                  }}
-                />
-              )}
-              <div style={{
-                position: 'absolute',
-                inset: 0,
-                background: 'linear-gradient(to bottom, transparent 0%, rgba(10,10,10,0.8) 70%, #0a0a0a 100%)',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'flex-end',
-                padding: 'calc(92px + env(safe-area-inset-top, 0px)) 5% 32px 5%'
-              }}>
-                <h1 style={{ 
-                  margin: 0, 
-                  fontSize: '3rem', 
-                  fontWeight: 900,
-                  letterSpacing: '-0.04em'
-                }}>Settings</h1>
-                <p 
-                  onClick={() => {
-                    triggerHaptic('light');
-                    onShowVersionHistoryChange(true);
-                  }}
-                  className="settings-version-label"
-                >Cinemovie v{packageJson.version}</p>
-              </div>
-            </div>
-          )}
+           {isMobile ? (
+             <div style={{
+               padding: 'calc(80px + env(safe-area-inset-top, 0px)) 16px 12px 16px',
+               display: 'flex',
+               flexDirection: 'column',
+               gap: '2px'
+             }}>
+               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                 <h1 style={{ 
+                   margin: 0, 
+                   fontSize: '1.65rem', 
+                   fontWeight: 900,
+                   letterSpacing: '-0.03em'
+                 }}>Settings</h1>
+                 {updateAvailable && (
+                   <button 
+                     onClick={() => {
+                       triggerHaptic('medium');
+                       setShowUpdateModal(true);
+                     }}
+                     style={{
+                       background: '#007aff',
+                       color: '#ffffff',
+                       border: 'none',
+                       borderRadius: '12px',
+                       padding: '5px 12px',
+                       fontSize: '0.75rem',
+                       fontWeight: 800,
+                       cursor: 'pointer',
+                       display: 'inline-flex',
+                       alignItems: 'center'
+                     }}
+                   >
+                     Update Now
+                   </button>
+                 )}
+               </div>
+               <p 
+                 onClick={() => {
+                   triggerHaptic('light');
+                   onShowVersionHistoryChange(true);
+                 }}
+                 className="settings-version-label"
+               >Cinemovie v{packageJson.version}</p>
+             </div>
+           ) : (
+             <div style={{ 
+               position: 'relative', 
+               height: '34vh', 
+               maxHeight: '320px',
+               overflow: 'hidden' 
+             }}>
+               {heroBackground && (
+                 <img 
+                   src={getBackdropUrl(heroBackground.backdropPath, 'original')} 
+                   alt="" 
+                   style={{ 
+                     width: '100%', 
+                     height: '100%', 
+                     objectFit: 'cover', 
+                     opacity: 0.3,
+                     filter: 'brightness(0.6) contrast(1.2) saturate(1.1)'
+                   }}
+                 />
+               )}
+               <div style={{
+                 position: 'absolute',
+                 inset: 0,
+                 background: 'linear-gradient(to bottom, transparent 0%, rgba(10,10,10,0.8) 70%, #0a0a0a 100%)',
+                 display: 'flex',
+                 flexDirection: 'column',
+                 justifyContent: 'flex-end',
+                 padding: 'calc(92px + env(safe-area-inset-top, 0px)) 5% 32px 5%'
+               }}>
+                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                   <h1 style={{ 
+                     margin: 0, 
+                     fontSize: '3rem', 
+                     fontWeight: 900,
+                     letterSpacing: '-0.04em'
+                   }}>Settings</h1>
+                   {updateAvailable && (
+                     <button 
+                       onClick={() => {
+                         triggerHaptic('medium');
+                         setShowUpdateModal(true);
+                       }}
+                       style={{
+                         background: '#007aff',
+                         color: '#ffffff',
+                         border: 'none',
+                         borderRadius: '14px',
+                         padding: '7px 16px',
+                         fontSize: '0.85rem',
+                         fontWeight: 900,
+                         cursor: 'pointer',
+                         display: 'inline-flex',
+                         alignItems: 'center',
+                         transform: 'translateY(6px)'
+                       }}
+                     >
+                       Update Now
+                     </button>
+                   )}
+                 </div>
+                 <p 
+                   onClick={() => {
+                     triggerHaptic('light');
+                     onShowVersionHistoryChange(true);
+                   }}
+                   className="settings-version-label"
+                 >Cinemovie v{packageJson.version}</p>
+               </div>
+             </div>
+           )}
 
           {/* Main Settings Wrapper - Centered & Capped for OLED layout */}
           <div style={{ 
@@ -1408,6 +1464,165 @@ export default function SettingsPage({
         reauthError={reauthError}
         handleVerifyReauth={handleVerifyReauth}
       />
+
+      {/* In-App Update Dialog Modal Sheet */}
+      {showUpdateModal && updateAvailable && (
+        <div
+          onClick={() => {
+            if (downloadState !== 'downloading') {
+              setShowUpdateModal(false);
+            }
+          }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 5600,
+            background: 'rgba(0,0,0,0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px'
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: '380px',
+              background: '#0a0a0c',
+              borderRadius: '16px',
+              border: '1px solid rgba(255,255,255,0.06)',
+              padding: '24px 20px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              textAlign: 'center',
+              gap: '16px'
+            }}
+          >
+            <div style={{
+              color: '#007aff',
+              marginBottom: '2px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <Download size={32} />
+            </div>
+
+            <div>
+              <h3 style={{ margin: '0 0 6px', fontSize: '1.25rem', fontWeight: 900, color: '#fff', letterSpacing: '-0.02em' }}>
+                New Update Available
+              </h3>
+              <p style={{ margin: 0, fontSize: '0.85rem', color: '#007aff', fontWeight: 700 }}>
+                Version {updateAvailable.version}
+              </p>
+            </div>
+
+            {updateAvailable.releaseNotes && (
+              <div style={{
+                width: '100%',
+                maxHeight: '120px',
+                overflowY: 'auto',
+                background: 'rgba(255,255,255,0.02)',
+                border: '1px solid rgba(255,255,255,0.05)',
+                borderRadius: '12px',
+                padding: '12px',
+                textAlign: 'left',
+                fontSize: '0.82rem',
+                color: 'rgba(255,255,255,0.6)',
+                lineHeight: 1.4,
+                whiteSpace: 'pre-wrap'
+              }}>
+                {updateAvailable.releaseNotes}
+              </div>
+            )}
+
+            {downloadState === 'downloading' && (
+              <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>
+                  <span>Downloading...</span>
+                  <span>{downloadProgress}%</span>
+                </div>
+                <div style={{ width: '100%', height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden' }}>
+                  <div style={{ width: `${downloadProgress}%`, height: '100%', background: '#007aff', transition: 'width 0.1s linear', borderRadius: '3px' }} />
+                </div>
+              </div>
+            )}
+
+            {downloadState === 'installing' && (
+              <p style={{ margin: 0, fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>
+                Launching Package Installer...
+              </p>
+            )}
+
+            {downloadState === 'error' && (
+              <p style={{ margin: 0, fontSize: '0.85rem', color: '#ef4444', fontWeight: 600 }}>
+                Download failed. Please check network and storage permission.
+              </p>
+            )}
+
+            <div style={{ display: 'flex', width: '100%', gap: '12px', marginTop: '4px' }}>
+              {downloadState !== 'downloading' && downloadState !== 'installing' && (
+                <>
+                  <button
+                    onClick={() => setShowUpdateModal(false)}
+                    style={{
+                      flex: 1,
+                      padding: '14px',
+                      borderRadius: '14px',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      background: 'transparent',
+                      color: 'rgba(255,255,255,0.8)',
+                      fontWeight: 800,
+                      fontSize: '0.9rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Not Now
+                  </button>
+                  <button
+                    onClick={async () => {
+                      triggerHaptic('medium');
+                      setDownloadState('downloading');
+                      setDownloadProgress(0);
+                      try {
+                        const { downloadAndInstallUpdate } = await import('../../../services/core/updater');
+                        const success = await downloadAndInstallUpdate(updateAvailable.downloadUrl, (prog) => {
+                          setDownloadProgress(prog.progress);
+                        });
+                        if (success) {
+                          setDownloadState('installing');
+                          setShowUpdateModal(false);
+                          if (onClearUpdate) onClearUpdate();
+                        } else {
+                          setDownloadState('error');
+                        }
+                      } catch (err) {
+                        setDownloadState('error');
+                      }
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '14px',
+                      borderRadius: '14px',
+                      border: 'none',
+                      background: '#007aff',
+                      color: '#ffffff',
+                      fontWeight: 900,
+                      fontSize: '0.9rem',
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 15px rgba(0, 122, 255, 0.3)'
+                    }}
+                  >
+                    Install Now
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

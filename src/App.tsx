@@ -622,6 +622,26 @@ export default function App() {
     };
   }, [isAuthenticated, activeProfile]);
 
+  // Periodic in-app update checking logic
+  const [updateAvailable, setUpdateAvailable] = useState<any>(null);
+  useEffect(() => {
+    const triggerUpdateCheck = async () => {
+      try {
+        const { checkForUpdates } = await import('./services/core/updater');
+        const updateData = await checkForUpdates();
+        if (updateData) {
+          setUpdateAvailable(updateData);
+        }
+      } catch (err) {
+        console.warn('[App] Update check failed:', err);
+      }
+    };
+    triggerUpdateCheck();
+    // Re-check every 30 minutes
+    const updateTimer = setInterval(triggerUpdateCheck, 30 * 60 * 1000);
+    return () => clearInterval(updateTimer);
+  }, []);
+
   const friendActivityItems = useMemo(() => {
     const groupedActivity = new Map<string, any>();
     const LIVE_THRESHOLD = 45 * 1000;
@@ -1615,6 +1635,8 @@ export default function App() {
                       showVersionHistory={showVersionHistory}
                       onShowVersionHistoryChange={setShowVersionHistory}
                       onMovieClick={handleMovieClick}
+                      updateAvailable={updateAvailable}
+                      onClearUpdate={() => setUpdateAvailable(null)}
                     />
                   </div>
                 </div>
@@ -1632,7 +1654,7 @@ export default function App() {
                 </div>
               )}
 
-              <BottomNav currentView={currentView} onNavClick={handleNavClick} onSearchOpen={handleSearchOpen} activeProfile={activeProfile} />
+              <BottomNav currentView={currentView} onNavClick={handleNavClick} onSearchOpen={handleSearchOpen} activeProfile={activeProfile} hasUpdate={!!updateAvailable} />
                 </div>
 
 

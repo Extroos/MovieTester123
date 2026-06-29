@@ -11,6 +11,7 @@ interface BottomNavProps {
   onNavClick: (view: View) => void;
   onSearchOpen?: () => void;
   activeProfile?: any;
+  hasUpdate?: boolean;
 }
 
 const navItems = [
@@ -41,7 +42,7 @@ const navItems = [
   }
 ];
 
-const BottomNav = React.memo(function BottomNav({ currentView, onNavClick }: BottomNavProps) {
+const BottomNav = React.memo(function BottomNav({ currentView, onNavClick, hasUpdate }: BottomNavProps) {
   const handleNavClick = (view: View) => {
     setTimeout(() => triggerHaptic('light'), 0);
     onNavClick(view);
@@ -116,8 +117,22 @@ const BottomNav = React.memo(function BottomNav({ currentView, onNavClick }: Bot
                 transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                 transform: isActive ? 'scale(1.15)' : 'scale(1)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
+                position: 'relative'
               }}>
                 {item.icon(isActive)}
+                {item.id === 'settings' && hasUpdate && (
+                  <span style={{
+                    position: 'absolute',
+                    top: '-2px',
+                    right: '-2px',
+                    width: '9px',
+                    height: '9px',
+                    borderRadius: '50%',
+                    backgroundColor: '#007aff',
+                    border: '1.5px solid rgba(12, 12, 12, 1)',
+                    boxShadow: '0 0 8px rgba(0, 122, 255, 0.6)'
+                  }} />
+                )}
               </div>
               <span style={{
                 fontSize: '10px',

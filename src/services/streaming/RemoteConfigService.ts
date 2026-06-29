@@ -171,6 +171,25 @@ export async function refreshRemoteConfig(): Promise<RemoteConfig> {
   return fetchRemoteConfig();
 }
 
+export interface RemoteServerOption {
+  id: string;
+  name: string;
+  description: string;
+  badge: string;
+  isAdFree: boolean;
+}
+
+/**
+ * Returns the list of servers from OTA config.
+ * If not set in config, returns null.
+ */
+export async function getRemoteServers(): Promise<RemoteServerOption[] | null> {
+  const config = await getRemoteConfig();
+  const list = config?.servers;
+  if (Array.isArray(list) && list.length > 0) return list as RemoteServerOption[];
+  return null;
+}
+
 /**
  * Returns the list of enabled server IDs from OTA config.
  * If not set in config, returns null (caller should show all servers).
@@ -183,6 +202,11 @@ export async function getEnabledServers(): Promise<string[] | null> {
   const config = await getRemoteConfig();
   const list = config?.enabled_servers;
   if (Array.isArray(list) && list.length > 0) return list as string[];
+  // If we have dynamic servers array but not enabled_servers, return the IDs of those servers
+  const servers = config?.servers;
+  if (Array.isArray(servers) && servers.length > 0) {
+    return servers.map((s: any) => s.id);
+  }
   return null; // null = show all (safe fallback)
 }
 

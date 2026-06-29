@@ -495,19 +495,78 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
     }
   }
 
-  // Handle explicit vidsrc-pm request
+  // Handle explicit vidsrc-pm request — direct JSON API call to streamdata.vaplayer.ru
   if (server === 'vidsrc-pm') {
     try {
-      const pythonUrl = type === 'tv'
-        ? `http://localhost:8000/vidsrc-pm/tv/${tmdbId}/${season}/${episode}`
-        : `http://localhost:8000/vidsrc-pm/movie/${tmdbId}`;
-      const res2 = await fetch(pythonUrl);
-      if (!res2.ok) {
-        throw new Error(`Python vidsrc-pm API returned status ${res2.status}`);
+      const pmReferer = 'https://brightpathsignals.com/';
+      const pmOrigin  = 'https://brightpathsignals.com';
+      const pmUrl = type === 'tv'
+        ? `https://streamdata.vaplayer.ru/api.php?tmdb=${tmdbId}&type=tv&season=${season}&episode=${episode}`
+        : `https://streamdata.vaplayer.ru/api.php?tmdb=${tmdbId}&type=movie`;
+
+      console.log(`[Server] Resolving VidSrc PM for TMDB-${tmdbId} (${type}): ${pmUrl}`);
+
+      const pyProxy = `http://localhost:8000/local-proxy?url=${encodeURIComponent(pmUrl)}&referer=${encodeURIComponent(pmReferer)}&origin=${encodeURIComponent(pmOrigin)}`;
+      const pmRes = await axios.get(pyProxy, { responseType: 'text', timeout: 20000, validateStatus: () => true });
+      const rawText = typeof pmRes.data === 'string' ? pmRes.data : JSON.stringify(pmRes.data);
+      const apiData = JSON.parse(rawText);
+
+      const statusCode = apiData?.status_code;
+      if (statusCode !== 200 && statusCode !== '200') {
+        throw new Error(`VidSrc PM returned status_code=${statusCode}`);
       }
-      const result = await res2.json();
-      return res.json(rewriteLocalhostUrls(result, req));
+
+      const streamData  = apiData?.data || {};
+      const streamUrls  = streamData?.stream_urls || [];
+      if (streamUrls.length === 0) {
+        throw new Error('VidSrc PM returned empty stream_urls');
+      }
+
+      // Use only first adaptive master — CDN mirrors are duplicates
+      const sources = [{
+        url: `http://localhost:8000/local-proxy?url=${encodeURIComponent(streamUrls[0])}&referer=${encodeURIComponent(pmReferer)}&origin=${encodeURIComponent(pmOrigin)}`,
+        quality: 'auto',
+        isM3U8: true
+      }];
+
+      const subtitles = [];
+      const subsList = apiData?.default_subs || streamData?.default_subs || [];
+      for (const sub of subsList) {
+        const subUrl = sub.url || sub.file;
+        if (subUrl) {
+          const localPort = process.env.PORT || 3001;
+          const resolvedSubUrl = subUrl.includes('.zip')
+            ? `http://localhost:${localPort}/movies/yts-subtitles/download?link=${encodeURIComponent(subUrl)}`
+            : `http://localhost:${localPort}/subtitles/convert?url=${encodeURIComponent(subUrl)}`;
+          subtitles.push({ url: resolvedSubUrl, lang: sub.lang || sub.label || 'English' });
+        }
+      }
+
+      console.log(`[Server] VidSrc PM resolved: ${sources.length} source(s), ${subtitles.length} subtitle(s)`);
+      return res.json(rewriteLocalhostUrls({ sources, subtitles }, req));
     } catch (err) {
+      console.error(`[Server] VidSrc PM resolution failed:`, err.message, "trying fallback...");
+      try {
+        const isTv = type === 'tv';
+        const decrypted = await getWtfStreamUrl(tmdbId, 'wtf-1', null, isTv, season, episode);
+        if (decrypted && decrypted.ok && decrypted.data?.stream?.url) {
+          const streamUrl = decrypted.data.stream.url;
+          const refererUrl = `https://vidsrc.wtf/`;
+          const originUrl = 'https://vidsrc.wtf';
+          const proxiedUrl = `http://localhost:8000/local-proxy?url=${encodeURIComponent(streamUrl)}&referer=${encodeURIComponent(refererUrl)}&origin=${encodeURIComponent(originUrl)}`;
+          console.log("[Server] VidSrc PM successfully fell back to WTF-1");
+          return res.json(rewriteLocalhostUrls({
+            sources: [{
+              url: proxiedUrl,
+              quality: 'auto',
+              isM3U8: true
+            }],
+            subtitles: []
+          }, req));
+        }
+      } catch (fbErr) {
+        console.error(`[Server] VidSrc PM fallback also failed:`, fbErr.message);
+      }
       return res.status(500).json({ error: `vidsrc-pm failed: ${err.message}` });
     }
   }

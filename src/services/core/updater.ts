@@ -8,7 +8,7 @@ interface VersionInfo {
   forceUpdate?: boolean;
 }
 
-export const APP_VERSION = '0.1.15';
+export const APP_VERSION = '0.7.0';
 export const UPDATE_MANIFEST_URL = 'https://raw.githubusercontent.com/Extroos/CineMovie/main/version.json';
 
 export async function checkForUpdates(): Promise<VersionInfo | null> {
@@ -134,19 +134,16 @@ function blobToBase64(blob: Blob): Promise<string> {
 }
 
 async function installApk(fileUri: string): Promise<void> {
-  // Use Capacitor App plugin to open the APK with Android's package installer
+  // Use Capacitor NativeStreamingEngine plugin to open the APK natively with package installer
   try {
-    const { App } = await import('@capacitor/app');
-    
-    // For Android, we need to use an intent to install
-    // The FileOpener plugin or custom native code would be ideal here
+    const { registerPlugin } = await import('@capacitor/core');
+    const NativeStreamingEngine = registerPlugin<any>('NativeStreamingEngine');
+    await NativeStreamingEngine.installApk({ fileUri });
+  } catch (e) {
+    console.error('Native APK installer call failed:', e);
     // Fallback: Use the Browser to open the file URI
     const { Browser } = await import('@capacitor/browser');
     await Browser.open({ url: fileUri });
-  } catch (e) {
-    // Last resort: Try direct intent via window.location
-    // This works on some Android WebViews
-    window.location.href = fileUri;
   }
 }
 

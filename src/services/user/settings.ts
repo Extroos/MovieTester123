@@ -12,6 +12,7 @@ export interface AppSettings {
   subtitleBgOpacity: number;
   mirrorPriority: 'local' | 'online';
   appLanguage: 'en' | 'fr' | 'es' | 'de' | 'it' | 'pt' | 'ru';
+  preferredAudioLanguage: string;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -28,6 +29,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   subtitleBgOpacity: 0.3,
   mirrorPriority: 'online',
   appLanguage: 'en',
+  preferredAudioLanguage: 'English',
 };
 
 const STORAGE_KEY = 'watchmovie_settings_v1';

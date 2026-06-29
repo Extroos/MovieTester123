@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Capacitor, registerPlugin } from '@capacitor/core';
+const NativeStreamingEngine = registerPlugin<any>('NativeStreamingEngine');
 
 interface UsePlayerGesturesProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
@@ -141,7 +143,11 @@ export function usePlayerGestures({
       return Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
     };
 
-    const handleNativeTouchStart = (e: TouchEvent) => {
+    // Cache state to prevent UI re-render lag and teleporting glitches
+    let lastVolumeVal = startVolumeRef.current;
+    let lastBrightnessVal = startBrightnessRef.current;
+
+    const handleNativeTouchStart = async (e: TouchEvent) => {
       lastTouchTimeRef.current = Date.now();
 
       const target = e.target as HTMLElement;
@@ -175,12 +181,28 @@ export function usePlayerGestures({
       const touch = e.touches[0];
       startXRef.current = touch.clientX;
       startYRef.current = touch.clientY;
-      startBrightnessRef.current = brightnessRef.current;
 
-      // FIX: Always read the live video element volume at touchstart.
-      // This prevents stale-ref bugs where the video reloads (server switch) 
-      // and resets its volume but the React state hasn't caught up yet.
-      startVolumeRef.current = videoRef.current ? videoRef.current.volume : 1;
+      // Query native system levels to keep UI fully in sync
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const volRes = await NativeStreamingEngine.getDeviceVolume();
+          startVolumeRef.current = volRes.volume;
+        } catch (_) {
+          startVolumeRef.current = videoRef.current ? videoRef.current.volume : 1;
+        }
+        try {
+          const briRes = await NativeStreamingEngine.getDeviceBrightness();
+          startBrightnessRef.current = briRes.brightness;
+        } catch (_) {
+          startBrightnessRef.current = brightnessRef.current;
+        }
+      } else {
+        startVolumeRef.current = videoRef.current ? videoRef.current.volume : 1;
+        startBrightnessRef.current = brightnessRef.current;
+      }
+
+      lastVolumeVal = startVolumeRef.current;
+      lastBrightnessVal = startBrightnessRef.current;
       
       touchTypeRef.current = 'tap';
     };
@@ -244,22 +266,30 @@ export function usePlayerGestures({
       } 
       else if (touchTypeRef.current === 'swipe_y') {
         if (e.cancelable) e.preventDefault();
-        // Use 60% of height for full range (more responsive than 50%)
         const dragFraction = deltaY / (containerHeight * 0.6);
         const isLeft = startXRef.current < containerWidth / 2;
 
         if (isLeft) {
-          // Brightness: apply delta from the brightness at touchstart
           const nextBrightness = Math.max(0.0, Math.min(1.0, startBrightnessRef.current + dragFraction));
-          setBrightness(nextBrightness);
+          if (Math.abs(nextBrightness - lastBrightnessVal) >= 0.01) {
+            lastBrightnessVal = nextBrightness;
+            setBrightness(nextBrightness);
+            if (Capacitor.isNativePlatform()) {
+              NativeStreamingEngine.setDeviceBrightness({ brightness: nextBrightness }).catch(() => {});
+            }
+          }
           setActiveSlider('brightness');
         } else {
-          // Volume: apply delta from the LIVE video volume at touchstart
-          // startVolumeRef is always set fresh at touchstart from videoRef.current.volume
           const nextVolume = Math.max(0.0, Math.min(1.0, startVolumeRef.current + dragFraction));
-          setVolume(nextVolume);
-          if (videoRef.current) {
-            videoRef.current.volume = nextVolume;
+          if (Math.abs(nextVolume - lastVolumeVal) >= 0.01) {
+            lastVolumeVal = nextVolume;
+            setVolume(nextVolume);
+            if (videoRef.current) {
+              videoRef.current.volume = nextVolume;
+            }
+            if (Capacitor.isNativePlatform()) {
+              NativeStreamingEngine.setDeviceVolume({ volume: nextVolume }).catch(() => {});
+            }
           }
           setActiveSlider('volume');
         }

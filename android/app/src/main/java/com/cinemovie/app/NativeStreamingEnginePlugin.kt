@@ -49,23 +49,28 @@ class NativeStreamingEnginePlugin : Plugin() {
     private var proxyRunning = false
     private var proxyPort = 8000
     private val ENABLE_REMOTE_OTA = false
+    // Track which CDN domains have already had Cloudflare warmed up this session
+    private val cfWarmedDomains = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
     private val defaultConfigJson = """
     {
       "gateways": {
         "vidlink": "https://vidlink.pro",
         "cloudnestra": "https://cloudnestra.com",
+        "vidsrc_pm": "https://streamdata.vaplayer.ru",
         "vidsrc_wtf": "https://vidsrc.wtf",
         "vidsrc_sbs": "https://vidsrc.sbs",
         "vidsrc_pk": "https://embed.vidsrc.pk",
         "vidsrc_fyi": "https://vidsrc.fyi"
       },
       "embed_urls": {
-        "vidsrc_to_movie": "https://vidsrc.to/embed/movie/",
-        "vidsrc_to_tv": "https://vidsrc.to/embed/tv/",
+        "vidsrc_pm_gateways": [
+          "https://streamdata.vaplayer.ru",
+          "https://streamdata2.vaplayer.ru"
+        ],
+        "vidsrc_pm_fallback": "https://streamdata.vaplayer.ru/api.php?tmdb={id}&type={type}{tv_params}",
         "vidsrc_pm_movie": "https://streamdata.vaplayer.ru/api.php?tmdb={id}&type=movie",
         "vidsrc_pm_tv": "https://streamdata.vaplayer.ru/api.php?tmdb={id}&type=tv&season={season}&episode={episode}",
-        "vidsrc_pm_fallback": "https://streamdata.vaplayer.ru/api.php?{param}={id}&type={type}{tv_params}",
         "vidlink_gateways": [
           "https://vidlink.pro",
           "https://vidlink.me",
@@ -89,6 +94,8 @@ class NativeStreamingEnginePlugin : Plugin() {
       "headers": {
         "vidlink_referer": "https://vidlink.pro/",
         "vidlink_origin": "https://vidlink.pro",
+        "vidsrc_pm_referer": "https://brightpathsignals.com/",
+        "vidsrc_pm_origin": "https://brightpathsignals.com",
         "cloudnestra_referer": "https://cloudnestra.com/",
         "cloudnestra_origin": "https://cloudnestra.com",
         "vidsrc_wtf_referer": "https://vidsrc.wtf/",
@@ -189,6 +196,94 @@ class NativeStreamingEnginePlugin : Plugin() {
         loadOtaConfig()
     }
 
+    /**
+     * Opens a hidden WebView on the UI thread pointing at [cdnBaseUrl] so that Android's
+     * WebKit engine can solve the Cloudflare JS challenge for that domain.  Once the page
+     * finishes loading we wait an extra 4 seconds for the CF challenge JS to complete and
+     * flush the resulting `cf_clearance` cookie into the shared CookieManager.  Our local
+     * proxy already forwards CookieManager cookies on every request, so all subsequent
+     * segment fetches for this domain will pass Cloudflare.
+     */
+    /** Returns true if the URL belongs to a VidSrc PM CDN that uses token-auth (not CF cookies). */
+    private fun isVidsrcPmCdnUrl(url: String): Boolean {
+        return url.contains("smartbusinessframework.site") ||
+               url.contains("lifestylefreedomlab.site") ||
+               url.contains("highperformancebrands.site") ||
+               url.contains("quietmidnightgardeningideas") ||
+               url.contains("creativeautomationlab.site") ||
+               url.contains("smartincomeplaybook.site") ||
+               url.contains("brightpathsignals.com") ||
+               url.contains("/content/") ||
+               url.contains("/pl/") ||
+               url.contains("/playlist/") ||
+               url.contains("/mbzqN9iiy/") ||
+               url.contains("/WnVM9YFN1/")
+    }
+
+    private fun warmUpCdnDomain(cdnUrl: String) {
+        try {
+            // VidSrc PM CDN domains use token-based auth — no CF cookie needed.
+            // Skip the warmup entirely to avoid the 20-second blocking wait.
+            if (isVidsrcPmCdnUrl(cdnUrl)) {
+                addLog("[CF] Skipping warmup for VidSrc PM CDN (token-auth): $cdnUrl")
+                return
+            }
+            val cdnUri = java.net.URI(cdnUrl)
+            val cdnBase = "${cdnUri.scheme}://${cdnUri.host}"
+            if (cfWarmedDomains.contains(cdnBase)) {
+                addLog("[CF] $cdnBase already warmed up this session, skipping")
+                return
+            }
+            addLog("[CF] Starting Cloudflare WebView warmup for $cdnBase …")
+            val latch = java.util.concurrent.CountDownLatch(1)
+
+            activity.runOnUiThread {
+                try {
+                    val wv = android.webkit.WebView(activity)
+                    wv.settings.javaScriptEnabled = true
+                    wv.settings.domStorageEnabled = true
+                    wv.settings.databaseEnabled = true
+                    wv.settings.userAgentString = "Mozilla/5.0 (Linux; Android 13; SM-S901B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+
+                    wv.webViewClient = object : android.webkit.WebViewClient() {
+                        private var released = false
+                        private fun release(view: android.webkit.WebView?) {
+                            if (released) return
+                            released = true
+                            // Give the Cloudflare JS challenge 4 more seconds to complete
+                            view?.postDelayed({
+                                android.webkit.CookieManager.getInstance().flush()
+                                val cookies = android.webkit.CookieManager.getInstance().getCookie(cdnBase)
+                                addLog("[CF] Warmup done for $cdnBase. Cookie snippet: ${cookies?.take(120)}")
+                                cfWarmedDomains.add(cdnBase)
+                                latch.countDown()
+                            }, 4000L)
+                        }
+                        override fun onPageFinished(view: android.webkit.WebView?, url: String?) = release(view)
+                        override fun onReceivedError(
+                            view: android.webkit.WebView?,
+                            request: android.webkit.WebResourceRequest?,
+                            error: android.webkit.WebResourceError?
+                        ) {
+                            addLog("[CF] WebView error for $cdnBase: ${error?.description}")
+                            release(view)
+                        }
+                    }
+                    wv.loadUrl("$cdnBase/")
+                } catch (e: Exception) {
+                    addLog("[CF] WebView warmup init failed: ${e.message}")
+                    latch.countDown()
+                }
+            }
+
+            // Block this coroutine (IO dispatcher) up to 8 seconds (reduced from 20s)
+            val solved = latch.await(8, java.util.concurrent.TimeUnit.SECONDS)
+            if (!solved) addLog("[CF] Warmup timed out for $cdnBase — will try anyway")
+        } catch (e: Exception) {
+            addLog("[CF] warmUpCdnDomain error: ${e.message}")
+        }
+    }
+
     @PluginMethod
     fun updateOtaConfig(call: PluginCall) {
         val url = call.getString("url")
@@ -248,6 +343,7 @@ class NativeStreamingEnginePlugin : Plugin() {
         try {
             val reader = java.io.BufferedReader(java.io.InputStreamReader(socket.getInputStream()))
             val firstLine = reader.readLine() ?: return socket.close()
+            addLog("[Proxy] Request: $firstLine")
             val parts = firstLine.split(" ")
             if (parts.size < 2) {
                 socket.close()
@@ -345,6 +441,8 @@ class NativeStreamingEnginePlugin : Plugin() {
                     "https://vidsrc.sbs/"
                 } else if (targetUrlStr.contains("vidsrc.pk")) {
                     "https://embed.vidsrc.pk/"
+                } else if (targetUrlStr.contains("creativeautomationlab.site") || targetUrlStr.contains("brightpathsignals.com")) {
+                    "https://brightpathsignals.com/"
                 } else if (targetUrlStr.contains("vidsrc")) {
                     "https://vidsrc.me/"
                 } else {
@@ -363,6 +461,8 @@ class NativeStreamingEnginePlugin : Plugin() {
                     "https://vidsrc.sbs"
                 } else if (targetUrlStr.contains("vidsrc.pk")) {
                     "https://embed.vidsrc.pk"
+                } else if (targetUrlStr.contains("creativeautomationlab.site") || targetUrlStr.contains("brightpathsignals.com")) {
+                    "https://brightpathsignals.com"
                 } else if (targetUrlStr.contains("vidsrc")) {
                     "https://vidsrc.me"
                 } else {
@@ -375,12 +475,22 @@ class NativeStreamingEnginePlugin : Plugin() {
                 targetUrlStr.contains("lifestylefreedomlab.site") ||
                 targetUrlStr.contains("highperformancebrands.site") ||
                 targetUrlStr.contains("quietmidnightgardeningideas") ||
+                targetUrlStr.contains("creativeautomationlab.site") ||
+                targetUrlStr.contains("brightpathsignals.com") ||
                 targetUrlStr.contains("/mbzqN9iiy/") ||
                 targetUrlStr.contains("/content/") ||
                 targetUrlStr.contains("/pl/") ||
                 targetUrlStr.contains("/playlist/") ||
                 targetUrlStr.contains("/WnVM9YFN1/")
             )
+
+            // CRITICAL: Strip Referer & Origin for VidSrc PM CDN domains — they reject any
+            // cross-origin headers with 403. The flag was previously computed but never applied.
+            if (isVidsrcPmCdn) {
+                refToUse = ""
+                origToUse = ""
+                addLog("[Proxy] VidSrc PM CDN detected — stripping Referer/Origin headers for $targetUrlStr")
+            }
 
             var rangeHeader: String? = null
             var line: String?
@@ -390,6 +500,38 @@ class NativeStreamingEnginePlugin : Plugin() {
                     rangeHeader = line!!.substring(6).trim()
                 }
             }
+
+            // Clean up duplicate and empty query parameters (especially token=)
+            try {
+                val questionMarkIdx = targetUrlStr.indexOf("?")
+                if (questionMarkIdx >= 0) {
+                    val base = targetUrlStr.substring(0, questionMarkIdx)
+                    val query = targetUrlStr.substring(questionMarkIdx + 1)
+                    val params = query.split("&", "?")
+                    val seenKeys = mutableSetOf<String>()
+                    val cleanQueryParts = mutableListOf<String>()
+                    for (param in params) {
+                        val eqIdx = param.indexOf("=")
+                        val key = if (eqIdx >= 0) param.substring(0, eqIdx) else param
+                        val value = if (eqIdx >= 0) param.substring(eqIdx + 1) else ""
+                        // Skip duplicates AND skip params with empty values (e.g. token=)
+                        if (key.isNotEmpty() && value.isNotEmpty() && !seenKeys.contains(key)) {
+                            seenKeys.add(key)
+                            cleanQueryParts.add(param)
+                        } else if (key.isNotEmpty() && value.isNotEmpty()) {
+                            // Already added this key, skip
+                        } else if (key.isNotEmpty() && !seenKeys.contains(key) && value.isEmpty()) {
+                            // Empty-value param: skip it entirely (avoids token= causing 403)
+                            addLog("[Proxy] Stripping empty param '$key=' from URL")
+                        }
+                    }
+                    targetUrlStr = if (cleanQueryParts.isNotEmpty()) {
+                        base + "?" + cleanQueryParts.joinToString("&")
+                    } else {
+                        base
+                    }
+                }
+            } catch (e: Exception) {}
 
             val targetUrl = java.net.URL(targetUrlStr)
             conn = targetUrl.openConnection() as java.net.HttpURLConnection
@@ -424,6 +566,7 @@ class NativeStreamingEnginePlugin : Plugin() {
 
             conn.connect()
             val responseCode = conn.responseCode
+            addLog("[Proxy] CDN Response: $responseCode for $targetUrlStr")
             val contentType = conn.contentType ?: "application/octet-stream"
             val contentLength = conn.contentLength
 
@@ -431,9 +574,18 @@ class NativeStreamingEnginePlugin : Plugin() {
             var bodyBytes: ByteArray? = null
             
             val stream = if (responseCode in 200..299) conn.inputStream else conn.errorStream
+            // Log 403/non-200 error bodies to diagnose CDN auth failures
+            if (responseCode == 403 || responseCode == 401) {
+                try {
+                    val errBody = conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                    addLog("[Proxy] 403 error body (first 300): ${errBody?.take(300)}")
+                } catch (ignored: Exception) {}
+            }
             if (stream != null) {
                 if (isM3U8 && responseCode in 200..299) {
                     val m3u8Content = stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                    // Log first 800 chars of M3U8 for debugging segment URL format
+                    addLog("[Proxy] M3U8 content (first 800): ${m3u8Content.take(800)}")
                     val lines = m3u8Content.split("\n")
                     val rewritten = StringBuilder()
                     for (line in lines) {
@@ -471,6 +623,20 @@ class NativeStreamingEnginePlugin : Plugin() {
                             }
                         } else if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
                             val absUrl = "${lastProxyScheme}://${lastProxyHost}${trimmed}"
+                            rewritten.append("http://localhost:$proxyPort/local-proxy?url=")
+                                     .append(java.net.URLEncoder.encode(absUrl, "UTF-8"))
+                                     .append("&referer=")
+                                     .append(java.net.URLEncoder.encode(referer, "UTF-8"))
+                                     .append("&origin=")
+                                     .append(java.net.URLEncoder.encode(origin, "UTF-8"))
+                                     .append("\n")
+                        } else if (trimmed.isNotEmpty() && !trimmed.startsWith("#")) {
+                            val lastSlash = targetUrlStr.lastIndexOf('/')
+                            val baseUrl = if (lastSlash >= 0) targetUrlStr.substring(0, lastSlash + 1) else ""
+                            var absUrl = baseUrl + trimmed
+                            try {
+                                absUrl = java.net.URI(absUrl).normalize().toString()
+                            } catch (e: Exception) {}
                             rewritten.append("http://localhost:$proxyPort/local-proxy?url=")
                                      .append(java.net.URLEncoder.encode(absUrl, "UTF-8"))
                                      .append("&referer=")
@@ -551,129 +717,162 @@ class NativeStreamingEnginePlugin : Plugin() {
 
     @PluginMethod
     fun resolveStreams(call: PluginCall) {
+        call.reject("Sniffing is disabled. Only Vidlink and VidSrc PM are supported.")
+    }
+
+    @PluginMethod
+    fun resolveVidsrcPm(call: PluginCall) {
         val tmdbId = call.getString("tmdbId") ?: return call.reject("Missing tmdbId")
         val imdbId = call.getString("imdbId") ?: ""
         val type = call.getString("type") ?: "movie"
         val season = call.getInt("season") ?: 1
         val episode = call.getInt("episode") ?: 1
-        val server = call.getString("server") ?: "test-server"
-
         val isTv = type == "tv"
-        val embedUrls = remoteConfig.optJSONObject("embed_urls") ?: org.json.JSONObject()
-        val gateways = remoteConfig.optJSONObject("gateways") ?: org.json.JSONObject()
 
-        // Dynamically resolve base URL matching the selected server
-        val serverBaseUrl = when (server) {
-            "vidsrc-sbs" -> gateways.optString("vidsrc_sbs", "https://vidsrc.sbs")
-            "vidsrc-pk"  -> gateways.optString("vidsrc_pk", "https://embed.vidsrc.pk")
-            "vidsrc-fyi" -> gateways.optString("vidsrc_fyi", "https://vidsrc.fyi")
-            "vidsrc-wtf-2" -> gateways.optString("vidsrc_wtf", "https://vidsrc.wtf")
-            else -> {
-                val movieBase = embedUrls.optString("vidsrc_to_movie", "https://vidsrc.to/embed/movie/")
-                if (movieBase.contains("/embed/")) movieBase.substringBefore("/embed/") else "https://vidsrc.to"
-            }
-        }.replace(Regex("/$"), "")
+        addLog("[VidsrcPM] Starting native resolution for $tmdbId ($type)")
+        scope.launch {
+            try {
+                // 1. Read OTA config for endpoint gateways and headers
+                val embedConfig = remoteConfig.optJSONObject("embed_urls") ?: org.json.JSONObject()
+                val headersConfig = remoteConfig.optJSONObject("headers") ?: org.json.JSONObject()
 
-        val targetUrl = if (isTv) {
-            "$serverBaseUrl/embed/tv/$tmdbId/$season/$episode"
-        } else {
-            "$serverBaseUrl/embed/movie/$tmdbId"
-        }
+                val referer = headersConfig.optString("vidsrc_pm_referer", "https://brightpathsignals.com/")
+                val origin  = headersConfig.optString("vidsrc_pm_origin",  "https://brightpathsignals.com")
 
-        val patternsArr = remoteConfig.optJSONArray("stream_patterns")
-        val patterns = mutableListOf<String>()
-        if (patternsArr != null) {
-            for (i in 0 until patternsArr.length()) {
-                patterns.add(patternsArr.getString(i))
-            }
-        }
-        if (patterns.isEmpty()) {
-            patterns.add(".m3u8")
-            patterns.add(".mp4")
-            patterns.add("filemoon")
-        }
-
-        addLog("[Engine] resolveStreams started with BackgroundRequestObserver targeting: $targetUrl")
-
-        val currentActivity = activity
-        if (currentActivity == null) {
-            call.reject("Activity context is not available")
-            return
-        }
-
-        val observer = BackgroundRequestObserver(currentActivity)
-        observer.startObservation(targetUrl, patterns, object : BackgroundRequestObserver.ObserverListener {
-            override fun onResourceIntercepted(url: String) {
-                addLog("[Engine] BackgroundRequestObserver intercepted resource: $url")
-                scope.launch {
-                    val subtitles = try {
-                        val imdbIdResolved = if (imdbId.isNotEmpty()) imdbId else fetchImdbId(tmdbId, isTv)
-                        if (imdbIdResolved != null) scrapeYtsSubtitles(imdbIdResolved) else JSArray()
-                    } catch (e: Exception) {
-                        JSArray()
+                // Build ordered gateway list from OTA config; fall back to hardcoded defaults
+                val gateways = mutableListOf<String>()
+                val gatewaysArr = embedConfig.optJSONArray("vidsrc_pm_gateways")
+                if (gatewaysArr != null) {
+                    for (i in 0 until gatewaysArr.length()) {
+                        gateways.add(gatewaysArr.getString(i))
                     }
-
-                    // Wrap resolved stream inside local proxy to bypass CORS/referer validation
-                    val proxiedUrl = "http://localhost:$proxyPort/local-proxy?url=${java.net.URLEncoder.encode(url, "UTF-8")}&referer=${java.net.URLEncoder.encode("$serverBaseUrl/", "UTF-8")}&origin=${java.net.URLEncoder.encode(serverBaseUrl, "UTF-8")}"
-
-                    // Feed straight into native ExoPlayer / Video View playback pipeline
-                    val intent = Intent(context, MoviePlayerActivity::class.java).apply {
-                        putExtra("source_url", proxiedUrl)
-                        val headersObj = JSObject().apply {
-                            put("Referer", "$serverBaseUrl/")
-                            put("Origin", serverBaseUrl)
-                        }
-                        putExtra("headers", headersObj.toString())
-                        putExtra("subtitles", subtitles.toString())
-                        putExtra("title", "CineMovie Native Playback")
-                        putExtra("queue", JSArray().toString())
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(intent)
-
-                    val response = JSObject().apply {
-                        val sourcesArr = JSArray().put(JSObject().apply {
-                            put("url", proxiedUrl)
-                            put("quality", "auto")
-                            put("isM3U8", url.contains(".m3u8"))
-                            put("headers", JSObject().apply {
-                                put("Referer", "$serverBaseUrl/")
-                            })
-                        })
-                        put("sources", sourcesArr)
-                        put("subtitles", subtitles)
-                        put("errors", JSArray())
-                    }
-                    call.resolve(response)
                 }
-            }
+                if (gateways.isEmpty()) {
+                    gateways.add("https://streamdata.vaplayer.ru")
+                    gateways.add("https://streamdata2.vaplayer.ru")
+                }
 
-            override fun onTimeout() {
-                addLog("[Engine] BackgroundRequestObserver timed out. Gracefully cascading to standard VidSrc PM API fallback...")
-                scope.launch {
+                // 2. Try each gateway until one succeeds
+                var resolvedData: org.json.JSONObject? = null
+                var lastError = ""
+
+                for (gw in gateways) {
+                    val apiUrl = if (isTv) {
+                        "$gw/api.php?tmdb=$tmdbId&type=tv&season=$season&episode=$episode"
+                    } else {
+                        "$gw/api.php?tmdb=$tmdbId&type=movie"
+                    }
+                    addLog("[VidsrcPM] Trying gateway: $apiUrl")
                     try {
-                        val vidsrcRes = resolveVidsrcTo(tmdbId, isTv, season, episode, imdbId)
-                        val vsSources = vidsrcRes.optJSONArray("sources")
-                        val vsSubs = vidsrcRes.optJSONArray("subtitles")
-                        val vsError = vidsrcRes.optString("error", "")
-
-                        val response = JSObject().apply {
-                            put("sources", vsSources ?: JSArray())
-                            put("subtitles", vsSubs ?: JSArray())
-                            put("errors", if (vsError.isNotEmpty()) JSArray().put(vsError) else JSArray())
+                        val responseStr = proxyFetch(apiUrl, referer, origin)
+                        if (responseStr.isBlank()) {
+                            addLog("[VidsrcPM] Gateway $gw returned empty body, skipping")
+                            continue
                         }
-                        call.resolve(response)
+                        if (responseStr.trimStart().startsWith("<")) {
+                            addLog("[VidsrcPM] Gateway $gw returned HTML, skipping")
+                            continue
+                        }
+                        val parsed = org.json.JSONObject(responseStr)
+                        val statusCode = parsed.optInt("status_code", parsed.optString("status_code", "").toIntOrNull() ?: 0)
+                        if (statusCode == 200) {
+                            resolvedData = parsed
+                            addLog("[VidsrcPM] Gateway $gw succeeded")
+                            break
+                        } else {
+                            lastError = "status_code=$statusCode"
+                            addLog("[VidsrcPM] Gateway $gw returned bad status: $statusCode, skipping")
+                        }
                     } catch (e: Exception) {
-                        addLog("[Engine] Fallback failed: ${e.message}")
-                        call.reject("Resolution failed: ${e.message}", e)
+                        lastError = e.message ?: "unknown error"
+                        addLog("[VidsrcPM] Gateway $gw failed: ${e.message}")
                     }
                 }
-            }
 
-            override fun onLog(msg: String) {
-                addLog(msg)
+                if (resolvedData == null) {
+                    throw Exception("All VidSrc PM gateways failed. Last error: $lastError")
+                }
+
+                // 3. Parse response — stream_urls lives in data.stream_urls or top-level
+                val streamData = resolvedData.optJSONObject("data") ?: resolvedData
+                val streamUrls = streamData.optJSONArray("stream_urls") ?: org.json.JSONArray()
+
+                if (streamUrls.length() == 0) {
+                    throw Exception("VidSrc PM returned empty stream_urls for $tmdbId")
+                }
+
+                // Only take the first adaptive master URL — multiple entries are CDN mirrors
+                val sourcesArr = JSArray()
+                val bestUrl = streamUrls.optString(0, "")
+                if (bestUrl.isNotEmpty()) {
+                    // Warm up Cloudflare for the CDN domain before trying to play
+                    // This loads the CDN base URL in a hidden WebView so the JS challenge
+                    // is solved and cf_clearance cookie is stored for our proxy to forward.
+                    try { warmUpCdnDomain(bestUrl) } catch (e: Exception) {
+                        addLog("[VidsrcPM] CF warmup error (non-fatal): ${e.message}")
+                    }
+                    sourcesArr.put(JSObject().apply {
+                        put("url", "http://localhost:$proxyPort/local-proxy?url=${java.net.URLEncoder.encode(bestUrl, "UTF-8")}&referer=${java.net.URLEncoder.encode(referer, "UTF-8")}&origin=${java.net.URLEncoder.encode(origin, "UTF-8")}")
+                        put("quality", "auto")
+                        put("isM3U8", bestUrl.contains(".m3u8"))
+                    })
+                }
+
+                if (sourcesArr.length() == 0) {
+                    throw Exception("No valid stream URL found in VidSrc PM response")
+                }
+
+                // 4. Parse subtitles from default_subs (may live in data or top-level)
+                val subsArr = JSArray()
+                val subsList = resolvedData.optJSONArray("default_subs")
+                    ?: streamData.optJSONArray("default_subs")
+                    ?: org.json.JSONArray()
+
+                for (j in 0 until subsList.length()) {
+                    val sub = subsList.optJSONObject(j) ?: continue
+                    val subUrl = sub.optString("url", sub.optString("file", ""))
+                    val subLang = sub.optString("lang", sub.optString("label", "English"))
+                    if (subUrl.isNotEmpty()) {
+                        val resolvedSubUrl = if (subUrl.endsWith(".zip") || subUrl.contains(".zip?")) {
+                            "http://localhost:$proxyPort/unzip-to-vtt?url=${java.net.URLEncoder.encode(subUrl, "UTF-8")}"
+                        } else {
+                            "http://localhost:$proxyPort/convert-to-vtt?url=${java.net.URLEncoder.encode(subUrl, "UTF-8")}"
+                        }
+                        subsArr.put(JSObject().apply {
+                            put("url", resolvedSubUrl)
+                            put("lang", subLang)
+                        })
+                    }
+                }
+
+                // 5. Backup subtitles — YTS for movies, same PM API sub list for TV
+                try {
+                    if (!isTv) {
+                        val imdbIdResolved = if (imdbId.isNotEmpty()) imdbId else fetchImdbId(tmdbId, false)
+                        if (imdbIdResolved != null && imdbIdResolved.isNotEmpty()) {
+                            addLog("[VidsrcPM] Fetching YTS backup subtitles for IMDB: $imdbIdResolved")
+                            val ytsSubs = scrapeYtsSubtitles(imdbIdResolved)
+                            for (j in 0 until ytsSubs.length()) {
+                                subsArr.put(ytsSubs.get(j))
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    addLog("[VidsrcPM] Backup subtitle fetch failed: ${e.message}")
+                }
+
+                addLog("[VidsrcPM] Resolved: ${sourcesArr.length()} source(s), ${subsArr.length()} subtitle(s)")
+                val response = JSObject().apply {
+                    put("sources", sourcesArr)
+                    put("subtitles", subsArr)
+                    put("errors", JSArray())
+                }
+                call.resolve(response)
+            } catch (e: Exception) {
+                addLog("[VidsrcPM] Native resolution failed: ${e.message}")
+                call.reject("VidSrc PM resolution failed: ${e.message}", e)
             }
-        })
+        }
     }
 
     @PluginMethod
@@ -776,6 +975,10 @@ class NativeStreamingEnginePlugin : Plugin() {
                         // quality labels; that causes wrong URL to play when user taps a quality button.
                         val bestUrl = pmStreamUrls.optString(0, "")
                         if (bestUrl.isNotEmpty()) {
+                            // Warm up Cloudflare for the CDN domain before returning the URL
+                            try { warmUpCdnDomain(bestUrl) } catch (e: Exception) {
+                                addLog("[Vidlink] CF warmup error (non-fatal): ${e.message}")
+                            }
                             fbSourcesArr.put(JSObject().apply {
                                 put("url", "http://localhost:$proxyPort/local-proxy?url=${java.net.URLEncoder.encode(bestUrl, "UTF-8")}&referer=${java.net.URLEncoder.encode(pmReferer, "UTF-8")}&origin=${java.net.URLEncoder.encode(pmOrigin, "UTF-8")}")
                                 put("quality", "auto")
@@ -997,6 +1200,117 @@ class NativeStreamingEnginePlugin : Plugin() {
     }
 
     @PluginMethod
+    fun getDeviceVolume(call: PluginCall) {
+        activity.runOnUiThread {
+            try {
+                val audioManager = context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+                val maxVolume = audioManager.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
+                val currentVolume = audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+                val fraction = currentVolume.toFloat() / maxVolume.toFloat()
+                val res = JSObject().apply {
+                    put("volume", fraction)
+                }
+                call.resolve(res)
+            } catch (e: Exception) {
+                call.reject(e.message)
+            }
+        }
+    }
+
+    @PluginMethod
+    fun setDeviceVolume(call: PluginCall) {
+        val volumeFraction = call.getDouble("volume") ?: return call.reject("Missing volume")
+        activity.runOnUiThread {
+            try {
+                val audioManager = context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+                val maxVolume = audioManager.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
+                val targetVolume = (volumeFraction * maxVolume).toInt().coerceIn(0, maxVolume)
+                audioManager.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, targetVolume, 0)
+                call.resolve()
+            } catch (e: Exception) {
+                call.reject(e.message)
+            }
+        }
+    }
+
+    @PluginMethod
+    fun getDeviceBrightness(call: PluginCall) {
+        activity.runOnUiThread {
+            try {
+                val lp = activity.window.attributes
+                var brightness = lp.screenBrightness
+                if (brightness < 0) {
+                    // Try to read system brightness if window is using default
+                    try {
+                        val sysBacklight = android.provider.Settings.System.getInt(
+                            context.contentResolver,
+                            android.provider.Settings.System.SCREEN_BRIGHTNESS
+                        )
+                        brightness = sysBacklight.toFloat() / 255f
+                    } catch (_: Exception) {
+                        brightness = 0.5f
+                    }
+                }
+                val res = JSObject().apply {
+                    put("brightness", brightness)
+                }
+                call.resolve(res)
+            } catch (e: Exception) {
+                call.reject(e.message)
+            }
+        }
+    }
+
+    @PluginMethod
+    fun setDeviceBrightness(call: PluginCall) {
+        val brightness = call.getDouble("brightness") ?: return call.reject("Missing brightness")
+        activity.runOnUiThread {
+            try {
+                val lp = activity.window.attributes
+                lp.screenBrightness = brightness.toFloat().coerceIn(0.01f, 1.0f)
+                activity.window.attributes = lp
+                call.resolve()
+            } catch (e: Exception) {
+                call.reject(e.message)
+            }
+        }
+    }
+
+    @PluginMethod
+    fun installApk(call: PluginCall) {
+        val fileUriStr = call.getString("fileUri") ?: return call.reject("Missing fileUri")
+        activity.runOnUiThread {
+            try {
+                val uri = android.net.Uri.parse(fileUriStr)
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                
+                // If it is a file scheme, convert it via FileProvider to content:// scheme so Android Package Installer can read it
+                if (uri.scheme == "file") {
+                    val file = java.io.File(uri.path ?: "")
+                    if (file.exists()) {
+                        val contentUri = androidx.core.content.FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.fileprovider",
+                            file
+                        )
+                        intent.setDataAndType(contentUri, "application/vnd.android.package-archive")
+                    }
+                }
+                
+                context.startActivity(intent)
+                call.resolve()
+            } catch (e: Exception) {
+                addLog("[Engine] installApk error: ${e.message}")
+                call.reject(e.message)
+            }
+        }
+    }
+
+    @PluginMethod
     fun addJsLog(call: PluginCall) {
         val message = call.getString("message")
         if (message != null) {
@@ -1072,6 +1386,9 @@ class NativeStreamingEnginePlugin : Plugin() {
             targetUrl.contains("smartbusinessframework.site") ||
             targetUrl.contains("lifestylefreedomlab.site") ||
             targetUrl.contains("highperformancebrands.site") ||
+            targetUrl.contains("quietmidnightgardeningideas") ||
+            targetUrl.contains("creativeautomationlab.site") ||
+            targetUrl.contains("brightpathsignals.com") ||
             targetUrl.contains("/mbzqN9iiy/") ||
             targetUrl.contains("/WnVM9YFN1/")
         )
@@ -1098,247 +1415,11 @@ class NativeStreamingEnginePlugin : Plugin() {
     }
 
     private fun resolveVidsrcTo(tmdbId: String, isTv: Boolean, season: Int, episode: Int, explicitImdbId: String = ""): JSObject {
-        addLog("[Vidsrc] Trying Vidsrc PM API natively...")
-        val pmUrl = if (isTv) {
-            "https://streamdata.vaplayer.ru/api.php?tmdb=$tmdbId&type=tv&season=$season&episode=$episode"
-        } else {
-            "https://streamdata.vaplayer.ru/api.php?tmdb=$tmdbId&type=movie"
-        }
-        
-        try {
-            val jsonStr = proxyFetch(pmUrl, "https://brightpathsignals.com/", "https://brightpathsignals.com")
-            val dataObj = org.json.JSONObject(jsonStr)
-            val statusCode = dataObj.optString("status_code", "")
-            if (statusCode == "200") {
-                val streamData = dataObj.optJSONObject("data") ?: org.json.JSONObject()
-                val streamUrls = streamData.optJSONArray("stream_urls") ?: org.json.JSONArray()
-                if (streamUrls.length() > 0) {
-                    val sourcesArr = JSArray()
-                    for (i in 0 until streamUrls.length()) {
-                        val stream = streamUrls.getString(i)
-                        val proxiedStreamUrl = "http://localhost:$proxyPort/local-proxy?url=${java.net.URLEncoder.encode(stream, "UTF-8")}&referer=${java.net.URLEncoder.encode("https://brightpathsignals.com/", "UTF-8")}&origin=${java.net.URLEncoder.encode("https://brightpathsignals.com", "UTF-8")}"
-                        sourcesArr.put(JSObject().apply {
-                            put("url", proxiedStreamUrl)
-                            put("quality", if (i == 0) "auto" else "backup $i")
-                            put("isM3U8", true)
-                            put("headers", JSObject().apply {
-                                put("Referer", "https://brightpathsignals.com/")
-                                put("Origin", "https://brightpathsignals.com")
-                            })
-                        })
-                    }
-                    
-                    val subsArr = JSArray()
-                    val subsList = dataObj.optJSONArray("default_subs") ?: streamData.optJSONArray("default_subs") ?: org.json.JSONArray()
-                    for (i in 0 until subsList.length()) {
-                        val sub = subsList.optJSONObject(i) ?: continue
-                        val subUrl = sub.optString("url", sub.optString("file", ""))
-                        val subLang = sub.optString("lang", sub.optString("label", "English"))
-                        if (subUrl.isNotEmpty()) {
-                            val resolvedSubUrl = if (subUrl.endsWith(".zip") || subUrl.contains(".zip?")) {
-                                "http://localhost:$proxyPort/unzip-to-vtt?url=${java.net.URLEncoder.encode(subUrl, "UTF-8")}"
-                            } else {
-                                "http://localhost:$proxyPort/convert-to-vtt?url=${java.net.URLEncoder.encode(subUrl, "UTF-8")}"
-                            }
-                            subsArr.put(JSObject().apply {
-                                put("url", resolvedSubUrl)
-                                put("lang", subLang)
-                            })
-                        }
-                    }
-                    
-                    if (subsArr.length() == 0 && !isTv) {
-                        try {
-                            val imdbId = if (explicitImdbId.isNotEmpty()) explicitImdbId else fetchImdbId(tmdbId, isTv)
-                            if (imdbId != null && imdbId.isNotEmpty()) {
-                                val ytsSubs = scrapeYtsSubtitles(imdbId)
-                                for (j in 0 until ytsSubs.length()) {
-                                    subsArr.put(ytsSubs.get(j))
-                                }
-                            }
-                        } catch (_: Exception) {}
-                    }
-                    
-                    addLog("[Vidsrc] Successfully resolved via Vidsrc PM API natively: ${sourcesArr.length()} streams, ${subsArr.length()} subtitles.")
-                    return JSObject().apply {
-                        put("sources", sourcesArr)
-                        put("subtitles", subsArr)
-                    }
-                }
-            }
-        } catch (pmErr: Exception) {
-            addLog("[Vidsrc] Vidsrc PM API resolution failed: ${pmErr.message}. Falling back to vidsrc.to chain...")
-        }
-
-        addLog("[Vidsrc] Resolving vidsrc.to natively...")
-        val embedUrl = if (isTv) {
-            "https://vidsrc.to/embed/tv/$tmdbId/$season/$episode"
-        } else {
-            "https://vidsrc.to/embed/movie/$tmdbId"
-        }
-        
-        try {
-            val html1 = proxyFetch(embedUrl, "https://google.com/")
-            addLog("[Vidsrc] Fetched embed HTML successfully, size: ${html1.length}")
-            val vsembedMatch = Regex("""src="(https?://vsembed[^"]+)"""").find(html1)
-            val vsembedUrl = vsembedMatch?.groupValues?.get(1) ?: throw Exception("vsembed iframe not found")
-            addLog("[Vidsrc] Found vsembedUrl = $vsembedUrl")
-            
-            val html2 = proxyFetch(vsembedUrl, embedUrl)
-            addLog("[Vidsrc] Fetched vsembed HTML successfully, size: ${html2.length}")
-            val rcpMatch = Regex("""//([^/]+)/rcp/([A-Za-z0-9_\-=.]+)""").find(html2)
-            val rcpDomain = rcpMatch?.groupValues?.get(1) ?: throw Exception("rcp domain not found")
-            val rcpHash = rcpMatch?.groupValues?.get(2) ?: throw Exception("rcp hash not found")
-            val rcpUrl = "https://$rcpDomain/rcp/$rcpHash"
-            addLog("[Vidsrc] Found rcpDomain = $rcpDomain, rcpUrl = $rcpUrl")
-            
-            val html3 = proxyFetch(rcpUrl, vsembedUrl)
-            addLog("[Vidsrc] Fetched rcp HTML successfully, size: ${html3.length}")
-            val prorcpMatch = Regex("""src:\s*['"]\s*/prorcp/([^'"]+)['"]""", RegexOption.IGNORE_CASE).find(html3)
-            val prorcpHash = prorcpMatch?.groupValues?.get(1) ?: throw Exception("prorcp hash not found")
-            val prorcpUrl = "https://$rcpDomain/prorcp/$prorcpHash"
-            addLog("[Vidsrc] Found prorcpUrl = $prorcpUrl")
-            
-            val html4 = proxyFetch(prorcpUrl, rcpUrl)
-            addLog("[Vidsrc] Fetched prorcp HTML successfully, size: ${html4.length}")
-            val maxLen = if (html4.length > 2000) 2000 else html4.length
-            addLog("[Vidsrc] prorcp HTML content: ${html4.substring(0, maxLen)}")
-            val m3u8Match = Regex(""""(https?://[^"]+\.m3u8[^"]*)"""", RegexOption.IGNORE_CASE).find(html4)
-            val rawMatched = m3u8Match?.groupValues?.get(1) ?: throw Exception("m3u8 stream not found")
-            
-            val cleaned = rawMatched.replace(Regex("""\{v\d\}"""), rcpDomain)
-            addLog("[Vidsrc] Successfully resolved final m3u8 stream = $cleaned")
-            
-            val sourceObj = JSObject().apply {
-                put("url", cleaned)
-                put("quality", "auto")
-                put("isM3U8", true)
-                put("headers", JSObject().apply {
-                    put("Referer", rcpUrl)
-                    put("Origin", "https://$rcpDomain")
-                })
-            }
-            
-            val subtitles = try {
-                val imdbId = fetchImdbId(tmdbId, isTv)
-                if (imdbId != null) scrapeYtsSubtitles(imdbId) else JSArray()
-            } catch (_: Exception) {
-                JSArray()
-            }
-
-            return JSObject().apply {
-                put("sources", JSArray().put(sourceObj))
-                put("subtitles", subtitles)
-            }
-        } catch (e: Exception) {
-            addLog("[Vidsrc] Native parse failed: ${e.message}. Querying streamdata API fallback...")
-            try {
-                val param = if (tmdbId.startsWith("tt")) "imdb" else "tmdb"
-                val fallbackUrl = "https://streamdata.vaplayer.ru/api.php?$param=$tmdbId&type=${if (isTv) "tv" else "movie"}${if (isTv) "&season=$season&episode=$episode" else ""}"
-                val jsonStr = proxyFetch(fallbackUrl, "https://brightpathsignals.com/", "https://brightpathsignals.com")
-                val jsonObj = org.json.JSONObject(jsonStr)
-                if (jsonObj.has("status_code") && (jsonObj.optInt("status_code") == 200 || jsonObj.optString("status_code") == "200")) {
-                    val streamData = jsonObj.optJSONObject("data")
-                    val streamUrls = streamData?.optJSONArray("stream_urls")
-                    val imdbId = streamData?.optString("imdb_id")
-                    if (streamUrls != null && streamUrls.length() > 0) {
-                        val combinedSources = JSArray()
-                        for (i in 0 until streamUrls.length()) {
-                            val stream = streamUrls.getString(i)
-                            val sourceObj = JSObject().apply {
-                                put("url", stream)
-                                put("quality", if (i == 0) "auto" else "backup $i")
-                                put("isM3U8", true)
-                                put("headers", JSObject().apply {
-                                    put("Referer", "https://brightpathsignals.com/")
-                                    put("Origin", "https://brightpathsignals.com")
-                                })
-                            }
-                            combinedSources.put(sourceObj)
-                        }
-                        addLog("[Vidsrc] Fallback resolved ${combinedSources.length()} streams successfully.")
-                        val fallbackSubtitles = try {
-                            val subImdbId = imdbId ?: fetchImdbId(tmdbId, isTv)
-                            if (subImdbId != null) scrapeYtsSubtitles(subImdbId) else JSArray()
-                        } catch (_: Exception) {
-                            JSArray()
-                        }
-                        return JSObject().apply {
-                            put("sources", combinedSources)
-                            put("subtitles", fallbackSubtitles)
-                        }
-                    }
-                }
-                addLog("[Vidsrc] Fallback API empty or returned error code.")
-            } catch (fallbackErr: Exception) {
-                addLog("[Vidsrc] Fallback streamdata API failed: ${fallbackErr.message}")
-            }
-            return JSObject().apply {
-                put("sources", JSArray())
-                put("subtitles", JSArray())
-                put("error", "vidsrc.to: " + (e.message ?: "Unknown error"))
-            }
-        }
+        return JSObject()
     }
 
     private fun resolveFilemoon(tmdbId: String, isTv: Boolean, season: Int, episode: Int): JSObject {
-        addLog("[Filemoon] Resolving Filemoon natively for id: $tmdbId")
-        val filemoonEmbedUrl = if (tmdbId.startsWith("http://") || tmdbId.startsWith("https://")) {
-            tmdbId
-        } else if (isTv) {
-            "https://filemoon.to/e/$tmdbId/$season-$episode"
-        } else {
-            "https://filemoon.to/e/$tmdbId"
-        }
-        
-        try {
-            val req = Request.Builder().url(filemoonEmbedUrl).build()
-            val html = client.newCall(req).execute().body?.string() ?: throw Exception("Filemoon page empty")
-            addLog("[Filemoon] Fetched embed HTML successfully, size: ${html.length}")
-            val extractedJson = jsEngine.runExtractor("filemoon", html, filemoonEmbedUrl)
-            addLog("[Filemoon] Extracted JSON = $extractedJson")
-            val data = JSObject(extractedJson)
-            
-            if (data.has("filemoon_redirect") && !data.isNull("filemoon_redirect")) {
-                val redirectUrl = data.getString("filemoon_redirect") ?: ""
-                addLog("[Filemoon] Found redirection URL inside parent page payload: $redirectUrl. Resolving recursively...")
-                return resolveFilemoon(redirectUrl, isTv, season, episode)
-            }
-            
-            if (data.has("source_url") && !data.isNull("source_url")) {
-                val sourceObj = JSObject().apply {
-                    put("url", data.getString("source_url"))
-                    put("quality", "auto")
-                    put("isM3U8", true)
-                    put("headers", data.getJSObject("headers"))
-                }
-                addLog("[Filemoon] Successfully resolved stream url = ${data.getString("source_url")}")
-                val filemoonSubs = try {
-                    val imdbId = fetchImdbId(tmdbId, isTv)
-                    if (imdbId != null) scrapeYtsSubtitles(imdbId) else JSArray()
-                } catch (_: Exception) {
-                    JSArray()
-                }
-                return JSObject().apply {
-                    put("sources", JSArray().put(sourceObj))
-                    put("subtitles", filemoonSubs)
-                }
-            }
-        } catch (e: Exception) {
-            addLog("[Filemoon] Failed to resolve: ${e.message}")
-            return JSObject().apply {
-                put("sources", JSArray())
-                put("subtitles", JSArray())
-                put("error", "Filemoon: " + (e.message ?: "Unknown error"))
-            }
-        }
-        
-        addLog("[Filemoon] Failed: No source url found")
-        return JSObject().apply {
-            put("sources", JSArray())
-            put("subtitles", JSArray())
-            put("error", "Filemoon: No source url found")
-        }
+        return JSObject()
     }
 
     private fun fetchImdbId(tmdbId: String, isTv: Boolean): String? {

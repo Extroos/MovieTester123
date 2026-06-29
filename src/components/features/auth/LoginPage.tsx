@@ -26,6 +26,8 @@ const FALLBACK_POSTERS = [
 ];
 
 export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPosters = [] }: LoginPageProps) {
+  const isSmallHeight = typeof window !== 'undefined' && window.innerHeight <= 760;
+  const isSmallWidth = typeof window !== 'undefined' && window.innerWidth <= 380;
   const [isRegistering, setIsRegistering] = useState(false);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [email, setEmail] = useState('');
@@ -281,7 +283,7 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
               src="/cinemovie-logo.png"
               alt="Cinemovie"
               style={{
-                height: '110px',
+                height: isSmallHeight ? '80px' : '110px',
                 objectFit: 'contain',
                 filter: 'drop-shadow(0 4px 20px rgba(0,0,0,0.8))',
                 marginLeft: '-15px',
@@ -296,7 +298,7 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
             width: '100%', 
             display: 'flex', 
             flexDirection: 'column', 
-            padding: '2rem 1.5rem',
+            padding: isSmallHeight ? '1.25rem 1rem' : '2rem 1.5rem',
             borderRadius: '16px',
             background: 'transparent',
             border: 'none',
@@ -310,7 +312,7 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
               color: '#ffffff',
               fontSize: '2rem',
               fontWeight: 800,
-              marginBottom: '2.2rem',
+              marginBottom: isSmallHeight ? '1.5rem' : '2.2rem',
               textAlign: 'left',
               letterSpacing: '-0.5px'
             }}>
@@ -335,7 +337,7 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
             )}
 
             {isForgotPassword ? (
-              <form onSubmit={handleForgotPassword} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
+              <form onSubmit={handleForgotPassword} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: isSmallHeight ? '0.8rem' : '1.2rem' }}>
                 <GlassInput
                   type="email" value={email}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setEmail(e.target.value); setError(''); setMessage(''); }}
@@ -348,7 +350,7 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
                   tabIndex={0}
                   style={{
                     background: '#ffffff', color: '#000000', border: 'none',
-                    borderRadius: '8px', padding: '16px', fontSize: '1.1rem',
+                    borderRadius: '8px', padding: isSmallHeight ? '14px' : '16px', fontSize: '1.1rem',
                     fontWeight: 800, cursor: isLoading ? 'wait' : 'pointer',
                     marginTop: '1rem',
                     transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
@@ -359,9 +361,9 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
                 </button>
               </form>
             ) : (
-              <form onSubmit={handleAuth} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
+              <form onSubmit={handleAuth} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: isSmallHeight ? '0.8rem' : '1.2rem' }}>
                 <div className={`form-field-transition ${isRegistering ? 'show' : ''}`} style={{ width: '100%' }}>
-                  <div style={{ paddingBottom: '1.2rem' }}>
+                  <div style={{ paddingBottom: isSmallHeight ? '0.8rem' : '1.2rem' }}>
                     <GlassInput
                       type="text" value={name}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setName(e.target.value); setError(''); setMessage(''); }}
@@ -405,7 +407,7 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
                   tabIndex={0}
                   style={{
                     background: '#ffffff', color: '#000000', border: 'none',
-                    borderRadius: '8px', padding: '16px', fontSize: '1.1rem',
+                    borderRadius: '8px', padding: isSmallHeight ? '14px' : '16px', fontSize: '1.1rem',
                     fontWeight: 800, cursor: isLoading ? 'wait' : 'pointer',
                     marginTop: '0.5rem',
                     transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
@@ -437,7 +439,7 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
                     background: 'rgba(255, 255, 255, 0.05)',
                     border: '1px solid rgba(255, 255, 255, 0.12)',
                     borderRadius: '8px',
-                    padding: '12px 8px',
+                    padding: isSmallHeight ? '14px 8px' : '12px 8px',
                     fontSize: '0.88rem',
                     fontWeight: 700,
                     color: '#ffffff',
@@ -474,7 +476,7 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
                     fontWeight: 700,
                     fontSize: '0.88rem',
                     cursor: 'pointer',
-                    padding: '12px 8px',
+                    padding: isSmallHeight ? '14px 8px' : '12px 8px',
                     borderRadius: '8px',
                     transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
                   }}
@@ -991,6 +993,7 @@ PreviewPanel.displayName = 'PreviewPanel';
 
 function GlassInput({ type, value, onChange, placeholder, ...props }: any) {
   const [isFocused, setIsFocused] = useState(false);
+  const isSmallHeight = typeof window !== 'undefined' && window.innerHeight <= 760;
   return (
     <input
       type={type}
@@ -1003,7 +1006,7 @@ function GlassInput({ type, value, onChange, placeholder, ...props }: any) {
       tabIndex={0}
       style={{
         width: '100%',
-        padding: '16px 20px',
+        padding: isSmallHeight ? '14px 18px' : '16px 20px',
         borderRadius: '8px',
         border: isFocused ? '1px solid #ffffff' : '1px solid rgba(255, 255, 255, 0.12)',
         background: 'rgba(255, 255, 255, 0.03)',
