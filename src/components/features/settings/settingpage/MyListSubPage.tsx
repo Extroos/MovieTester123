@@ -186,124 +186,119 @@ export default function MyListSubPage({ isMobile, sectionHeaderStyle, onMovieCli
             gridTemplateColumns: isMobileSize ? 'repeat(auto-fill, minmax(105px, 1fr))' : 'repeat(auto-fill, minmax(130px, 1fr))',
             gap: isMobileSize ? '14px 10px' : '20px 16px'
           }}>
-            <AnimatePresence>
-              {filteredMovies.map((item) => {
-                if (!item) return null;
-                const isMovieItem = (item as any).title !== undefined;
-                const displayTitle = isMovieItem ? (item as any).title : (item as any).name;
-                const type = isMovieItem ? 'movie' : 'tv';
-                const statusInfo = getStatusInfo(item.status);
-                const StatusIcon = statusInfo.icon;
+            {filteredMovies.map((item) => {
+              if (!item) return null;
+              const isMovieItem = (item as any).title !== undefined;
+              const displayTitle = isMovieItem ? (item as any).title : (item as any).name;
+              const type = isMovieItem ? 'movie' : 'tv';
+              const statusInfo = getStatusInfo(item.status);
+              const StatusIcon = statusInfo.icon;
 
-                return (
-                  <motion.div
-                    key={`${item.id}-${type}`}
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{ duration: 0.2 }}
-                    onClick={() => {
-                      triggerHaptic('light');
-                      if (onMovieClick) {
-                        onMovieClick(item);
-                      } else {
-                        window.dispatchEvent(new CustomEvent('movieClick', { detail: item }));
-                      }
-                    }}
-                    style={{
-                      position: 'relative',
-                      cursor: 'pointer',
-                      borderRadius: '12px',
+              return (
+                <div
+                  key={`${item.id}-${type}`}
+                  onClick={() => {
+                    triggerHaptic('light');
+                    if (onMovieClick) {
+                      onMovieClick(item);
+                    } else {
+                      window.dispatchEvent(new CustomEvent('movieClick', { detail: item }));
+                    }
+                  }}
+                  style={{
+                    position: 'relative',
+                    cursor: 'pointer',
+                    borderRadius: '12px',
+                    overflow: 'hidden',
+                    background: 'linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.01) 100%)',
+                    border: '1px solid rgba(255,255,255,0.05)',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+                    transition: 'transform 0.15s ease, opacity 0.15s ease',
+                  }}
+                >
+                  <div style={{ position: 'relative', paddingBottom: '150%' }}>
+                    <img
+                      src={getPosterUrl(item.posterPath || (item as any).poster_path, 'medium')}
+                      alt={displayTitle}
+                      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                      loading="lazy"
+                    />
+
+                    {/* Top accent border line using status color */}
+                    <div style={{
+                      position: 'absolute', top: 0, left: 0, right: 0, height: '3px',
+                      background: statusInfo.color, zIndex: 3
+                    }} />
+
+                    {/* Status indicator pill top-left */}
+                    <div style={{
+                      position: 'absolute', top: '8px', left: '8px',
+                      background: 'rgba(0, 0, 0, 0.75)', color: statusInfo.color,
+                      padding: '3px 8px', borderRadius: '6px',
+                      fontSize: '0.62rem', fontWeight: 900,
+                      textTransform: 'uppercase', letterSpacing: '0.04em',
+                      display: 'flex', alignItems: 'center', gap: '4px',
+                      backdropFilter: 'blur(8px)',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      zIndex: 3
+                    }}>
+                      <StatusIcon size={9} strokeWidth={2.5} />
+                      <span>{statusInfo.shortLabel}</span>
+                    </div>
+
+                    {/* Media type indicator badge top-right */}
+                    <div style={{
+                      position: 'absolute', top: '8px', right: '8px',
+                      background: 'rgba(0, 0, 0, 0.75)',
+                      border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px',
+                      width: '24px', height: '24px',
+                      color: isMovieItem ? '#fca5a5' : '#a5b4fc',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      backdropFilter: 'blur(8px)',
+                      zIndex: 3
+                    }}>
+                      {isMovieItem ? <Film size={11} strokeWidth={2.5} /> : <Tv size={11} strokeWidth={2.5} />}
+                    </div>
+                  </div>
+
+                  {/* Footer Row */}
+                  <div style={{ padding: '8px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                    <h3 style={{
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      margin: 0,
                       overflow: 'hidden',
-                      background: 'linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.01) 100%)',
-                      border: '1px solid rgba(255,255,255,0.05)',
-                      boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-                    }}
-                  >
-                    <div style={{ position: 'relative', paddingBottom: '150%' }}>
-                      <img
-                        src={getPosterUrl(item.posterPath || (item as any).poster_path, 'medium')}
-                        alt={displayTitle}
-                        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-                        loading="lazy"
-                      />
-
-                      {/* Top accent border line using status color */}
-                      <div style={{
-                        position: 'absolute', top: 0, left: 0, right: 0, height: '3px',
-                        background: statusInfo.color, zIndex: 3
-                      }} />
-
-                      {/* Status indicator pill top-left */}
-                      <div style={{
-                        position: 'absolute', top: '8px', left: '8px',
-                        background: 'rgba(0, 0, 0, 0.75)', color: statusInfo.color,
-                        padding: '3px 8px', borderRadius: '6px',
-                        fontSize: '0.62rem', fontWeight: 900,
-                        textTransform: 'uppercase', letterSpacing: '0.04em',
-                        display: 'flex', alignItems: 'center', gap: '4px',
-                        backdropFilter: 'blur(8px)',
-                        border: '1px solid rgba(255,255,255,0.08)',
-                        zIndex: 3
-                      }}>
-                        <StatusIcon size={9} strokeWidth={2.5} />
-                        <span>{statusInfo.shortLabel}</span>
-                      </div>
-
-                      {/* Media type indicator badge top-right */}
-                      <div style={{
-                        position: 'absolute', top: '8px', right: '8px',
-                        background: 'rgba(0, 0, 0, 0.75)',
-                        border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px',
-                        width: '24px', height: '24px',
-                        color: isMovieItem ? '#fca5a5' : '#a5b4fc',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        backdropFilter: 'blur(8px)',
-                        zIndex: 3
-                      }}>
-                        {isMovieItem ? <Film size={11} strokeWidth={2.5} /> : <Tv size={11} strokeWidth={2.5} />}
-                      </div>
-                    </div>
-
-                    {/* Footer Row */}
-                    <div style={{ padding: '8px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                      <h3 style={{
-                        fontSize: '0.8rem',
-                        fontWeight: 700,
-                        margin: 0,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        flex: 1,
-                        color: '#fff'
-                      }}>
-                        {displayTitle}
-                      </h3>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          e.preventDefault();
-                          triggerHaptic('light');
-                          setActiveItemForSheet(item);
-                        }}
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          color: 'rgba(255,255,255,0.5)',
-                          padding: '4px',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          marginRight: '-4px'
-                        }}
-                      >
-                        <MoreVertical size={14} />
-                      </button>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      flex: 1,
+                      color: '#fff'
+                    }}>
+                      {displayTitle}
+                    </h3>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        triggerHaptic('light');
+                        setActiveItemForSheet(item);
+                      }}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'rgba(255,255,255,0.5)',
+                        padding: '4px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        marginRight: '-4px'
+                      }}
+                    >
+                      <MoreVertical size={14} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -335,7 +330,7 @@ export default function MyListSubPage({ isMobile, sectionHeaderStyle, onMovieCli
                 initial={{ y: '100%' }}
                 animate={{ y: 0 }}
                 exit={{ y: '100%' }}
-                transition={{ type: 'spring', damping: 28, stiffness: 240 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
                 style={{
                   position: 'fixed',
                   left: '12px',
