@@ -15,7 +15,7 @@ const versionData = [
       'Watchlist Performance: The saved movies/shows list now loads and scrolls much faster — no more lag when browsing your library.',
       'Login Page Improvements: The sign-in screen now fits perfectly on smaller phones with bigger buttons and inputs for easier typing.',
       'Episode Loading Indicator: Tapping an episode now shows a visible loading spinner so you know it\'s working before the player opens.',
-      'Downloads Page Notice: Offline downloads are temporarily paused while we optimize the feature — a message now clearly explains this.',
+      'Offline Downloads: Offline video downloads are still in development and coming in a future update — you\'ll see a notice when you visit that section.',
       'Stability & Bug Fixes: Various under-the-hood improvements for smoother navigation and fewer crashes.',
     ]
   },
