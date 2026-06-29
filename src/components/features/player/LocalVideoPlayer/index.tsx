@@ -145,7 +145,7 @@ export default function LocalVideoPlayer({
   // Dynamic stream / server selector states
   const [currentSrc, setCurrentSrc] = useState(src);
   const [selectedServer, setSelectedServer] = useState<'vidlink-pro' | 'test-server' | 'vidsrc-sbs' | 'vidsrc-wtf-1' | 'vidsrc-wtf-2' | 'vidsrc-wtf-3' | 'vidsrc-wtf-4' | 'vidsrc-pk' | 'vidsrc-fyi'>(() => {
-    return (localStorage.getItem('selected_server') as any) || 'vidlink-pro';
+    return 'vidlink-pro';
   });
   const selectedServerRef = useRef(selectedServer);
   useEffect(() => {
@@ -2148,9 +2148,12 @@ export default function LocalVideoPlayer({
                   pendingSeekTimeRef.current = null;
               }
 
+              const isProxied = currentSrc.includes('localhost:') || currentSrc.includes('127.0.0.1:');
+              const finalUseNative = isProxied ? false : useNativeLoader;
+
               let playStarted = false;
               const loadTimeout = setTimeout(() => {
-                  if (!playStarted && !useNativeLoader && Capacitor.isNativePlatform()) {
+                  if (!playStarted && !finalUseNative && Capacitor.isNativePlatform() && !isProxied) {
                       console.warn('[LocalVideoPlayer] Stream load timed out (5s). Switching to NativeHlsLoader fallback.');
                       if (videoRef.current) {
                           const curr = videoRef.current.currentTime;
@@ -2169,7 +2172,7 @@ export default function LocalVideoPlayer({
 
               const hls = new Hls({ 
                 startPosition: startPos,
-                loader: useNativeLoader 
+                loader: finalUseNative 
                   ? buildNativeHlsLoader((Hls as any).DefaultConfig.loader)
                   : (Hls as any).DefaultConfig.loader,
                 // Device-specific buffer memory optimizations to prevent Garbage Collection stutters
