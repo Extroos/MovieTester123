@@ -225,38 +225,6 @@ class MoviePlayerActivity : AppCompatActivity() {
         }
     }
 
-    private val touchBoostHandler = android.os.Handler(android.os.Looper.getMainLooper())
-    private val touchBoostRunnable = object : Runnable {
-        override fun run() {
-            if (::playerView.isInitialized) {
-                val now = android.os.SystemClock.uptimeMillis()
-                val event = MotionEvent.obtain(
-                    now,
-                    now,
-                    MotionEvent.ACTION_MOVE,
-                    1.0f,
-                    1.0f,
-                    0
-                )
-                try {
-                    playerView.dispatchTouchEvent(event)
-                } catch (e: Exception) {}
-                event.recycle()
-            }
-            touchBoostHandler.postDelayed(this, 120)
-        }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        touchBoostHandler.postDelayed(touchBoostRunnable, 1000)
-    }
-
-    override fun onPause() {
-        super.onPause()
-        touchBoostHandler.removeCallbacks(touchBoostRunnable)
-    }
-
     override fun onDestroy() {
         super.onDestroy()
         player.release()
