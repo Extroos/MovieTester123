@@ -86,23 +86,31 @@ public class MainActivity extends BridgeActivity {
         public void run() {
             try {
                 if (NativeStreamingEnginePlugin.isTouchBoostActive && !isUserTouching) {
-                    WebView webView = getBridge().getWebView();
-                    if (webView != null) {
-                        long now = android.os.SystemClock.uptimeMillis();
-                        android.view.MotionEvent event = android.view.MotionEvent.obtain(
-                            now,
-                            now,
-                            android.view.MotionEvent.ACTION_MOVE,
-                            1.0f,
-                            1.0f,
-                            0
-                        );
-                        webView.dispatchTouchEvent(event);
-                        event.recycle();
-                    }
+                    long now = android.os.SystemClock.uptimeMillis();
+                    
+                    // Dispatch a complete, safe out-of-bounds gesture sequence on the DecorView
+                    // to trigger the system-level ColorOS Input/Touch Boost without hitting any UI elements.
+                    android.view.MotionEvent down = android.view.MotionEvent.obtain(
+                        now, now, android.view.MotionEvent.ACTION_DOWN, -10.0f, -10.0f, 0
+                    );
+                    android.view.MotionEvent move = android.view.MotionEvent.obtain(
+                        now, now + 5, android.view.MotionEvent.ACTION_MOVE, -10.0f, -10.0f, 0
+                    );
+                    android.view.MotionEvent up = android.view.MotionEvent.obtain(
+                        now, now + 10, android.view.MotionEvent.ACTION_UP, -10.0f, -10.0f, 0
+                    );
+
+                    getWindow().getDecorView().dispatchTouchEvent(down);
+                    getWindow().getDecorView().dispatchTouchEvent(move);
+                    getWindow().getDecorView().dispatchTouchEvent(up);
+
+                    down.recycle();
+                    move.recycle();
+                    up.recycle();
                 }
             } catch (Exception e) {}
-            touchBoostHandler.postDelayed(this, 120);
+            // Run every 1000ms to keep the system Touch Boost timer refreshed
+            touchBoostHandler.postDelayed(this, 1000);
         }
     };
 
