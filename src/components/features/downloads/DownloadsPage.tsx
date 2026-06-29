@@ -253,46 +253,29 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
           </div>
         </div>
 
-        {/* Coming Soon Card */}
+        {/* Coming Soon Notice (Minimalist Centered Typography) */}
         <div style={{
-          margin: isMobileSize ? '60px 16px' : '80px auto',
-          maxWidth: '500px',
-          padding: '40px 24px',
-          borderRadius: '24px',
-          background: 'rgba(255,255,255,0.02)',
-          border: '1px solid rgba(255,255,255,0.05)',
+          margin: isMobileSize ? '100px 24px' : '140px auto',
+          maxWidth: '480px',
           textAlign: 'center',
-          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)'
         }}>
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '60px',
-            height: '60px',
-            borderRadius: '50%',
-            background: 'rgba(0,122,255,0.1)',
-            color: '#007aff',
-            marginBottom: '24px'
-          }}>
-            <AlertCircle size={28} />
-          </div>
           <h2 style={{
-            fontSize: '1.4rem',
+            fontSize: '1.25rem',
             fontWeight: 800,
             color: '#fff',
-            margin: '0 0 12px',
+            margin: '0 0 10px',
             letterSpacing: '-0.02em'
           }}>
-            Downloads Coming Soon
+            Offline Downloads Coming Soon
           </h2>
           <p style={{
-            fontSize: '0.9rem',
+            fontSize: '0.85rem',
             lineHeight: '1.6',
-            color: 'rgba(255,255,255,0.6)',
-            margin: 0
+            color: 'rgba(255,255,255,0.4)',
+            margin: 0,
+            fontWeight: 500
           }}>
-            Offline library and video downloads are currently undergoing performance testing. This feature will be fully enabled in the next update (version 0.8.0). Thank you for your patience!
+            Offline library and video downloads are currently undergoing performance optimizations. This feature will be fully active in the next update (version 0.8.0).
           </p>
         </div>
       </div>
