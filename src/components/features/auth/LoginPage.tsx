@@ -252,6 +252,29 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
         background: 'linear-gradient(to right, rgba(var(--bg-primary-rgb, 10,10,10),0.1) 0%, rgba(var(--bg-primary-rgb, 10,10,10),0.5) 40%, var(--bg-primary, #040405) 85%)',
       }} />
 
+      {/* Top-Left Logo Overlay */}
+      <div className="login-logo" style={{
+        position: 'absolute',
+        top: isSmallHeight ? '12px' : '24px',
+        left: isSmallHeight ? '16px' : '24px',
+        zIndex: 100,
+        pointerEvents: 'none',
+        userSelect: 'none',
+      }}>
+        <img
+          className="login-logo-img"
+          src="/cinemovie-logo.png"
+          alt="Cinemovie"
+          style={{
+            height: isSmallHeight ? '70px' : '90px',
+            objectFit: 'contain',
+            filter: 'drop-shadow(0 4px 20px rgba(0,0,0,0.8))',
+            pointerEvents: 'none',
+            userSelect: 'none',
+          }}
+        />
+      </div>
+
       {/* Main Container: Split Widescreen Row */}
       <div
         className="login-container"
@@ -266,33 +289,6 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
           width: '100%', maxWidth: '440px',
           display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
         }}>
-          {/* Logo */}
-          <div className="login-logo" style={{
-            marginBottom: '1rem',
-            display: 'flex',
-            justifyContent: 'flex-start', 
-            alignItems: 'center', 
-            width: '100%',
-            height: '80px',
-            position: 'relative',
-            pointerEvents: 'none',
-            userSelect: 'none',
-          }}>
-            <img
-              className="login-logo-img"
-              src="/cinemovie-logo.png"
-              alt="Cinemovie"
-              style={{
-                height: isSmallHeight ? '80px' : '110px',
-                objectFit: 'contain',
-                filter: 'drop-shadow(0 4px 20px rgba(0,0,0,0.8))',
-                marginLeft: '-15px',
-                pointerEvents: 'none',
-                userSelect: 'none',
-              }}
-            />
-          </div>
-
           {/* Premium Netflix-style Black Login Card */}
           <div className="login-card-content" style={{
             width: '100%', 
