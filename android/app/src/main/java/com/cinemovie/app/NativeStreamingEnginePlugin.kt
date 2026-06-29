@@ -192,6 +192,7 @@ class NativeStreamingEnginePlugin : Plugin() {
     override fun load() {
         super.load()
         jsEngine = JsPluginEngine(context)
+        jsEngine.warmUp()
         startLocalProxy()
         loadOtaConfig()
     }
