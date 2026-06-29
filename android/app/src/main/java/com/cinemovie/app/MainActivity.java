@@ -25,14 +25,21 @@ public class MainActivity extends BridgeActivity {
 
         // Force display to keep refresh rate at least at 60Hz to prevent ColorOS / aggressive ARR
         // from throttling WebView video playback down to 30Hz when no touch interaction is detected.
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+        try {
             WindowManager.LayoutParams params = getWindow().getAttributes();
-            params.preferredMinDisplayRefreshRate = 60.0f;
+            if (android.os.Build.VERSION.SDK_INT >= 31) { // Android 12 (S)
+                java.lang.reflect.Field fieldMin = params.getClass().getField("preferredMinDisplayRefreshRate");
+                fieldMin.setFloat(params, 60.0f);
+                java.lang.reflect.Field fieldMax = params.getClass().getField("preferredMaxDisplayRefreshRate");
+                fieldMax.setFloat(params, 120.0f);
+            } else if (android.os.Build.VERSION.SDK_INT >= 30) { // Android 11 (R)
+                java.lang.reflect.Field field = params.getClass().getField("preferredFrameRate");
+                field.setFloat(params, 60.0f);
+            }
             getWindow().setAttributes(params);
-        } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-            WindowManager.LayoutParams params = getWindow().getAttributes();
-            params.preferredFrameRate = 60.0f;
-            getWindow().setAttributes(params);
+            android.util.Log.d("MainActivity", "Successfully set WebView preferred refresh rate via reflection");
+        } catch (Exception e) {
+            android.util.Log.w("MainActivity", "Failed to set preferred refresh rate: " + e.getMessage());
         }
 
         // Allow default hardware-accelerated surface rendering (View.LAYER_TYPE_NONE)
