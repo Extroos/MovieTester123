@@ -396,6 +396,7 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
   useEffect(() => {
     async function loadSeasonEpisodes() {
       if (!fullShow.id) return;
+      console.log('[TVShowDetails] loadSeasonEpisodes running for season:', selectedSeason);
       setLoadingEpisodes(true);
       const seasonData = await getTVShowSeason(fullShow.id, selectedSeason);
       if (seasonData && seasonData.episodes) {
@@ -489,10 +490,12 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
   };
 
   const handleLocalServerPlay = useCallback(async (episodeNum?: number, resume = true, seasonNum?: number) => {
+    console.log('[TVShowDetails] handleLocalServerPlay input:', { episodeNum, resume, seasonNum, selectedSeason, selectedEpisode });
     triggerHaptic('heavy');
     setLocalStreamError(null);
     const ep = episodeNum ?? (resumeEpisode?.episode ?? 1);
     const se = seasonNum ?? (episodeNum !== undefined ? selectedSeason : (resumeEpisode?.season ?? selectedSeason));
+    console.log('[TVShowDetails] handleLocalServerPlay calculated:', { ep, se });
 
     // Try offline storage first
     const raw = localStorage.getItem('cinemovie_downloads');
@@ -1649,7 +1652,8 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                         return (
                           <div 
                             key={ep.id}
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation();
                               triggerHaptic('medium');
                               setPendingEpisodeNum(ep.episodeNumber);
                               handleLocalServerPlay(ep.episodeNumber, true);
