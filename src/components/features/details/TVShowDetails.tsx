@@ -307,6 +307,7 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
 
 
   useEffect(() => {
+    let active = true;
     setFullShow(show);
     setLoading(true);
     setVideos([]);
