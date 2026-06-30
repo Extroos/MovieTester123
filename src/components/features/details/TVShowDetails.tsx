@@ -288,6 +288,8 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
       const progress = await WatchProgressService.getProgress(show.id, isAnime ? 'anime' : 'tv');
       if (progress && progress.season && progress.episode) {
         setResumeEpisode({ season: progress.season, episode: progress.episode });
+        setSelectedSeason(progress.season);
+        setSelectedEpisode(progress.episode);
         setSavedProgressTime(progress.progress);
         const percent = progress.duration > 0 ? (progress.progress / progress.duration) * 100 : 0;
         setSavedProgressPercent(percent);
@@ -347,6 +349,8 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
           WatchProgressService.getProgress(show.id, isAnimeShowInitial ? 'anime' : 'tv'),
         ]);
         
+        if (!active) return;
+        
         setVideos(showVideos);
         setSimilarShows(similar);
         setCast(credits.cast);
@@ -355,6 +359,8 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
         
         if (progress && progress.season && progress.episode) {
           setResumeEpisode({ season: progress.season, episode: progress.episode });
+          setSelectedSeason(progress.season);
+          setSelectedEpisode(progress.episode);
           setSavedProgressTime(progress.progress);
           const percent = progress.duration > 0 ? (progress.progress / progress.duration) * 100 : 0;
           setSavedProgressPercent(percent);
@@ -368,16 +374,10 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
     loadDetails();
     document.body.style.overflow = 'hidden';
     return () => {
+      active = false;
       document.body.style.overflow = 'auto';
     };
   }, [show.id, appLanguage]);
-
-  useEffect(() => {
-    if (resumeEpisode) {
-      setSelectedSeason(resumeEpisode.season);
-      setSelectedEpisode(resumeEpisode.episode);
-    }
-  }, [resumeEpisode]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
