@@ -11,7 +11,8 @@ import {
   getTVShowCredits, 
   getTVShowSeason,
   getStillUrl,
-  getProfileUrl
+  getProfileUrl,
+  getMediaLogo
 } from '../../../services/tmdb';
 import { WatchProgressService } from '../../../services/progress';
 import { 
@@ -22,6 +23,9 @@ import {
 import { VidSrcService } from '../../../services/vidsrc';
 import { triggerHaptic } from '../../../utils/haptics';
 import { t } from '../../../utils/i18n';
+import GuestLockModal from '../auth/GuestLockModal';
+import { useOfflineDownloader } from '../downloads/useOfflineDownloader';
+import { GlobalDownloader } from '../../../services/offline/GlobalDownloader';
 import VideoPlayer from '../player/VideoPlayer';
 import CastSection from './CastSection';
 import ReviewSection from '../reviews/ReviewSection';
@@ -32,6 +36,7 @@ import { resolveTVStream, isLocalServerConfigured, getLocalServerUrl } from '../
 import { OfflineStorageService } from '../../../services/OfflineStorageService';
 import { FriendService } from '../../../services/friends';
 import { WatchTogetherService } from '../../../services/watchTogether';
+import { CacheService } from '../../../services/core/cache';
 import { Capacitor } from '@capacitor/core';
 import { fetchWithCapacitor } from '../../../utils/nativeFetch';
 import { SettingsService } from '../../../services/user/settings';
@@ -137,6 +142,10 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
   const [inList, setInList] = useState(false);
   const [streamUrl, setStreamUrl] = useState('');
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [isDownloadLockOpen, setIsDownloadLockOpen] = useState(false);
+  const [isWatchPartyLockOpen, setIsWatchPartyLockOpen] = useState(false);
+
+
   const [refreshKey, setRefreshKey] = useState(0);
   const [localStreamLoading, setLocalStreamLoading] = useState(false);
   const [localStreamError, setLocalStreamError] = useState<string | null>(null);
@@ -161,9 +170,34 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
 
   // Offline Episode Downloads Status Map
   const [downloadedEpisodes, setDownloadedEpisodes] = useState<Record<string, { status: string; progress: number }>>({});
+  const [activeDownloadState, setActiveDownloadState] = useState(() => GlobalDownloader.getState());
+
+  useEffect(() => {
+    return GlobalDownloader.subscribe((state) => {
+      setActiveDownloadState(state);
+      // Keep per-episode live progress in sync while actively downloading
+      if (state.isDownloading && state.downloadId?.startsWith(`tv_${show.id}_`)) {
+        setDownloadedEpisodes(prev => ({
+          ...prev,
+          [state.downloadId!]: {
+            status: state.downloadProgress >= 100 ? 'completed' : 'downloading',
+            progress: state.downloadProgress,
+          }
+        }));
+      }
+    });
+  }, [show.id]);
+
+  const [logoUrl, setLogoUrl] = useState<string | null>(() => {
+    if ((show as any).logoUrl) return (show as any).logoUrl;
+    return null;
+  });
+  const [logoLoading, setLogoLoading] = useState(() => !logoUrl);
+
   const [activeTrailerUrl, setActiveTrailerUrl] = useState<string | null>(null);
   const [showSeasonPicker, setShowSeasonPicker] = useState(false);
   const [showSeasonDownloadModal, setShowSeasonDownloadModal] = useState(false);
+  const [showSeasonPickerInModal, setShowSeasonPickerInModal] = useState(false);
   const [selectedEpisodesToDownload, setSelectedEpisodesToDownload] = useState<Set<number>>(new Set());
   const [hoveredEpisodeDownloadId, setHoveredEpisodeDownloadId] = useState<string | null>(null);
   const [showRatings, setShowRatings] = useState(false);
@@ -177,6 +211,23 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
   const [isPartyMode, setIsPartyMode] = useState(false);
   const [partySessionId, setPartySessionId] = useState<string | null>(null);
   const [isPartyHost, setIsPartyHost] = useState(false);
+
+  useEffect(() => {
+    const handleCloseTrailer = () => {
+      setActiveTrailerUrl(null);
+    };
+    window.addEventListener('closeTrailer', handleCloseTrailer);
+    return () => window.removeEventListener('closeTrailer', handleCloseTrailer);
+  }, []);
+
+  const isLockedForScroll = showPlayer || showStreamSelector || showSeasonDownloadModal || isWatchPartyLockOpen || isDownloadLockOpen || showWatchTogetherInvite;
+  useEffect(() => {
+    if (isLockedForScroll) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'hidden'; // Keep details modal body lock
+    }
+  }, [isLockedForScroll]);
 
   // Track app language to re-fetch details when user changes language
   const [appLanguage, setAppLanguage] = useState(() => SettingsService.get('appLanguage') || 'en');
@@ -193,7 +244,7 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
 
   useEffect(() => {
     const checkStatuses = () => {
-      // Read localStorage ONCE — then do all lookups synchronously in memory.
+      // Read localStorage ONCE â€” then do all lookups synchronously in memory.
       // Old approach: N sequential async OfflineStorageService.exists() calls (one per episode).
       // New approach: one localStorage.getItem() + one Map build = O(1) per episode lookup.
       const raw = localStorage.getItem('cinemovie_downloads');
@@ -202,7 +253,7 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
       if (raw) {
         try {
           const list: any[] = JSON.parse(raw);
-          // Build an id→item map for O(1) lookups
+          // Build an idâ†’item map for O(1) lookups
           const downloadMap = new Map<string, any>(list.map(item => [item.id, item]));
 
           // Check items already in the downloads list for this show
@@ -220,7 +271,7 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
           for (const ep of episodes) {
             const downloadId = `tv_${show.id}_${selectedSeason}_${ep.episodeNumber}`;
             if (!mapped[downloadId]) {
-              // Not in downloads list → treat as not downloaded
+              // Not in downloads list â†’ treat as not downloaded
               // OfflineStorageService.exists() is skipped here to avoid N async calls.
               // The 'downloadsChanged' event will re-trigger this check when state actually changes.
             }
@@ -244,18 +295,121 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
   const handleDownloadEpisode = async (ep: any, e: React.MouseEvent) => {
     e.stopPropagation();
     triggerHaptic('medium');
-    window.dispatchEvent(new CustomEvent('navigateToDownloads'));
-    onClose();
+    if (localStorage.getItem('cinemovie_is_guest') === 'true') {
+      setIsDownloadLockOpen(true);
+      return;
+    }
+    
+    const epNum = ep.episode_number || ep.episodeNumber;
+    const downloadId = `tv_${fullShow.id}_${selectedSeason}_${epNum}`;
+    const status = downloadedEpisodes[downloadId]?.status;
+    
+    if (status === 'downloading' || status === 'resolving') {
+      GlobalDownloader.cancelDownload();
+      return;
+    } else if (status === 'queued') {
+      GlobalDownloader.removeFromQueue(downloadId);
+      return;
+    } else if (status === 'completed') {
+      window.dispatchEvent(new CustomEvent('navigateToDownloads'));
+      onClose();
+      return;
+    }
+
+    setDownloadedEpisodes(prev => ({
+      ...prev,
+      [downloadId]: { status: 'resolving', progress: 0 }
+    }));
+
+    try {
+      const result = await resolveTVStream(fullShow.id, fullShow.name, selectedSeason, epNum);
+      if (result && result.streamUrl) {
+        GlobalDownloader.startDownload(fullShow, result.streamUrl, selectedSeason, epNum, false);
+      } else {
+        throw new Error('Failed to resolve episode stream');
+      }
+    } catch (err) {
+      console.error('[Download] Episode resolution failed:', err);
+      setDownloadedEpisodes(prev => {
+        const next = { ...prev };
+        delete next[downloadId];
+        return next;
+      });
+      alert('Could not resolve download links for this episode. Please try another server or try again.');
+    }
   };
 
   const handleDownloadSeason = useCallback(() => {
     triggerHaptic('heavy');
-    window.dispatchEvent(new CustomEvent('navigateToDownloads'));
-    onClose();
-  }, [onClose]);
+    if (localStorage.getItem('cinemovie_is_guest') === 'true') {
+      setIsDownloadLockOpen(true);
+      return;
+    }
+    setShowSeasonDownloadModal(true);
+  }, []);
 
-  const handleCancelEpisodeDownload = (ep: any) => {};
-  const handleStartSeasonDownload = () => {};
+  const handleCancelEpisodeDownload = (ep: any) => {
+    triggerHaptic('medium');
+    const epNum = ep.episodeNumber || (ep as any).episode_number;
+    const downloadId = `tv_${fullShow.id}_${selectedSeason}_${epNum}`;
+    
+    const activeDl = Object.values(downloadedEpisodes).find(
+      (d: any) => (d.status === 'downloading' || d.status === 'resolving') && d.id === downloadId
+    );
+    
+    if (activeDl) {
+      GlobalDownloader.cancelDownload();
+    } else {
+      GlobalDownloader.removeFromQueue(downloadId);
+      try {
+        const raw = localStorage.getItem('cinemovie_downloads');
+        if (raw) {
+          let list = JSON.parse(raw);
+          list = list.filter((item: any) => item.id !== downloadId);
+          localStorage.setItem('cinemovie_downloads', JSON.stringify(list));
+          window.dispatchEvent(new CustomEvent('downloadsChanged'));
+        }
+      } catch (e) {}
+    }
+  };
+
+  const handleStartSeasonDownload = async () => {
+    const episodesForSeason = episodes || [];
+    const selectedEpisodes = episodesForSeason.filter(ep => {
+      const epNum = ep.episodeNumber;
+      return selectedEpisodesToDownload.has(epNum);
+    });
+
+    if (selectedEpisodes.length === 0) return;
+
+    setShowSeasonDownloadModal(false);
+
+    for (const ep of selectedEpisodes) {
+      const epNum = ep.episodeNumber;
+      const downloadId = `tv_${fullShow.id}_${selectedSeason}_${epNum}`;
+
+      setDownloadedEpisodes(prev => ({
+        ...prev,
+        [downloadId]: { status: 'resolving', progress: 0 }
+      }));
+
+      try {
+        const result = await resolveTVStream(fullShow.id, fullShow.name, selectedSeason, epNum);
+        if (result && result.streamUrl) {
+          GlobalDownloader.startDownload(fullShow, result.streamUrl, selectedSeason, epNum, false);
+        } else {
+          throw new Error('Failed to resolve episode stream');
+        }
+      } catch (err) {
+        console.error('[Download] Season episode resolution failed:', err);
+        setDownloadedEpisodes(prev => {
+          const next = { ...prev };
+          delete next[downloadId];
+          return next;
+        });
+      }
+    }
+  };
   const handleMarkAsWatched = useCallback(async () => {
     triggerHaptic('medium');
     if (fullShow.numberOfSeasons && fullShow.numberOfSeasons > 0) {
@@ -329,11 +483,26 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
           const isAnimeShow = details.genres?.some(g => g.name.toLowerCase() === 'animation') && 
                               details.originCountry?.includes('JP');
           setIsAnime(!!isAnimeShow);
+          if ((details as any).logoUrl) {
+            setLogoUrl((details as any).logoUrl);
+          }
         }
       } catch (error) {
         console.error('Error loading TV show base details:', error);
       } finally {
         setLoading(false);
+      }
+
+      // Try to load TV show logo
+      if (!(show as any).logoUrl) {
+        getMediaLogo(show.id, 'tv').then(url => {
+          setLogoUrl(url);
+          setLogoLoading(false);
+        }).catch(() => {
+          setLogoLoading(false);
+        });
+      } else {
+        setLogoLoading(false);
       }
 
       // Load heavy details asynchronously in the background so standard page loads fast
@@ -395,6 +564,17 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
   }, [handleClose, showStreamSelector]);
 
   useEffect(() => {
+    if (showSeasonDownloadModal || isDownloadLockOpen) {
+      setTimeout(() => {
+        const firstBtn = document.querySelector('.tv-modal-container .tv-focusable, [style*="z-index: 4000"] .tv-focusable, [style*="z-index: 6000"] button') as HTMLElement | null;
+        if (firstBtn) {
+          firstBtn.focus();
+        }
+      }, 80);
+    }
+  }, [showSeasonDownloadModal, isDownloadLockOpen]);
+
+  useEffect(() => {
     async function loadSeasonEpisodes() {
       if (!fullShow.id) return;
       console.log('[TVShowDetails] loadSeasonEpisodes running for season:', selectedSeason);
@@ -411,10 +591,25 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
 
   const handlePlayClick = async (episodeNum = 1, resume = false, seasonNum?: number) => {
     triggerHaptic('heavy');
-    setSelectedEpisode(episodeNum);
     const se = seasonNum ?? selectedSeason;
     if (seasonNum !== undefined) {
       setSelectedSeason(seasonNum);
+    }
+    setSelectedEpisode(episodeNum);
+    
+    const downloadId = `tv_${fullShow.id}_${se}_${episodeNum}`;
+    let isDownloaded = false;
+    try {
+      const raw = localStorage.getItem('cinemovie_downloads');
+      if (raw) {
+        const list = JSON.parse(raw);
+        isDownloaded = list.some((i: any) => i.id === downloadId && i.status === 'completed');
+      }
+    } catch (e) {}
+
+    if (isDownloaded) {
+      await handleLocalServerPlay(episodeNum, resume, se);
+      return;
     }
     
     let url = await VidSrcService.getTVEmbed(fullShow.id, se, episodeNum);
@@ -429,6 +624,21 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
   const handleResumeClick = async (resume = true) => {
     triggerHaptic('heavy');
     if (resumeEpisode) {
+      const downloadId = `tv_${fullShow.id}_${resumeEpisode.season}_${resumeEpisode.episode}`;
+      let isDownloaded = false;
+      try {
+        const raw = localStorage.getItem('cinemovie_downloads');
+        if (raw) {
+          const list = JSON.parse(raw);
+          isDownloaded = list.some((i: any) => i.id === downloadId && i.status === 'completed');
+        }
+      } catch (e) {}
+
+      if (isDownloaded) {
+        await handleLocalServerPlay(resumeEpisode.episode, resume, resumeEpisode.season);
+        return;
+      }
+
       setSelectedSeason(resumeEpisode.season);
       setSelectedEpisode(resumeEpisode.episode);
       
@@ -504,8 +714,28 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
       try {
         const list = JSON.parse(raw);
         const downloadId = `tv_${fullShow.id}_${se}_${ep}`;
-        const item = list.find((i: any) => i.id === downloadId && i.status === 'completed');
+        let item = list.find((i: any) => i.id === downloadId && i.status === 'completed');
         if (item) {
+          // If localUrl is not populated yet, wait for up to 3 seconds (checking every 500ms)
+          if (!item.localUrl) {
+            setLocalStreamLoading(true);
+            let checkCount = 0;
+            while (checkCount < 6) {
+              await new Promise(resolve => setTimeout(resolve, 500));
+              const latestRaw = localStorage.getItem('cinemovie_downloads');
+              if (latestRaw) {
+                const latestList = JSON.parse(latestRaw);
+                const latestItem = latestList.find((i: any) => i.id === downloadId && i.status === 'completed');
+                if (latestItem && latestItem.localUrl) {
+                  item = latestItem;
+                  break;
+                }
+              }
+              checkCount++;
+            }
+            setLocalStreamLoading(false);
+          }
+
           const playableUrl = await OfflineStorageService.getPlayableUrl(item.id);
           setSelectedSeason(se);
           setSelectedEpisode(ep);
@@ -602,117 +832,209 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
   })();
   const creator = crew.find(c => c.job === 'Creator' || c.job === 'Executive Producer');
 
-  if (loading) return (
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      zIndex: 3000,
-      background: 'var(--bg-primary)',
-      display: 'flex',
-      flexDirection: 'column',
-      overflowX: 'hidden',
-      overflowY: 'auto',
-      WebkitOverflowScrolling: 'touch',
-      fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
-    }}>
-      <style>{`
-        @keyframes shimmer {
-          0% { background-position: -200% 0; }
-          100% { background-position: 200% 0; }
-        }
-        .sk { background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-card-hover, #27272a) 50%, var(--bg-card) 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; border-radius: 8px; }
-      `}</style>
-      
-      {/* Backdrop Area */}
-      <div className="sk" style={{ width: '100%', height: '40vh', borderRadius: 0, flexShrink: 0, position: 'relative' }}>
-        {/* Floating Top Bar inside backdrop */}
+  if (loading) {
+    const isTV = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+    if (isTV) {
+      return (
         <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          height: '70px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '0 16px',
-          paddingTop: 'env(safe-area-inset-top, 0px)',
-          background: 'linear-gradient(to bottom, rgba(0,0,0,0.8) 0%, transparent 100%)',
+          position: 'fixed',
+          inset: 0,
+          zIndex: 3000,
+          background: '#060607',
+          display: 'block',
+          overflowX: 'hidden',
+          overflowY: 'auto',
+          padding: '18vh 6vw 10vh 6vw',
+          boxSizing: 'border-box',
+          fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
         }}>
-          <div className="sk" style={{ width: 36, height: 36, borderRadius: '50%' }} />
-          <div className="sk" style={{ width: 36, height: 36, borderRadius: '50%' }} />
-        </div>
-      </div>
+          <style>{`
+            @keyframes shimmer {
+              0% { background-position: -200% 0; }
+              100% { background-position: 200% 0; }
+            }
+            .sk { background: linear-gradient(90deg, #121214 25%, #27272a 50%, #121214 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; border-radius: 8px; }
+          `}</style>
 
-      {/* Main Content Info Block */}
+          {/* Top section: Title, badges, buttons, description */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5vh', maxWidth: '900px', width: '100%', marginBottom: '6vh' }}>
+            {/* Back button */}
+            <div className="sk" style={{ width: 40, height: 40, borderRadius: '50%' }} />
+
+            {/* Title placeholder */}
+            <div className="sk" style={{ height: 64, width: '45%', borderRadius: '12px' }} />
+            
+            {/* Metadata badges placeholder */}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <div className="sk" style={{ height: 20, width: 60 }} />
+              <div className="sk" style={{ height: 20, width: 40 }} />
+              <div className="sk" style={{ height: 20, width: 30 }} />
+              <div className="sk" style={{ height: 20, width: 50 }} />
+            </div>
+
+
+            {/* Play/Trailer Button bar placeholders */}
+            <div style={{ display: 'flex', gap: '12px', width: '380px' }}>
+              <div className="sk" style={{ height: 44, flex: 1, borderRadius: '8px' }} />
+              <div className="sk" style={{ height: 44, flex: 1, borderRadius: '8px' }} />
+            </div>
+
+            {/* Synopsis placeholder */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
+              <div className="sk" style={{ height: 14, width: '90%' }} />
+              <div className="sk" style={{ height: 14, width: '85%' }} />
+              <div className="sk" style={{ height: 14, width: '70%' }} />
+            </div>
+          </div>
+
+          {/* Cast Quick Section placeholder */}
+          <div style={{ maxWidth: '900px', width: '100%', marginBottom: '6vh' }}>
+            <div className="sk" style={{ height: 20, width: 60, marginBottom: '20px' }} />
+            <div style={{ display: 'flex', gap: '16px' }}>
+              {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
+                <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', width: '80px' }}>
+                  <div className="sk" style={{ width: 60, height: 60, borderRadius: '50%' }} />
+                  <div className="sk" style={{ width: 50, height: 10 }} />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Season Selector placeholder */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', maxWidth: '900px', width: '100%', marginBottom: '20px' }}>
+            <div className="sk" style={{ height: 24, width: 120 }} />
+            <div className="sk" style={{ height: 16, width: 65 }} />
+          </div>
+
+          {/* Episodes List placeholder */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '900px', width: '100%' }}>
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                <div className="sk" style={{ width: 120, aspectRatio: '16/9', borderRadius: '6px' }} />
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div className="sk" style={{ height: 12, width: '60%' }} />
+                  <div className="sk" style={{ height: 8, width: '30%' }} />
+                </div>
+                <div className="sk" style={{ width: 20, height: 20, borderRadius: '50%' }} />
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    return (
       <div style={{
-        padding: '24px 16px',
+        position: 'fixed',
+        inset: 0,
+        zIndex: 3000,
+        background: 'var(--bg-primary)',
         display: 'flex',
         flexDirection: 'column',
-        gap: '16px',
-        marginTop: '-40px',
-        background: 'var(--bg-primary)',
-        borderTopLeftRadius: '24px',
-        borderTopRightRadius: '24px',
-        position: 'relative',
-        zIndex: 10,
-        flex: 1
+        overflowX: 'hidden',
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch',
+        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
       }}>
-        {/* Title */}
-        <div className="sk" style={{ height: 32, width: '70%', borderRadius: '8px' }} />
+        <style>{`
+          @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+          }
+          .sk { background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-card-hover, #27272a) 50%, var(--bg-card) 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; border-radius: 8px; }
+        `}</style>
         
-        {/* Metadata Badges */}
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div className="sk" style={{ height: 18, width: 60 }} />
-          <div className="sk" style={{ height: 18, width: 40 }} />
-          <div className="sk" style={{ height: 18, width: 30 }} />
-          <div className="sk" style={{ height: 18, width: 50 }} />
+        {/* Backdrop Area */}
+        <div className="sk" style={{ width: '100%', height: '40vh', borderRadius: 0, flexShrink: 0, position: 'relative' }}>
+          {/* Floating Top Bar inside backdrop */}
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: '70px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0 16px',
+            paddingTop: 'env(safe-area-inset-top, 0px)',
+            background: 'linear-gradient(to bottom, rgba(0,0,0,0.8) 0%, transparent 100%)',
+          }}>
+            <div className="sk" style={{ width: 36, height: 36, borderRadius: '50%' }} />
+            <div className="sk" style={{ width: 36, height: 36, borderRadius: '50%' }} />
+          </div>
         </div>
 
-        {/* Action Button Bars */}
-        <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
-          <div className="sk" style={{ height: 42, flex: 1, borderRadius: '8px' }} />
-          <div className="sk" style={{ height: 42, flex: 1, borderRadius: '8px' }} />
-        </div>
+        {/* Main Content Info Block */}
+        <div style={{
+          padding: '24px 16px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '16px',
+          marginTop: '-40px',
+          background: 'var(--bg-primary)',
+          borderTopLeftRadius: '24px',
+          borderTopRightRadius: '24px',
+          position: 'relative',
+          zIndex: 10,
+          flex: 1
+        }}>
+          {/* Title */}
+          <div className="sk" style={{ height: 32, width: '70%', borderRadius: '8px' }} />
+          
+          {/* Metadata Badges */}
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <div className="sk" style={{ height: 18, width: 60 }} />
+            <div className="sk" style={{ height: 18, width: 40 }} />
+            <div className="sk" style={{ height: 18, width: 30 }} />
+            <div className="sk" style={{ height: 18, width: 50 }} />
+          </div>
 
-        {/* Secondary Action Icons */}
-        <div style={{ display: 'flex', gap: '24px', padding: '8px 0 12px', borderBottom: '1px solid var(--border-primary)', marginBottom: '4px' }}>
-          {[1, 2, 3, 4].map(i => (
-            <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
-              <div className="sk" style={{ width: 20, height: 20, borderRadius: '50%' }} />
-              <div className="sk" style={{ width: 36, height: 8 }} />
-            </div>
-          ))}
-        </div>
+          {/* Action Button Bars */}
+          <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+            <div className="sk" style={{ height: 42, flex: 1, borderRadius: '8px' }} />
+            <div className="sk" style={{ height: 42, flex: 1, borderRadius: '8px' }} />
+          </div>
 
-        {/* Synopsis / Overview */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <div className="sk" style={{ height: 12, width: '100%' }} />
-          <div className="sk" style={{ height: 12, width: '95%' }} />
-        </div>
-
-        {/* Season Selector Title */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
-          <div className="sk" style={{ height: 24, width: 100 }} />
-          <div className="sk" style={{ height: 16, width: 60 }} />
-        </div>
-
-        {/* Episode List Row Skeletons */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {[1, 2, 3].map(i => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 0', borderBottom: '1px solid var(--border-primary)' }}>
-              <div className="sk" style={{ width: 80, aspectRatio: '16/9', borderRadius: '6px', flexShrink: 0 }} />
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <div className="sk" style={{ height: 12, width: '60%' }} />
-                <div className="sk" style={{ height: 8, width: '30%' }} />
+          {/* Secondary Action Icons */}
+          <div style={{ display: 'flex', gap: '24px', padding: '8px 0 12px', borderBottom: '1px solid var(--border-primary)', marginBottom: '4px' }}>
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                <div className="sk" style={{ width: 20, height: 20, borderRadius: '50%' }} />
+                <div className="sk" style={{ width: 36, height: 8 }} />
               </div>
-              <div className="sk" style={{ width: 20, height: 20, borderRadius: '50%' }} />
-            </div>
-          ))}
+            ))}
+          </div>
+
+          {/* Synopsis / Overview */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div className="sk" style={{ height: 12, width: '100%' }} />
+            <div className="sk" style={{ height: 12, width: '95%' }} />
+          </div>
+
+          {/* Season Selector Title */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
+            <div className="sk" style={{ height: 24, width: 100 }} />
+            <div className="sk" style={{ height: 16, width: 60 }} />
+          </div>
+
+          {/* Episode List Row Skeletons */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {[1, 2, 3].map(i => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 0', borderBottom: '1px solid var(--border-primary)' }}>
+                <div className="sk" style={{ width: 80, aspectRatio: '16/9', borderRadius: '6px', flexShrink: 0 }} />
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div className="sk" style={{ height: 12, width: '60%' }} />
+                  <div className="sk" style={{ height: 8, width: '30%' }} />
+                </div>
+                <div className="sk" style={{ width: 20, height: 20, borderRadius: '50%' }} />
+              </div>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  }
 
   // Determine if currently selected show/episode has resume progress available
   const isMainResumeAvailable = resumeEpisode !== null;
@@ -852,7 +1174,7 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
           <span>{fullShow.numberOfSeasons} {fullShow.numberOfSeasons === 1 ? t('season') : t('seasons')}</span>
         )}
       </div>
-      {/* ── Native Play Button Bar ── */}
+      {/* â”€â”€ Native Play Button Bar â”€â”€ */}
       <div className="details-play-bar" style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
         {isUpcoming && fullShow.firstAirDate && (
           <div style={{
@@ -968,12 +1290,16 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
         )}
       </div>
 
-      {/* ── Secondary Circular Action Icons ── */}
+      {/* â”€â”€ Secondary Circular Action Icons â”€â”€ */}
       <div className="details-secondary-actions" style={{ display: 'flex', gap: '30px', justifyContent: 'flex-start', padding: '6px 0 14px', borderBottom: '1px solid var(--border-primary)', marginBottom: '16px' }}>
         {/* Watch Together */}
         <button
           onClick={async () => {
             triggerHaptic('medium');
+            if (localStorage.getItem('cinemovie_is_guest') === 'true') {
+              setIsWatchPartyLockOpen(true);
+              return;
+            }
             setShowWatchTogetherInvite(true);
             setLoadingFriends(true);
             try {
@@ -1007,7 +1333,7 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
           style={{
             background: 'none',
             border: 'none',
-            color: inList ? '#ffffff' : 'rgba(255,255,255,0.4)',
+            color: '#ffffff',
             cursor: 'pointer',
             display: 'flex',
             flexDirection: 'column',
@@ -1090,7 +1416,82 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
         </button>
       </div>
 
-      {/* ── series synopsis ── */}
+      {/* Real-time active download progress bar panel */}
+      {activeDownloadState.isDownloading && activeDownloadState.downloadId?.startsWith(`tv_${fullShow.id}_`) && (
+        <div style={{
+          margin: '16px 0 20px 0',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ 
+                fontSize: '0.72rem', 
+                fontWeight: 800, 
+                color: 'rgba(255,255,255,0.5)', 
+                textTransform: 'uppercase', 
+                letterSpacing: '0.12em' 
+              }}>
+                Downloading S{activeDownloadState.season} E{activeDownloadState.episode}
+              </span>
+              <span style={{ 
+                fontSize: '0.75rem', 
+                fontWeight: 700, 
+                color: '#ffffff', 
+                background: 'rgba(255,255,255,0.08)',
+                padding: '2px 8px',
+                borderRadius: '12px',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxWidth: '180px'
+              }}>
+                {fullShow.name}
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#ffffff' }}>
+                {activeDownloadState.downloadProgress}%
+              </span>
+              <button
+                onClick={() => {
+                  triggerHaptic('medium');
+                  GlobalDownloader.cancelDownload();
+                }}
+                style={{
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '50%',
+                  width: '24px',
+                  height: '24px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: 'rgba(255,255,255,0.6)',
+                  padding: 0,
+                  transition: 'all 0.2s'
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+          </div>
+          
+          <div style={{ height: '3px', background: 'rgba(255,255,255,0.08)', borderRadius: '2px', overflow: 'hidden' }}>
+            <div style={{
+              width: `${activeDownloadState.downloadProgress}%`,
+              height: '100%',
+              background: '#ffffff',
+              borderRadius: '2px',
+              transition: 'width 0.2s ease'
+            }} />
+          </div>
+        </div>
+      )}
+
+      {/* â”€â”€ series synopsis â”€â”€ */}
       {fullShow.overview && (
         <p className="details-overview" style={{
           fontSize: '0.94rem',
@@ -1208,6 +1609,18 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
   const playingEpisodeForPlayer = selectedEpisode;
   const playingSeasonForPlayer = selectedSeason;
 
+  const isCurrentEpDownloaded = (() => {
+    try {
+      const raw = localStorage.getItem('cinemovie_downloads');
+      if (raw) {
+        const list = JSON.parse(raw);
+        const downloadId = `tv_${fullShow.id}_${playingSeasonForPlayer}_${playingEpisodeForPlayer}`;
+        return list.some((i: any) => i.id === downloadId && i.status === 'completed');
+      }
+    } catch (e) {}
+    return false;
+  })();
+
   const isCurrentlyPlayingResumeEp = resumeEpisode && resumeEpisode.season === playingSeasonForPlayer && resumeEpisode.episode === playingEpisodeForPlayer;
   const currentStartTime = playbackMode === 'resume' && isCurrentlyPlayingResumeEp && savedProgressTime ? savedProgressTime : 0;
 
@@ -1221,10 +1634,879 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
     : 0;
   const isAnyEpisodeCompleted = Object.values(downloadedEpisodes).some(ep => ep.status === 'completed');
 
+  const isTV = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+
+  if (isTV) {
+    const isShowInList = inList;
+    const isLocked = showPlayer || showStreamSelector || showSeasonDownloadModal || isWatchPartyLockOpen || isDownloadLockOpen || showWatchTogetherInvite;
+    return (
+      <div
+        onClick={handleClose}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 3000,
+          background: '#000000',
+          overflowY: isLocked ? 'hidden' : 'auto',
+          overflowX: 'hidden',
+          fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        }}
+        className={`tvshow-details-overlay no-scrollbar ${isLocked ? 'overflow-locked' : ''}`}
+      >
+        {/* Full-screen Background backdrop with image on right, vignette on left */}
+        <div style={{ position: 'absolute', top: 0, right: 0, width: '75vw', height: '85vh', overflow: 'hidden', zIndex: 1, pointerEvents: 'none' }}>
+          <img
+            src={getBackdropUrl(fullShow.backdropPath, 'original')}
+            alt=""
+            style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.8 }}
+          />
+          {/* Gradients to fade to black on left and bottom */}
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, #000000 0%, #000000 20%, rgba(0,0,0,0.8) 45%, rgba(0,0,0,0.3) 70%, transparent 100%)' }} />
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 40%, #000000 100%)' }} />
+        </div>
+
+        {/* HERO HEADER AREA (Matches the photo layout) */}
+        <div
+          onClick={e => e.stopPropagation()}
+          style={{
+            position: 'relative',
+            zIndex: 10,
+            width: '100%',
+            padding: '12vh 8vw 4vh 8vw',
+            boxSizing: 'border-box',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '2vh',
+            minHeight: '82vh',
+            justifyContent: 'center'
+          }}
+        >
+          {/* Back Button */}
+          <button
+            onClick={handleClose}
+            className="tv-focusable"
+            style={{
+              width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)',
+              color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none', alignSelf: 'flex-start',
+              marginBottom: '15px'
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          </button>
+
+          {/* Title or Logo */}
+          {logoUrl ? (
+            <img src={logoUrl} alt="" onError={() => setLogoUrl(null)} style={{ maxWidth: '300px', maxHeight: '90px', objectFit: 'contain', alignSelf: 'flex-start' }} />
+          ) : (
+            <h1 style={{ fontSize: 'clamp(1.8rem, 6vh, 3.2rem)', fontWeight: 900, color: '#fff', margin: 0, lineHeight: 1.1, letterSpacing: '-0.02em', textAlign: 'left' }}>{fullShow.name}</h1>
+          )}
+
+          {/* Metadata Row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: 'clamp(0.72rem, 1.6vh, 0.85rem)', color: 'rgba(255,255,255,0.5)', fontWeight: 700 }}>
+            {fullShow.firstAirDate && <span>{fullShow.firstAirDate.split('-')[0]}</span>}
+            <span style={{ height: '8px', width: '1px', background: 'rgba(255,255,255,0.25)' }} />
+            <span style={{ background: '#ffffff', color: '#000000', padding: '1px 6px', borderRadius: '3px', fontSize: '0.65rem', fontWeight: 900 }}>12+</span>
+            <span style={{ height: '8px', width: '1px', background: 'rgba(255,255,255,0.25)' }} />
+            {fullShow.numberOfSeasons && <span>{fullShow.numberOfSeasons} Seasons</span>}
+            {fullShow.genres && fullShow.genres.length > 0 && (
+              <>
+                <span style={{ height: '8px', width: '1px', background: 'rgba(255,255,255,0.25)' }} />
+                <span>{fullShow.genres.map(g => g.name).slice(0, 2).join(', ')}</span>
+              </>
+            )}
+          </div>
+
+          {/* Synopsis */}
+          <p style={{
+            fontSize: 'clamp(0.75rem, 1.7vh, 0.88rem)',
+            lineHeight: 1.6,
+            color: 'rgba(255,255,255,0.75)',
+            maxWidth: '480px',
+            margin: 0,
+            textAlign: 'left'
+          }}>
+            {fullShow.overview}
+          </p>
+
+          {/* Play / My List Row */}
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <button
+              onClick={() => {
+                setPendingEpisodeNum(selectedEpisode);
+                handlePlayClick(selectedEpisode, true);
+              }}
+              disabled={localStreamLoading || episodes.length === 0}
+              className="tv-focusable"
+              style={{
+                height: '36px', padding: '0 20px', borderRadius: '4px', border: 'none', background: '#ffffff', color: '#000000',
+                fontWeight: 900, fontSize: '0.78rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', outline: 'none'
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+              {t('play').toUpperCase()} S{selectedSeason}:E{selectedEpisode}
+            </button>
+
+            <button
+              onClick={async () => {
+                triggerHaptic('medium');
+                if (isShowInList) {
+                  await removeFromMyList(fullShow.id, 'tv');
+                } else {
+                  await addToMyList(fullShow);
+                }
+                setInList(!isShowInList);
+                onListUpdate?.();
+              }}
+              className="tv-focusable"
+              style={{
+                height: '36px', padding: '0 18px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.2)', background: 'transparent', color: '#fff',
+                fontWeight: 900, fontSize: '0.78rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', outline: 'none'
+              }}
+            >
+              {isShowInList ? 'âœ“ ' + t('in_watchlist').toUpperCase() : '+ ' + t('watchlist').toUpperCase()}
+            </button>
+
+            <button
+              onClick={handleDownloadSeason}
+              className="tv-focusable"
+              style={{
+                height: '36px',
+                padding: '0 18px',
+                borderRadius: '4px',
+                border: '1px solid rgba(255,255,255,0.2)',
+                background: isAnyEpisodeDownloading || isResolving ? 'rgba(255,255,255,0.1)' : 'transparent',
+                color: '#fff',
+                fontWeight: 900,
+                fontSize: '0.78rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                outline: 'none'
+              }}
+            >
+              {isAnyEpisodeDownloading ? (
+                <>
+                  <div style={{ width: '12px', height: '12px', border: '1.5px solid rgba(255,255,255,0.2)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                  <span>DOWNLOADING {currentDownloadingProgress}%</span>
+                </>
+              ) : isResolving ? (
+                <>
+                  <div style={{ width: '12px', height: '12px', border: '1.5px solid rgba(255,255,255,0.2)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                  <span>RESOLVING...</span>
+                </>
+              ) : (
+                <>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                  <span>DOWNLOAD</span>
+                </>
+              )}
+            </button>
+
+            {/* Dub / Sub Selector */}
+            {isAnime && (
+              <button 
+                onClick={() => { triggerHaptic('light'); setIsDub(!isDub); }}
+                className="tv-focusable"
+                style={{
+                  height: '36px', padding: '0 16px', background: isDub ? COLORS.primary : 'rgba(255,255,255,0.04)',
+                  color: isDub ? '#000000' : '#fff', border: '1px solid rgba(255,255,255,0.2)',
+                  fontWeight: 900, borderRadius: '4px', cursor: 'pointer', fontSize: '0.78rem', outline: 'none'
+                }}
+              >
+                MODE: {isDub ? 'DUB' : 'SUB'}
+              </button>
+            )}
+          </div>
+
+          {/* Watch Trailer Secondary Button */}
+          {videos && videos.length > 0 && (() => {
+            const trailer = videos.find(v => v.type === 'Trailer' && v.site === 'YouTube') || videos[0];
+            return trailer ? (
+              <button
+                onClick={() => { triggerHaptic('medium'); setActiveTrailerUrl(`https://www.youtube.com/embed/${trailer.key}?autoplay=1`); }}
+                className="tv-focusable"
+                style={{
+                  background: 'transparent', border: 'none', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px',
+                  padding: '6px 0', fontSize: '0.78rem', fontWeight: 900, textTransform: 'uppercase', cursor: 'pointer', alignSelf: 'flex-start', outline: 'none'
+                }}
+              >
+                <div style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" style={{ transform: 'translateX(1px)' }}><path d="M8 5v14l11-7z" /></svg>
+                </div>
+                <span>{t('watch_trailer').toUpperCase()}</span>
+              </button>
+            ) : null;
+          })()}
+        </div>
+
+        {/* BOTTOM CONTENT AREA (Seasons, Episodes, Cast, Recommendations) */}
+        <div
+          onClick={e => e.stopPropagation()}
+          style={{
+            position: 'relative',
+            zIndex: 10,
+            background: 'linear-gradient(to bottom, transparent 0%, #070708 120px)',
+            padding: '4vh 8vw 12vh 8vw',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '5vh',
+            boxSizing: 'border-box'
+          }}
+        >
+          {/* Seasons Row */}
+          <div>
+            <h3 style={{ fontSize: '1rem', fontWeight: 900, textTransform: 'uppercase', color: '#fff', margin: '0 0 16px 0', letterSpacing: '0.06em' }}>Seasons</h3>
+            <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '10px' }} className="no-scrollbar">
+              {Array.from({ length: fullShow.numberOfSeasons || 1 }, (_, i) => i + 1).map(s => (
+                <button
+                  key={s}
+                  onClick={() => { triggerHaptic('medium'); setSelectedSeason(s); }}
+                  className={`tv-focusable${selectedSeason === s ? ' active' : ''}`}
+                  style={{
+                    padding: '8px 20px', borderRadius: '20px', border: 'none',
+                    background: selectedSeason === s ? '#fff' : 'rgba(255,255,255,0.05)',
+                    color: selectedSeason === s ? '#000' : '#fff',
+                    fontWeight: 900, fontSize: '0.82rem', cursor: 'pointer', outline: 'none', flexShrink: 0
+                  }}
+                >
+                  Season {s}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Episode List Row */}
+          <div>
+            <h3 style={{ fontSize: '1rem', fontWeight: 900, textTransform: 'uppercase', color: '#fff', margin: '0 0 16px 0', letterSpacing: '0.06em' }}>Episodes</h3>
+            {loadingEpisodes ? (
+              <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.8rem' }}>Loading episodes...</div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '14px 12px' }}>
+                {episodes.map(ep => {
+                  const epNum = ep.episodeNumber || (ep as any).episode_number;
+                  const isFocused = selectedEpisode === epNum;
+                  
+                  // Check if episode is released yet
+                  const airDateStr = ep.airDate || (ep as any).air_date;
+                  const isReleased = airDateStr ? new Date(airDateStr).getTime() <= Date.now() : false;
+                  
+                  const handleEpisodePlay = () => {
+                    if (!isReleased) {
+                      triggerHaptic('medium');
+                      const formattedDate = airDateStr ? new Date(airDateStr).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : 'Unknown Date';
+                      alert(`This episode has not been released yet. It is scheduled to release on ${formattedDate}.`);
+                      return;
+                    }
+                    setSelectedEpisode(epNum);
+                    setPendingEpisodeNum(epNum);
+                    handleLocalServerPlay(epNum, true);
+                  };
+
+                  return (
+                    <div
+                      key={ep.id}
+                      onClick={handleEpisodePlay}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleEpisodePlay();
+                        }
+                      }}
+                      tabIndex={0}
+                      className="tv-focusable"
+                      style={{
+                        padding: '12px 16px', borderRadius: '8px', background: isFocused ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.02)',
+                        border: isFocused ? '1px solid #fff' : '1px solid transparent', cursor: 'pointer', outline: 'none',
+                        display: 'flex', flexDirection: 'column', gap: '4px', textAlign: 'left',
+                        opacity: isReleased ? 1 : 0.5
+                      }}
+                    >
+                      <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#fff' }}>Episode {epNum}: {ep.name}</span>
+                      <span style={{ fontSize: '0.65rem', color: isReleased ? 'rgba(255,255,255,0.4)' : '#fbbf24', fontWeight: isReleased ? 500 : 700 }}>
+                        {isReleased 
+                          ? (ep.runtime ? `${ep.runtime} min` : '') 
+                          : `Releasing ${airDateStr ? new Date(airDateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'soon'}`
+                        }
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Cast */}
+          {cast.length > 0 && (
+            <div>
+              <h3 style={{ fontSize: '1rem', fontWeight: 900, textTransform: 'uppercase', color: '#fff', margin: '0 0 16px 0', letterSpacing: '0.06em' }}>{t('cast')}</h3>
+              <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '10px' }} className="no-scrollbar">
+                {cast.slice(0, 10).map(member => (
+                  <div
+                    key={member.id}
+                    onClick={() => { triggerHaptic('light'); onActorClick?.(member.id); }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        triggerHaptic('light');
+                        onActorClick?.(member.id);
+                      }
+                    }}
+                    tabIndex={0}
+                    className="tv-focusable"
+                    style={{
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', width: '80px', flexShrink: 0,
+                      borderRadius: '8px', padding: '6px', outline: 'none', transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <img src={getProfileUrl(member.profilePath, 'medium')} alt="" style={{ width: '60px', height: '60px', borderRadius: '50%', objectFit: 'cover', border: '1px solid rgba(255,255,255,0.1)' }} />
+                    <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'rgba(255,255,255,0.8)', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', minHeight: '24px' }}>{member.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Recommendations / More Like This */}
+          <div>
+            <h3 style={{ fontSize: '1rem', fontWeight: 900, textTransform: 'uppercase', color: '#fff', margin: '0 0 20px 0', letterSpacing: '0.06em' }}>{t('more_like_this')}</h3>
+            {similarShows.length > 0 ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '18px 14px' }}>
+                {similarShows.slice(0, 6).map(similar => (
+                  <div
+                    key={similar.id}
+                    onClick={() => { onClose(); setTimeout(() => window.dispatchEvent(new CustomEvent('tvShowClick', { detail: similar })), 50); }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onClose();
+                        setTimeout(() => window.dispatchEvent(new CustomEvent('tvShowClick', { detail: similar })), 50);
+                      }
+                    }}
+                    tabIndex={0}
+                    className="tv-focusable"
+                    style={{
+                      aspectRatio: '2/3', background: '#121214', borderRadius: '8px', overflow: 'hidden', cursor: 'pointer',
+                      border: '1px solid rgba(255,255,255,0.05)', transition: 'all 0.15s ease', outline: 'none'
+                    }}
+                  >
+                    <img src={getPosterUrl(similar.posterPath, 'small')} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.8rem' }}>No related shows found</div>
+            )}
+          </div>
+        </div>
+
+        <style>{`
+          /* Action buttons (Play, Download, etc.) get the white pill highlight */
+          button.tv-focusable:focus {
+            background: #ffffff !important;
+            color: #000000 !important;
+            transform: scale(1.04) !important;
+            box-shadow: 0 0 0 3px rgba(255,255,255,0.6) !important;
+          }
+          button.tv-focusable:focus span,
+          button.tv-focusable:focus svg {
+            color: #000000 !important;
+          }
+          /* Episode rows and generic div-based items: subtle left-border highlight only, no white background */
+          div.tv-focusable:focus {
+            background: rgba(255,255,255,0.08) !important;
+            border-left: 3px solid #ffffff !important;
+            outline: none !important;
+            transform: none !important;
+            box-shadow: none !important;
+          }
+        `}</style>
+
+        {/* Video Player overlay */}
+        {showPlayer && (
+          <VideoPlayer
+            src={streamUrl}
+            title={`${fullShow.name} - S${playingSeasonForPlayer}:E${playingEpisodeForPlayer}`}
+            onClose={() => {
+              setShowPlayer(false);
+              setIsPartyMode(false);
+              setTimeout(() => {
+                reloadProgress();
+              }, 800);
+            }}
+            onNextEpisode={handleNextEpisode}
+            item={fullShow}
+            season={playingSeasonForPlayer}
+            episode={playingEpisodeForPlayer}
+            tracks={resolvedTracks}
+            startTime={currentStartTime}
+            isPartyMode={isPartyMode}
+            partySessionId={partySessionId}
+            isPartyHost={isPartyHost}
+            logoUrl={logoUrl}
+            isOfflineMode={isCurrentEpDownloaded}
+          />
+        )}
+
+        {/* Trailer Modal overlay */}
+        <AnimatePresence>
+          {activeTrailerUrl && (
+            <motion.div
+              id="trailer-modal-overlay"
+              className="trailer-modal-overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={(e) => { e.stopPropagation(); setActiveTrailerUrl(null); }}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(0,0,0,0.85)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+                zIndex: 100000,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '16px'
+              }}
+            >
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  width: '100%',
+                  maxWidth: '800px',
+                  aspectRatio: '16/9',
+                  background: '#000',
+                  borderRadius: '16px',
+                  overflow: 'hidden',
+                  position: 'relative',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  boxShadow: '0 24px 48px rgba(0,0,0,0.8)'
+                }}
+              >
+                <iframe
+                  src={activeTrailerUrl}
+                  title="Trailer"
+                  frameBorder="0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                  style={{ width: '100%', height: '100%' }}
+                />
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        
+        <ReviewModal
+        isOpen={isReviewModalOpen}
+        onClose={() => setIsReviewModalOpen(false)}
+        itemId={String(fullShow.id)}
+        itemTitle={fullShow.name}
+        onSuccess={() => setRefreshKey(prev => prev + 1)}
+      />
+
+        {createPortal(
+          <>
+            <GuestLockModal
+              isOpen={isWatchPartyLockOpen}
+              onClose={() => setIsWatchPartyLockOpen(false)}
+              title="Watch Party Locked"
+              description="Watch Parties and synchronized streaming are reserved for registered users. Log in or create an account to stream with friends!"
+            />
+            <GuestLockModal
+              isOpen={isDownloadLockOpen}
+              onClose={() => setIsDownloadLockOpen(false)}
+              title="Downloads Locked"
+              description="Offline downloads are reserved for registered users. Log in or create an account to download movies and shows!"
+            />
+          </>,
+          document.body
+        )}
+
+        {showSeasonDownloadModal && (
+        <div
+          onClick={() => setShowSeasonDownloadModal(false)}
+          className="tv-modal-container"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 4000,
+            background: 'rgba(0,0,0,0.72)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: isTV ? 'center' : 'flex-end',
+            justifyContent: 'center',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: isTV ? '640px' : '520px',
+              height: isTV ? '80vh' : 'auto',
+              background: '#1c1c1f',
+              borderRadius: isTV ? '24px' : '24px 24px 0 0',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderBottom: isTV ? '1px solid rgba(255,255,255,0.08)' : 'none',
+              boxShadow: isTV ? '0 24px 60px rgba(0,0,0,0.8)' : '0 -24px 60px rgba(0,0,0,0.7)',
+              animation: isTV ? 'fadeIn 0.25s ease-out' : 'slideUp 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
+              maxHeight: '85vh',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+            }}
+          >
+            {/* Handle bar */}
+            <div style={{ display: 'flex', justifyContent: 'center', paddingTop: '12px', paddingBottom: '4px', flexShrink: 0 }}>
+              <div style={{ width: '36px', height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.2)' }} />
+            </div>
+
+            {/* Header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '12px 20px 14px',
+              borderBottom: '1px solid rgba(255,255,255,0.06)',
+              flexShrink: 0,
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', position: 'relative' }}>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#fff' }}>
+                    Download Season {selectedSeason}
+                  </h3>
+                  <button
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setShowSeasonPickerInModal(prev => !prev);
+                    }}
+                    className="tv-focusable"
+                    tabIndex={0}
+                    style={{
+                      background: 'rgba(255,255,255,0.06)',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      borderRadius: '12px',
+                      color: '#fff',
+                      padding: '3px 8px',
+                      cursor: 'pointer',
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    Change
+                    <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
+
+                  {showSeasonPickerInModal && (
+                    <>
+                      <div 
+                        onClick={() => setShowSeasonPickerInModal(false)}
+                        style={{ position: 'fixed', inset: 0, zIndex: 4100 }}
+                      />
+                      <div style={{
+                        position: 'absolute',
+                        top: 'calc(100% + 6px)',
+                        left: 0,
+                        zIndex: 4200,
+                        background: '#242427',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        borderRadius: '12px',
+                        boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                        padding: '4px',
+                        minWidth: '130px',
+                        maxHeight: '200px',
+                        overflowY: 'auto'
+                      }}>
+                        {Array.from({ length: fullShow.numberOfSeasons || 1 }, (_, i) => i + 1).map(s => (
+                          <button
+                            key={s}
+                            onClick={() => {
+                              triggerHaptic('medium');
+                              setSelectedSeason(s);
+                              setSelectedEpisodesToDownload(new Set());
+                              setShowSeasonPickerInModal(false);
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '8px 12px',
+                              borderRadius: '8px',
+                              border: 'none',
+                              background: selectedSeason === s ? 'rgba(255,255,255,0.1)' : 'transparent',
+                              color: selectedSeason === s ? '#fff' : 'rgba(255,255,255,0.7)',
+                              fontWeight: selectedSeason === s ? 700 : 500,
+                              fontSize: '0.8rem',
+                              cursor: 'pointer',
+                              textAlign: 'left'
+                            }}
+                          >
+                            Season {s}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+                <p style={{ margin: 0, fontSize: '0.78rem', color: 'rgba(255,255,255,0.45)' }}>
+                  {fullShow.name} Â· {episodes.length} episode{episodes.length !== 1 ? 's' : ''}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowSeasonDownloadModal(false)}
+                className="tv-focusable"
+                tabIndex={0}
+                style={{ background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'rgba(255,255,255,0.6)' }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+
+            {/* Select All / Deselect All */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '10px 20px',
+              borderBottom: '1px solid rgba(255,255,255,0.04)',
+              flexShrink: 0,
+            }}>
+              <span style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>
+                {selectedEpisodesToDownload.size} selected
+              </span>
+              <button
+                onClick={() => {
+                  triggerHaptic('light');
+                  const raw = localStorage.getItem('cinemovie_downloads');
+                  let list: any[] = [];
+                  if (raw) { try { list = JSON.parse(raw); } catch (e) {} }
+                  const allSelectable = episodes
+                    .filter(ep => !list.some((item: any) => item.id === `tv_${fullShow.id}_${selectedSeason}_${ep.episodeNumber}` && (item.status === 'downloading' || item.status === 'resolving' || item.status === 'completed')))
+                    .map(ep => ep.episodeNumber);
+                  if (selectedEpisodesToDownload.size === allSelectable.length) {
+                    setSelectedEpisodesToDownload(new Set());
+                  } else {
+                    setSelectedEpisodesToDownload(new Set(allSelectable));
+                  }
+                }}
+                style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer', padding: '4px 8px' }}
+              >
+                {(() => {
+                  const raw = localStorage.getItem('cinemovie_downloads');
+                  let list: any[] = [];
+                  if (raw) { try { list = JSON.parse(raw); } catch (e) {} }
+                  const allSelectable = episodes.filter(ep => !list.some((item: any) => item.id === `tv_${fullShow.id}_${selectedSeason}_${ep.episodeNumber}` && (item.status === 'downloading' || item.status === 'resolving' || item.status === 'completed')));
+                  return selectedEpisodesToDownload.size === allSelectable.length ? 'Deselect All' : 'Select All';
+                })()}
+              </button>
+            </div>
+
+            {/* Episode List */}
+            <div style={{ overflowY: 'auto', flex: 1 }}>
+              {episodes.map(ep => {
+                const downloadId = `tv_${fullShow.id}_${selectedSeason}_${ep.episodeNumber}`;
+                const dlState = downloadedEpisodes[downloadId];
+                const isCompleted = dlState?.status === 'completed';
+                const isInProgress = dlState?.status === 'downloading' || dlState?.status === 'resolving';
+                const isLocked = isCompleted || isInProgress;
+                const isSelected = selectedEpisodesToDownload.has(ep.episodeNumber);
+
+                return (
+                  <div
+                    key={ep.id}
+                    onClick={() => {
+                      if (isLocked) return;
+                      triggerHaptic('light');
+                      setSelectedEpisodesToDownload(prev => {
+                        const next = new Set(prev);
+                        if (next.has(ep.episodeNumber)) {
+                          next.delete(ep.episodeNumber);
+                        } else {
+                          next.add(ep.episodeNumber);
+                        }
+                        return next;
+                      });
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (isLocked) return;
+                        triggerHaptic('light');
+                        setSelectedEpisodesToDownload(prev => {
+                          const next = new Set(prev);
+                          if (next.has(ep.episodeNumber)) {
+                            next.delete(ep.episodeNumber);
+                          } else {
+                            next.add(ep.episodeNumber);
+                          }
+                          return next;
+                        });
+                      }
+                    }}
+                    className="tv-focusable"
+                    tabIndex={isLocked ? -1 : 0}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '14px',
+                      padding: '13px 20px',
+                      borderBottom: '1px solid rgba(255,255,255,0.04)',
+                      cursor: isLocked ? 'default' : 'pointer',
+                      opacity: isCompleted ? 0.55 : 1,
+                      transition: 'background 0.15s',
+                      outline: 'none',
+                    }}
+                    onMouseEnter={e => { if (!isLocked) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    {/* Checkbox / Status */}
+                    <div style={{
+                      width: '22px',
+                      height: '22px',
+                      borderRadius: '6px',
+                      border: isSelected || isLocked ? 'none' : '1.5px solid rgba(255,255,255,0.3)',
+                      background: isCompleted ? 'transparent' : isInProgress ? 'rgba(255,255,255,0.08)' : isSelected ? 'rgba(255,255,255,0.12)' : 'transparent',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                      transition: 'all 0.15s',
+                    }}>
+                      {isCompleted ? (
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                      ) : isInProgress ? (
+                        <div style={{ width: '12px', height: '12px', border: '2px solid rgba(255,255,255,0.2)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                      ) : isSelected ? (
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                      ) : null}
+                    </div>
+
+                    {/* Episode info */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        E{ep.episodeNumber}. {ep.name}
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
+                        {isCompleted ? 'âœ“ Downloaded' : isInProgress ? `Downloading ${dlState?.progress ?? 0}%â€¦` : ep.airDate || 'TBA'}
+                      </div>
+                    </div>
+
+                    {/* Cancel button for in-progress */}
+                    {isInProgress && (
+                      <button
+                        onClick={e => { e.stopPropagation(); handleCancelEpisodeDownload(ep); }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleCancelEpisodeDownload(ep);
+                          }
+                        }}
+                        className="tv-focusable"
+                        tabIndex={0}
+                        style={{
+                          background: 'rgba(239,68,68,0.12)',
+                          border: '1px solid rgba(239,68,68,0.3)',
+                          color: '#ef4444',
+                          borderRadius: '8px',
+                          padding: '5px 10px',
+                          fontSize: '0.74rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          flexShrink: 0,
+                          whiteSpace: 'nowrap',
+                          outline: 'none',
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Footer actions */}
+            <div style={{
+              display: 'flex',
+              gap: '10px',
+              padding: '14px 20px',
+              borderTop: '1px solid rgba(255,255,255,0.06)',
+              paddingBottom: 'max(14px, env(safe-area-inset-bottom, 14px))',
+              flexShrink: 0,
+              background: '#1c1c1f',
+            }}>
+              <button
+                onClick={() => setShowSeasonDownloadModal(false)}
+                className="tv-focusable"
+                tabIndex={0}
+                style={{
+                  flex: 1,
+                  padding: '14px',
+                  borderRadius: '14px',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  background: 'rgba(255,255,255,0.06)',
+                  color: '#fff',
+                  fontWeight: 700,
+                  fontSize: '0.95rem',
+                  cursor: 'pointer',
+                  outline: 'none',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleStartSeasonDownload}
+                disabled={selectedEpisodesToDownload.size === 0}
+                className={selectedEpisodesToDownload.size === 0 ? "" : "tv-focusable"}
+                tabIndex={selectedEpisodesToDownload.size === 0 ? -1 : 0}
+                style={{
+                  flex: 2,
+                  padding: '14px',
+                  borderRadius: '14px',
+                  border: 'none',
+                  background: selectedEpisodesToDownload.size === 0 ? 'rgba(255,255,255,0.1)' : '#fff',
+                  color: selectedEpisodesToDownload.size === 0 ? 'rgba(255,255,255,0.3)' : '#000',
+                  fontWeight: 800,
+                  fontSize: '0.95rem',
+                  cursor: selectedEpisodesToDownload.size === 0 ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.2s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  outline: 'none',
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      </div>
+    );
+  }
+
   return (
     <div 
       onClick={handleClose}
-      className={`details-modal-container ${(showPlayer || showStreamSelector) ? 'overflow-locked' : ''}`}
+      className={`details-modal-container ${(showPlayer || showStreamSelector || showSeasonDownloadModal || isWatchPartyLockOpen || isDownloadLockOpen || showWatchTogetherInvite) ? 'overflow-locked' : ''}`}
       style={{
         position: 'fixed',
         inset: 0,
@@ -1244,16 +2526,24 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
         .sk { background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-card-hover, #27272a) 50%, var(--bg-card) 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; border-radius: 8px; }
 
         @media (max-width: 768px) {
-          .details-modal-container:not(.overflow-locked) {
-            overflow-y: auto !important;
-          }
-          .details-modal-container.overflow-locked {
-            overflow-y: hidden !important;
+          .details-modal-container {
+            position: fixed !important;
+            inset: 0 !important;
+            height: 100vh !important;
+            height: 100dvh !important;
+            overflow: hidden !important;
           }
           .details-main-wrapper {
             flex-direction: column !important;
             min-height: auto !important;
-            overflow: visible !important;
+            height: 100vh !important;
+            height: 100dvh !important;
+            overflow-x: hidden !important;
+            overflow-y: auto !important;
+            -webkit-overflow-scrolling: touch !important;
+          }
+          .details-modal-container.overflow-locked .details-main-wrapper {
+            overflow-y: hidden !important;
           }
           .details-backdrop-container {
             height: 45vh !important;
@@ -1348,7 +2638,7 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
         }
       `}</style>
 
-      {/* ── Native Floating Top Bar ── */}
+      {/* â”€â”€ Native Floating Top Bar â”€â”€ */}
       <div style={{
         position: 'fixed',
         top: 0,
@@ -1391,7 +2681,7 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
         </button>
       </div>
 
-        {/* ── Immersive Widescreen Layout Wrapper ── */}
+        {/* â”€â”€ Immersive Widescreen Layout Wrapper â”€â”€ */}
         <div 
           onClick={e => e.stopPropagation()}
           className="details-main-wrapper" 
@@ -1447,12 +2737,12 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
               marginBottom: '28px',
               gap: '28px' 
             }}>
-              {(['episodes', 'trailers', 'more', 'reviews'] as TabState[]).map(tab => (
+              {(['episodes', 'more', 'reviews'] as TabState[]).map(tab => (
                 <button
                   key={tab}
                   onClick={() => { triggerHaptic('light'); setActiveTab(tab); }}
-                  className="tv-focusable"
-                  tabIndex={0}
+                  className={isTV ? "tv-focusable" : ""}
+                  tabIndex={isTV ? 0 : -1}
                   style={{
                     background: 'none',
                     border: 'none',
@@ -1467,7 +2757,7 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                     transition: 'color 0.2s',
                   }}
                 >
-                  {tab === 'episodes' ? t('episodes') : tab === 'trailers' ? t('trailers') : tab === 'more' ? t('more_like_this') : t('reviews')}
+                  {tab === 'episodes' ? t('episodes') : tab === 'more' ? t('related') : t('reviews')}
                   {activeTab === tab && (
                     <div style={{
                       position: 'absolute',
@@ -1526,7 +2816,7 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                           <line x1="8" y1="2" x2="8" y2="6"/>
                           <line x1="3" y1="10" x2="21" y2="10"/>
                         </svg>
-                        Season {selectedSeason}
+                        Season {selectedSeason} ({episodes.length} Episodes)
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transition: 'transform 0.2s', transform: showSeasonPicker ? 'rotate(180deg)' : 'none' }}>
                           <polyline points="6 9 12 15 18 9"/>
                         </svg>
@@ -1653,22 +2943,19 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                         return (
                           <div 
                             key={ep.id}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              triggerHaptic('medium');
+                            onClick={() => {
                               setPendingEpisodeNum(ep.episodeNumber);
-                              handleLocalServerPlay(ep.episodeNumber, true);
+                              handlePlayClick(ep.episodeNumber, true);
                             }}
-                            className="tv-focusable"
-                            tabIndex={0}
+                            className={isTV ? "tv-focusable" : ""}
+                            tabIndex={isTV ? 0 : -1}
                             style={{
                               display: 'flex',
                               flexDirection: 'column',
                               gap: '12px',
-                              padding: '16px',
-                              border: '1px solid var(--border-primary)',
-                              borderRadius: '12px',
-                              background: 'var(--bg-card)',
+                              padding: '12px 0',
+                              borderBottom: '1px solid var(--border-primary)',
+                              background: 'transparent',
                               cursor: 'pointer',
                               transition: 'all 0.2s',
                               outline: 'none',
@@ -1676,12 +2963,10 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                               containIntrinsicSize: 'auto 90px'
                             }}
                             onMouseEnter={(e) => {
-                              e.currentTarget.style.background = 'var(--bg-card-hover)';
-                              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
+                              e.currentTarget.style.opacity = '0.85';
                             }}
                             onMouseLeave={(e) => {
-                              e.currentTarget.style.background = 'var(--bg-card)';
-                              e.currentTarget.style.borderColor = 'var(--border-primary)';
+                              e.currentTarget.style.opacity = '1';
                             }}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter' || e.key === ' ') {
@@ -1804,9 +3089,9 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                                       className="tv-focusable"
                                       tabIndex={0}
                                       style={{
-                                        background: 'rgba(34, 197, 94, 0.12)',
-                                        border: '1px solid rgba(34, 197, 94, 0.4)',
-                                        color: '#22c55e',
+                                        background: 'rgba(255,255,255,0.08)',
+                                        border: '1px solid rgba(255,255,255,0.2)',
+                                        color: '#fff',
                                         cursor: 'pointer',
                                         width: '42px',
                                         height: '42px',
@@ -1818,8 +3103,8 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                                         flexShrink: 0,
                                         outline: 'none'
                                       }}
-                                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(34, 197, 94, 0.22)'; }}
-                                      onMouseLeave={e => { e.currentTarget.style.background = 'rgba(34, 197, 94, 0.12)'; }}
+                                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.14)'; }}
+                                      onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
                                       title="Watch offline"
                                     >
                                       <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
@@ -1956,22 +3241,10 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                 </div>
               )}
 
-              {activeTab === 'trailers' && (
-                <div style={{ animation: 'fadeIn 0.2s ease-out both' }}>
-                  <VideoGallery
-                    videos={videos}
-                    onVideoClick={(v) => {
-                      triggerHaptic('heavy');
-                      setActiveTrailerUrl(`https://www.youtube.com/embed/${v.key}?autoplay=1`);
-                    }}
-                  />
-                </div>
-              )}
-
               {activeTab === 'more' && (
                 <div style={{ animation: 'fadeIn 0.2s ease-out both' }}>
                   <div style={{ marginTop: '0px' }}>
-                    <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '1.2rem', color: '#fff' }}>More Like This</h3>
+                    <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '1.2rem', color: '#fff' }}>{t('related')}</h3>
                     {similarShows.length > 0 ? (
                       <div style={{ 
                         display: 'grid', 
@@ -2022,23 +3295,25 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                 <div style={{ animation: 'fadeIn 0.2s ease-out both' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                     <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800 }}>User Critiques</h3>
-                    <button
-                      onClick={() => { triggerHaptic('medium'); setIsReviewModalOpen(true); }}
-                      className="tv-focusable"
-                      tabIndex={0}
-                      style={{
-                        background: 'rgba(255,255,255,0.08)',
-                        border: '1px solid rgba(255,255,255,0.15)',
-                        padding: '8px 16px',
-                        borderRadius: '8px',
-                        color: '#fff',
-                        fontSize: '0.85rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Add Critique
-                    </button>
+                    {localStorage.getItem('cinemovie_is_guest') !== 'true' && (
+                      <button
+                        onClick={() => { triggerHaptic('medium'); setIsReviewModalOpen(true); }}
+                        className="tv-focusable"
+                        tabIndex={0}
+                        style={{
+                          background: 'rgba(255,255,255,0.08)',
+                          border: '1px solid rgba(255,255,255,0.15)',
+                          padding: '8px 16px',
+                          borderRadius: '8px',
+                          color: '#fff',
+                          fontSize: '0.85rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Add Critique
+                      </button>
+                    )}
                   </div>
                   <ReviewSection key={refreshKey} itemId={String(fullShow.id)} type="tv" />
                 </div>
@@ -2067,6 +3342,7 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
           isPartyMode={isPartyMode}
           partySessionId={partySessionId}
           isPartyHost={isPartyHost}
+          isOfflineMode={isCurrentEpDownloaded}
         />
       )}
 
@@ -2079,6 +3355,24 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
         itemTitle={fullShow.name}
         onSuccess={() => setRefreshKey(prev => prev + 1)}
       />
+
+      {createPortal(
+        <>
+          <GuestLockModal
+            isOpen={isWatchPartyLockOpen}
+            onClose={() => setIsWatchPartyLockOpen(false)}
+            title="Watch Party Locked"
+            description="Watch Parties and synchronized streaming are reserved for registered users. Log in or create an account to stream with friends!"
+          />
+          <GuestLockModal
+            isOpen={isDownloadLockOpen}
+            onClose={() => setIsDownloadLockOpen(false)}
+            title="Downloads Locked"
+            description="Offline downloads are reserved for registered users. Log in or create an account to download movies and shows!"
+          />
+        </>,
+        document.body
+      )}
 
       {/* Premium Centered YouTube Trailer Modal */}
       {createPortal(
@@ -2138,6 +3432,7 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
       {showSeasonDownloadModal && (
         <div
           onClick={() => setShowSeasonDownloadModal(false)}
+          className="tv-modal-container"
           style={{
             position: 'fixed',
             inset: 0,
@@ -2146,22 +3441,22 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
             backdropFilter: 'blur(8px)',
             WebkitBackdropFilter: 'blur(8px)',
             display: 'flex',
-            alignItems: 'flex-end',
+            alignItems: 'center',
             justifyContent: 'center',
+            padding: '16px'
           }}
         >
           <div
             onClick={e => e.stopPropagation()}
             style={{
               width: '100%',
-              maxWidth: '520px',
+              maxWidth: '460px',
               background: '#1c1c1f',
-              borderRadius: '24px 24px 0 0',
+              borderRadius: '24px',
               border: '1px solid rgba(255,255,255,0.08)',
-              borderBottom: 'none',
-              boxShadow: '0 -24px 60px rgba(0,0,0,0.7)',
-              animation: 'slideUp 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
-              maxHeight: '85vh',
+              boxShadow: '0 24px 60px rgba(0,0,0,0.8)',
+              animation: 'fadeInScale 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+              maxHeight: '80vh',
               display: 'flex',
               flexDirection: 'column',
               overflow: 'hidden',
@@ -2181,16 +3476,93 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
               borderBottom: '1px solid rgba(255,255,255,0.06)',
               flexShrink: 0,
             }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#fff' }}>
-                  Download Season {selectedSeason}
-                </h3>
-                <p style={{ margin: '3px 0 0', fontSize: '0.78rem', color: 'rgba(255,255,255,0.45)' }}>
-                  {fullShow.name} · {episodes.length} episode{episodes.length !== 1 ? 's' : ''}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', position: 'relative' }}>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#fff' }}>
+                    Download Season {selectedSeason}
+                  </h3>
+                  <button
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setShowSeasonPickerInModal(prev => !prev);
+                    }}
+                    className="tv-focusable"
+                    tabIndex={0}
+                    style={{
+                      background: 'rgba(255,255,255,0.06)',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      borderRadius: '12px',
+                      color: '#fff',
+                      padding: '3px 8px',
+                      cursor: 'pointer',
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    Change
+                    <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
+
+                  {showSeasonPickerInModal && (
+                    <>
+                      <div 
+                        onClick={() => setShowSeasonPickerInModal(false)}
+                        style={{ position: 'fixed', inset: 0, zIndex: 4100 }}
+                      />
+                      <div style={{
+                        position: 'absolute',
+                        top: 'calc(100% + 6px)',
+                        left: 0,
+                        zIndex: 4200,
+                        background: '#242427',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        borderRadius: '12px',
+                        boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                        padding: '4px',
+                        minWidth: '130px',
+                        maxHeight: '200px',
+                        overflowY: 'auto'
+                      }}>
+                        {Array.from({ length: fullShow.numberOfSeasons || 1 }, (_, i) => i + 1).map(s => (
+                          <button
+                            key={s}
+                            onClick={() => {
+                              triggerHaptic('medium');
+                              setSelectedSeason(s);
+                              setSelectedEpisodesToDownload(new Set());
+                              setShowSeasonPickerInModal(false);
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '8px 12px',
+                              borderRadius: '8px',
+                              border: 'none',
+                              background: selectedSeason === s ? 'rgba(255,255,255,0.1)' : 'transparent',
+                              color: selectedSeason === s ? '#fff' : 'rgba(255,255,255,0.7)',
+                              fontWeight: selectedSeason === s ? 700 : 500,
+                              fontSize: '0.8rem',
+                              cursor: 'pointer',
+                              textAlign: 'left'
+                            }}
+                          >
+                            Season {s}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+                <p style={{ margin: 0, fontSize: '0.78rem', color: 'rgba(255,255,255,0.45)' }}>
+                  {fullShow.name} Â· {episodes.length} episode{episodes.length !== 1 ? 's' : ''}
                 </p>
               </div>
               <button
                 onClick={() => setShowSeasonDownloadModal(false)}
+                className="tv-focusable"
+                tabIndex={0}
                 style={{ background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'rgba(255,255,255,0.6)' }}
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -2262,6 +3634,25 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                         return next;
                       });
                     }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (isLocked) return;
+                        triggerHaptic('light');
+                        setSelectedEpisodesToDownload(prev => {
+                          const next = new Set(prev);
+                          if (next.has(ep.episodeNumber)) {
+                            next.delete(ep.episodeNumber);
+                          } else {
+                            next.add(ep.episodeNumber);
+                          }
+                          return next;
+                        });
+                      }
+                    }}
+                    className="tv-focusable"
+                    tabIndex={isLocked ? -1 : 0}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -2271,6 +3662,7 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                       cursor: isLocked ? 'default' : 'pointer',
                       opacity: isCompleted ? 0.55 : 1,
                       transition: 'background 0.15s',
+                      outline: 'none',
                     }}
                     onMouseEnter={e => { if (!isLocked) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
@@ -2281,7 +3673,7 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                       height: '22px',
                       borderRadius: '6px',
                       border: isSelected || isLocked ? 'none' : '1.5px solid rgba(255,255,255,0.3)',
-                      background: isCompleted ? 'rgba(34,197,94,0.15)' : isInProgress ? 'rgba(255,255,255,0.08)' : isSelected ? '#fff' : 'transparent',
+                      background: isCompleted ? 'transparent' : isInProgress ? 'rgba(255,255,255,0.08)' : isSelected ? 'rgba(255,255,255,0.12)' : 'transparent',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -2289,11 +3681,11 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                       transition: 'all 0.15s',
                     }}>
                       {isCompleted ? (
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
                       ) : isInProgress ? (
                         <div style={{ width: '12px', height: '12px', border: '2px solid rgba(255,255,255,0.2)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
                       ) : isSelected ? (
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
                       ) : null}
                     </div>
 
@@ -2303,7 +3695,7 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                         E{ep.episodeNumber}. {ep.name}
                       </div>
                       <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
-                        {isCompleted ? '✓ Downloaded' : isInProgress ? `Downloading ${dlState?.progress ?? 0}%…` : ep.airDate || 'TBA'}
+                        {isCompleted ? 'âœ“ Downloaded' : isInProgress ? `Downloading ${dlState?.progress ?? 0}%â€¦` : ep.airDate || 'TBA'}
                       </div>
                     </div>
 
@@ -2311,6 +3703,15 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                     {isInProgress && (
                       <button
                         onClick={e => { e.stopPropagation(); handleCancelEpisodeDownload(ep); }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleCancelEpisodeDownload(ep);
+                          }
+                        }}
+                        className="tv-focusable"
+                        tabIndex={0}
                         style={{
                           background: 'rgba(239,68,68,0.12)',
                           border: '1px solid rgba(239,68,68,0.3)',
@@ -2322,6 +3723,7 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                           cursor: 'pointer',
                           flexShrink: 0,
                           whiteSpace: 'nowrap',
+                          outline: 'none',
                         }}
                       >
                         Cancel
@@ -2344,6 +3746,8 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
             }}>
               <button
                 onClick={() => setShowSeasonDownloadModal(false)}
+                className="tv-focusable"
+                tabIndex={0}
                 style={{
                   flex: 1,
                   padding: '14px',
@@ -2354,6 +3758,7 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                   fontWeight: 700,
                   fontSize: '0.95rem',
                   cursor: 'pointer',
+                  outline: 'none',
                 }}
               >
                 Cancel
@@ -2361,6 +3766,8 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
               <button
                 onClick={handleStartSeasonDownload}
                 disabled={selectedEpisodesToDownload.size === 0}
+                className={selectedEpisodesToDownload.size === 0 ? "" : "tv-focusable"}
+                tabIndex={selectedEpisodesToDownload.size === 0 ? -1 : 0}
                 style={{
                   flex: 2,
                   padding: '14px',
@@ -2376,6 +3783,7 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '8px',
+                  outline: 'none',
                 }}
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -2383,7 +3791,7 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                   <polyline points="7 10 12 15 17 10" />
                   <line x1="12" y1="15" x2="12" y2="3" />
                 </svg>
-                Download {selectedEpisodesToDownload.size > 0 ? `${selectedEpisodesToDownload.size} episode${selectedEpisodesToDownload.size !== 1 ? 's' : ''}` : 'episodes'}
+                Save
               </button>
             </div>
           </div>
@@ -2512,7 +3920,7 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                           cursor: isInviting || isInvited ? 'default' : 'pointer',
                         }}
                       >
-                        {isInviting ? 'Inviting...' : isInvited ? 'Invited ✓' : 'Invite'}
+                        {isInviting ? 'Inviting...' : isInvited ? 'Invited âœ“' : 'Invite'}
                       </button>
                     </div>
                   );

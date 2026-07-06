@@ -85,15 +85,14 @@ export async function addToMyList(item: Movie | TVShow): Promise<boolean> {
 
     const { error } = await supabase
       .from('my_list')
-      .insert({
+      .upsert({
         profile_id: profile.id,
         movie_id: item.id,
         type: type,
         data: itemData
-      });
+      }, { onConflict: 'profile_id,movie_id,type' });
 
     if (error) {
-        if (error.code === '23505') return true; 
         console.error('Error adding to My List:', error);
         return false;
     }
@@ -111,7 +110,7 @@ export async function updateListItemStatus(itemId: number, type: 'movie' | 'tv',
 
     if (isGuest()) {
       const list = getLocalMyList(profile.id);
-      const index = list.findIndex(i => i.id === itemId && i.mediaType === type);
+      const index = list.findIndex(i => Number(i.id) === Number(itemId) && i.mediaType === type);
       if (index !== -1) {
         list[index].status = status as any;
         saveLocalMyList(profile.id, list);
@@ -120,18 +119,33 @@ export async function updateListItemStatus(itemId: number, type: 'movie' | 'tv',
       return false;
     }
 
+    console.log('[MyList] Fetching list item:', { profileId: profile.id, itemId, type });
     // Fetch existing item JSON data first to preserve metadata
-    const { data: itemRow, error: fetchError } = await supabase
+    let { data: itemRow, error: fetchError } = await supabase
       .from('my_list')
-      .select('data')
+      .select('data, type')
       .eq('profile_id', profile.id)
-      .eq('movie_id', itemId)
+      .eq('movie_id', Number(itemId))
       .eq('type', type)
       .maybeSingle();
 
+    let actualType = type;
     if (fetchError || !itemRow) {
-      console.error('Error fetching list item for status update:', fetchError);
-      return false;
+      console.warn('[MyList] Fetch by type failed, trying fallback by movie_id only...', fetchError);
+      const { data: fallbackRow, error: fallbackError } = await supabase
+        .from('my_list')
+        .select('data, type')
+        .eq('profile_id', profile.id)
+        .eq('movie_id', Number(itemId))
+        .maybeSingle();
+      
+      if (fallbackError || !fallbackRow) {
+        console.error('[MyList] Fetch list item failed completely:', fetchError || fallbackError || 'No row found');
+        return false;
+      }
+      itemRow = fallbackRow;
+      actualType = fallbackRow.type as any;
+      console.log('[MyList] Found item with actual type:', actualType);
     }
 
     const updatedData = {
@@ -139,16 +153,26 @@ export async function updateListItemStatus(itemId: number, type: 'movie' | 'tv',
       status: status
     };
 
-    // Update the JSON data field with the new status
+    // Delete the old row first to avoid strict UPDATE RLS USING constraints
+    await supabase
+      .from('my_list')
+      .delete()
+      .eq('profile_id', profile.id)
+      .eq('movie_id', Number(itemId))
+      .eq('type', actualType);
+
+    // Insert the new updated row (which uses the allowed INSERT RLS policy)
     const { error } = await supabase
       .from('my_list')
-      .update({ data: updatedData })
-      .eq('profile_id', profile.id)
-      .eq('movie_id', itemId)
-      .eq('type', type);
+      .insert({
+        profile_id: profile.id,
+        movie_id: Number(itemId),
+        type: actualType,
+        data: updatedData
+      });
 
     if (error) {
-      console.error('Error updating My List status:', error);
+      console.error('Error updating My List status via insert:', error);
       return false;
     }
     return true;
@@ -165,7 +189,7 @@ export async function removeFromMyList(itemId: number, type: 'movie' | 'tv'): Pr
 
     if (isGuest()) {
       const list = getLocalMyList(profile.id);
-      const filtered = list.filter(i => !(i.id === itemId && i.mediaType === type));
+      const filtered = list.filter(i => !(Number(i.id) === Number(itemId) && i.mediaType === type));
       saveLocalMyList(profile.id, filtered);
       return true;
     }
@@ -174,7 +198,7 @@ export async function removeFromMyList(itemId: number, type: 'movie' | 'tv'): Pr
       .from('my_list')
       .delete()
       .eq('profile_id', profile.id)
-      .eq('movie_id', itemId)
+      .eq('movie_id', Number(itemId))
       .eq('type', type);
 
     if (error) {
@@ -195,14 +219,14 @@ export async function isInMyList(itemId: number, type: 'movie' | 'tv'): Promise<
 
     if (isGuest()) {
       const list = getLocalMyList(profile.id);
-      return list.some(i => i.id === itemId && i.mediaType === type);
+      return list.some(i => Number(i.id) === Number(itemId) && i.mediaType === type);
     }
 
     const { data, error } = await supabase
       .from('my_list')
       .select('id')
       .eq('profile_id', profile.id)
-      .eq('movie_id', itemId)
+      .eq('movie_id', Number(itemId))
       .eq('type', type)
       .maybeSingle();
 

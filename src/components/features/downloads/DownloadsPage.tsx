@@ -253,33 +253,459 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
           </div>
         </div>
 
-        {/* Coming Soon Notice (Minimalist Centered Typography) */}
-        <div style={{
-          margin: isMobileSize ? '100px 24px' : '140px auto',
-          maxWidth: '480px',
-          textAlign: 'center',
-        }}>
-          <h2 style={{
-            fontSize: '1.25rem',
-            fontWeight: 800,
-            color: '#fff',
-            margin: '0 0 10px',
-            letterSpacing: '-0.02em'
+        {showQualityMenu && (
+          <div style={{
+            background: 'rgba(255,255,255,0.02)',
+            border: '1px solid rgba(255,255,255,0.05)',
+            borderRadius: '12px',
+            padding: '12px',
+            marginBottom: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+            animation: 'fadeIn 0.2s ease-out'
           }}>
-            Offline Downloads Coming Soon
-          </h2>
-          <p style={{
-            fontSize: '0.85rem',
-            lineHeight: '1.6',
-            color: 'rgba(255,255,255,0.4)',
-            margin: 0,
-            fontWeight: 500
-          }}>
-            Offline library and video downloads are currently undergoing performance optimizations. This feature will be fully active in the next update (version 0.8.0).
-          </p>
+            <div>
+              <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '8px' }}>
+                Download Quality
+              </div>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                {(['1080p', '720p', '480p', '360p'] as const).map((q) => (
+                  <button
+                    key={q}
+                    onClick={() => handleQualityChange(q)}
+                    style={{
+                      flex: 1,
+                      height: '32px',
+                      borderRadius: '8px',
+                      background: selectedQuality === q ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                      border: selectedQuality === q ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(255,255,255,0.03)',
+                      color: selectedQuality === q ? '#fff' : 'rgba(255,255,255,0.45)',
+                      fontSize: '0.7rem',
+                      fontWeight: selectedQuality === q ? 800 : 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px',
+                      textTransform: 'uppercase',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    {selectedQuality === q && <Check size={12} />}
+                    {q}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '8px' }}>
+                Preferred Download Server
+              </div>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                {([
+                  { id: 'vidlink-pro', label: 'Vidlink Pro' },
+                  { id: 'vidsrc-pm', label: 'VidSrc PM' },
+                  { id: 'universal', label: 'Universal' }
+                ] as const).map((srv) => {
+                  const isSel = (localStorage.getItem('cinemovie_download_server') || 'vidlink-pro') === srv.id;
+                  return (
+                    <button
+                      key={srv.id}
+                      onClick={() => {
+                        triggerHaptic('light');
+                        localStorage.setItem('cinemovie_download_server', srv.id);
+                        loadDownloads(); // Trigger state update
+                      }}
+                      style={{
+                        flex: 1,
+                        height: '32px',
+                        borderRadius: '8px',
+                        background: isSel ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                        border: isSel ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(255,255,255,0.03)',
+                        color: isSel ? '#fff' : 'rgba(255,255,255,0.45)',
+                        fontSize: '0.7rem',
+                        fontWeight: isSel ? 800 : 600,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '4px',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      {isSel && <Check size={12} />}
+                      {srv.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab switchers in premium capsule design */}
+        <div style={{ display: 'flex', gap: '4px', background: 'rgba(255,255,255,0.03)', padding: '4px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+          {[
+            { id: 'movies', label: "Downloaded Movies" },
+            { id: 'tv', label: 'Downloaded Series' }
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => { triggerHaptic('light'); setActiveTab(tab.id as any); }}
+              style={{
+                flex: 1,
+                height: isMobileSize ? '34px' : '38px',
+                background: activeTab === tab.id ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                color: activeTab === tab.id ? '#fff' : 'rgba(255,255,255,0.5)',
+                border: activeTab === tab.id ? '1px solid rgba(255, 255, 255, 0.05)' : '1px solid transparent',
+                borderRadius: '8px',
+                fontSize: isMobileSize ? '0.7rem' : '0.8rem',
+                fontWeight: activeTab === tab.id ? 800 : 600,
+                cursor: 'pointer',
+                transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.02em',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
-      
+
+      {/* Content Area */}
+      <div style={{ padding: isMobileSize ? '0 12px' : '0 6%', maxWidth: '1400px', margin: '0 auto' }}>
+        {activeTab === 'movies' ? (
+          movieDownloads.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '60px 20px', color: 'rgba(255,255,255,0.4)' }}>
+              No downloaded movies found on this device.
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: isMobileSize ? 'repeat(auto-fill, minmax(105px, 1fr))' : 'repeat(auto-fill, minmax(130px, 1fr))', gap: isMobileSize ? '14px 10px' : '20px 16px' }}>
+              {movieDownloads.map(item => (
+                <div 
+                  key={item.id}
+                  onClick={() => handlePlay(item)}
+                  className="download-card"
+                  style={{
+                    position: 'relative',
+                    cursor: 'pointer',
+                    borderRadius: '12px',
+                    overflow: 'hidden',
+                    background: 'linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.01) 100%)',
+                    border: '1px solid rgba(255,255,255,0.05)'
+                  }}
+                >
+                  <div style={{ position: 'relative', paddingBottom: '150%' }}>
+                    <img 
+                      src={item.posterPath ? `https://image.tmdb.org/t/p/w342${item.posterPath}` : '/movie-placeholder.png'} 
+                      alt={item.title}
+                      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                    
+                    {/* Loading overlay when opening player */}
+                    {loadingItemId === item.id && (
+                      <div style={{
+                        position: 'absolute', inset: 0,
+                        background: 'rgba(0,0,0,0.72)',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                        gap: '8px', borderRadius: '12px',
+                        backdropFilter: 'blur(4px)',
+                        zIndex: 5,
+                      }}>
+                        <div style={{ width: '28px', height: '28px', border: '2.5px solid rgba(255,255,255,0.2)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+                        <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'rgba(255,255,255,0.7)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Opening…</span>
+                      </div>
+                    )}
+
+                    {/* Progress overlay if downloading, resolving, or failed */}
+                    {item.status !== 'completed' && (
+                      <div style={{
+                        position: 'absolute', inset: 0,
+                        background: 'rgba(0,0,0,0.72)',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                        gap: '6px',
+                        backdropFilter: 'blur(2px)'
+                      }}>
+                        {item.status === 'failed' ? (
+                          <>
+                            <AlertCircle size={22} color="#ef4444" />
+                            <span style={{ fontSize: '0.7rem', fontWeight: 900, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Failed</span>
+                          </>
+                        ) : (
+                          <>
+                            <div style={{ width: '18px', height: '18px', border: '2px solid rgba(255,255,255,0.2)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                            <span style={{ fontSize: '0.7rem', fontWeight: 800 }}>
+                              {item.status === 'resolving' ? 'Resolving...' : `${item.progress}%`}
+                            </span>
+                            {item.status === 'downloading' && item.speed !== undefined && (
+                              <span style={{ fontSize: '0.62rem', fontWeight: 800, color: COLORS.primary }}>{item.speed} MB/s</span>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Delete action button */}
+                    <button 
+                      onClick={(e) => handleDelete(item, e)}
+                      style={{
+                        position: 'absolute', top: '8px', right: '8px',
+                        background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '8px',
+                        width: '28px', height: '28px', color: '#fff',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        cursor: 'pointer', zIndex: 10
+                      }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                  </div>
+                  <div style={{ padding: '8px 10px' }}>
+                    <h3 style={{ fontSize: '0.82rem', fontWeight: 700, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {item.title}
+                    </h3>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        ) : (
+          tvSeriesGroups.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '60px 20px', color: 'rgba(255,255,255,0.4)' }}>
+              No downloaded series found on this device.
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: isMobileSize ? 'repeat(auto-fill, minmax(105px, 1fr))' : 'repeat(auto-fill, minmax(130px, 1fr))', gap: isMobileSize ? '14px 10px' : '20px 16px' }}>
+              {tvSeriesGroups.map(group => (
+                <div 
+                  key={group.show.id}
+                  onClick={() => setActiveShow(group)}
+                  className="download-card"
+                  style={{
+                    position: 'relative',
+                    cursor: 'pointer',
+                    borderRadius: '12px',
+                    overflow: 'hidden',
+                    background: 'linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.01) 100%)',
+                    border: '1px solid rgba(255,255,255,0.05)'
+                  }}
+                >
+                  <div style={{ position: 'relative', paddingBottom: '150%' }}>
+                    <img 
+                      src={group.show.posterPath ? `https://image.tmdb.org/t/p/w342${group.show.posterPath}` : '/movie-placeholder.png'} 
+                      alt={group.show.name}
+                      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                    
+                    {/* Badge showing count of downloaded episodes */}
+                    <div style={{
+                      position: 'absolute', top: '8px', left: '8px',
+                      background: 'rgba(255,255,255,0.9)', color: '#000',
+                      padding: '3px 8px', borderRadius: '6px',
+                      fontSize: '0.7rem', fontWeight: 800
+                    }}>
+                      {group.episodes.length} EP
+                    </div>
+                  </div>
+                  <div style={{ padding: '8px 10px' }}>
+                    <h3 style={{ fontSize: '0.82rem', fontWeight: 700, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {group.show.name}
+                    </h3>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        )}
+      </div>
+
+      {/* Expanded Series Episodes Overlay */}
+      {activeShow && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 2000,
+          background: '#09090b', display: 'flex', flexDirection: 'column',
+          paddingTop: 'calc(12px + env(safe-area-inset-top, 0px))',
+        }}>
+          {/* Header */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '16px',
+            padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.05)',
+            background: 'rgba(9,9,11,0.9)'
+          }}>
+            <button 
+              onClick={() => setActiveShow(null)}
+              style={{
+                background: 'transparent', border: 'none', color: '#fff',
+                cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center'
+              }}
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6"></polyline>
+              </svg>
+            </button>
+            <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800 }}>{activeShow.show.name}</h2>
+          </div>
+
+          {/* Episode List */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {activeShow.episodes.map((ep: DownloadItem) => (
+              <div 
+                key={ep.id}
+                onClick={() => handlePlay(ep)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: isMobileSize ? '10px' : '16px',
+                  padding: isMobileSize ? '10px 12px' : '12px 16px', borderRadius: '12px',
+                  background: loadingItemId === ep.id ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.02)',
+                  border: '1px solid rgba(255,255,255,0.04)',
+                  cursor: loadingItemId === ep.id ? 'default' : 'pointer',
+                  transition: 'background 0.15s',
+                  position: 'relative',
+                }}
+              >
+                <div style={{ width: isMobileSize ? '72px' : '80px', aspectRatio: '16/9', borderRadius: '6px', overflow: 'hidden', background: '#18181b', position: 'relative', flexShrink: 0 }}>
+                  <img src={activeShow.show.backdropPath ? `https://image.tmdb.org/t/p/w300${activeShow.show.backdropPath}` : '/movie-placeholder.png'} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.2)' }}>
+                    {loadingItemId === ep.id ? (
+                      <div style={{ width: '22px', height: '22px', border: '2.5px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+                    ) : (
+                      <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'rgba(0,0,0,0.5)', border: '1.5px solid #fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <h4 style={{ margin: 0, fontSize: isMobileSize ? '0.82rem' : '0.9rem', fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {ep.title}
+                  </h4>
+                  {ep.status !== 'completed' && ep.status !== 'failed' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', fontSize: '0.72rem', opacity: 0.6 }}>
+                      <span>{ep.status === 'resolving' ? 'Resolving link...' : 'Downloading...'}</span>
+                      {ep.status === 'downloading' && ep.speed !== undefined && (
+                        <span style={{ color: COLORS.primary, fontWeight: 800 }}>{ep.speed} MB/s</span>
+                      )}
+                      <span>({ep.progress}%)</span>
+                    </div>
+                  )}
+                  {ep.status === 'failed' && (
+                    <div style={{ color: '#ef4444', fontSize: '0.72rem', fontWeight: 700, marginTop: '4px' }}>
+                      ✕ Download Failed
+                    </div>
+                  )}
+                </div>
+                <button 
+                  onClick={(e) => handleDelete(ep, e)}
+                  style={{
+                    background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '8px',
+                    width: '32px', height: '32px', color: 'rgba(255,255,255,0.6)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Local Video Player overlay */}
+      {showPlayer && (
+        <VideoPlayer 
+          src={playerUrl}
+          title={playerTitle}
+          onClose={() => setShowPlayer(false)}
+          tracks={playerTracks}
+          isOfflineMode={true}
+        />
+      )}
+      {/* Delete Confirmation Bottom Drawer */}
+      {deleteConfirmationItem && (
+        <div
+          onClick={() => setDeleteConfirmationItem(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 4000,
+            background: 'rgba(0,0,0,0.72)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'flex-end',
+            justifyContent: 'center',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: '520px',
+              background: '#1c1c1f',
+              borderRadius: '24px 24px 0 0',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderBottom: 'none',
+              boxShadow: '0 -24px 60px rgba(0,0,0,0.7)',
+              padding: '20px 20px calc(20px + env(safe-area-inset-bottom, 20px))',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+            }}
+          >
+            {/* Handle bar */}
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '4px' }}>
+              <div style={{ width: '36px', height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.2)' }} />
+            </div>
+
+            <div style={{ textAlign: 'center' }}>
+              <h3 style={{ margin: '0 0 8px', fontSize: '1.2rem', fontWeight: 800, color: '#fff' }}>Delete Downloaded Content?</h3>
+              <p style={{ margin: 0, fontSize: '0.88rem', color: 'rgba(255,255,255,0.5)', lineHeight: 1.4 }}>
+                Are you sure you want to permanently delete <strong style={{ color: '#fff' }}>{deleteConfirmationItem.title}</strong> from your device? This action cannot be undone.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+              <button
+                onClick={() => setDeleteConfirmationItem(null)}
+                style={{
+                  flex: 1,
+                  padding: '14px',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  background: 'rgba(255,255,255,0.05)',
+                  color: '#fff',
+                  fontWeight: 700,
+                  fontSize: '0.95rem',
+                  cursor: 'pointer',
+                  transition: 'background 0.2s',
+                }}
+              >
+                Keep
+              </button>
+              <button
+                onClick={confirmDelete}
+                style={{
+                  flex: 1,
+                  padding: '14px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  background: '#ef4444',
+                  color: '#fff',
+                  fontWeight: 800,
+                  fontSize: '0.95rem',
+                  cursor: 'pointer',
+                  transition: 'background 0.2s',
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toast Notification Banner */}
       <AnimatePresence>
         {errorToast && (

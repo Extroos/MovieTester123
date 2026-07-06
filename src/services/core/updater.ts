@@ -8,7 +8,7 @@ interface VersionInfo {
   forceUpdate?: boolean;
 }
 
-export const APP_VERSION = '0.7.0';
+export const APP_VERSION = '0.8.0';
 export const UPDATE_MANIFEST_URL = 'https://raw.githubusercontent.com/Extroos/CineMovie/main/version.json';
 
 export async function checkForUpdates(): Promise<VersionInfo | null> {
@@ -136,8 +136,7 @@ function blobToBase64(blob: Blob): Promise<string> {
 async function installApk(fileUri: string): Promise<void> {
   // Use Capacitor NativeStreamingEngine plugin to open the APK natively with package installer
   try {
-    const { registerPlugin } = await import('@capacitor/core');
-    const NativeStreamingEngine = registerPlugin<any>('NativeStreamingEngine');
+    const { NativeStreamingEngine } = await import('../native/NativeStreamingEngine');
     await NativeStreamingEngine.installApk({ fileUri });
   } catch (e) {
     console.error('Native APK installer call failed:', e);
