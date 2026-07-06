@@ -557,6 +557,39 @@ export default function SettingsPage({
             </div>
           </div>
 
+          {updateAvailable && (
+            <button
+              onClick={() => {
+                triggerHaptic('medium');
+                setShowUpdateModal(true);
+              }}
+              className="tv-focusable"
+              tabIndex={0}
+              style={{
+                width: '100%',
+                padding: '1.2vh 1vw',
+                background: '#007aff',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: 'clamp(0.72rem, 1.7vh, 0.84rem)',
+                fontWeight: 900,
+                cursor: 'pointer',
+                marginBottom: '1.5vh',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                outline: 'none',
+                boxShadow: '0 4px 15px rgba(0, 122, 255, 0.3)',
+                boxSizing: 'border-box'
+              }}
+            >
+              <Download size={14} />
+              <span>Update Available</span>
+            </button>
+          )}
+
           {/* Menu List */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1vh' }}>
             {[
@@ -1944,6 +1977,8 @@ export default function SettingsPage({
                 <>
                   <button
                     onClick={() => setShowUpdateModal(false)}
+                    className="tv-focusable"
+                    tabIndex={0}
                     style={{
                       flex: 1,
                       padding: '14px',
@@ -1953,7 +1988,8 @@ export default function SettingsPage({
                       color: 'rgba(255,255,255,0.8)',
                       fontWeight: 800,
                       fontSize: '0.9rem',
-                      cursor: 'pointer'
+                      cursor: 'pointer',
+                      outline: 'none'
                     }}
                   >
                     Not Now
@@ -1979,6 +2015,8 @@ export default function SettingsPage({
                         setDownloadState('error');
                       }
                     }}
+                    className="tv-focusable"
+                    tabIndex={0}
                     style={{
                       flex: 1,
                       padding: '14px',
@@ -1989,7 +2027,8 @@ export default function SettingsPage({
                       fontWeight: 900,
                       fontSize: '0.9rem',
                       cursor: 'pointer',
-                      boxShadow: '0 4px 15px rgba(0, 122, 255, 0.3)'
+                      boxShadow: '0 4px 15px rgba(0, 122, 255, 0.3)',
+                      outline: 'none'
                     }}
                   >
                     Install Now
