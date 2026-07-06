@@ -59,6 +59,8 @@ export default function SettingsPage({
   updateAvailable,
   onClearUpdate
 }: SettingsPageProps) {
+  const isTV = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+  const isGuestMode = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_guest') === 'true';
   const [settings, setSettings] = useState<AppSettings>({ ...SettingsService.getAll() });
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState(activeProfile?.name || '');
@@ -487,6 +489,381 @@ export default function SettingsPage({
 
   if (showVersionHistory) {
     return <VersionHistory onBack={() => onShowVersionHistoryChange(false)} />;
+  }
+
+  if (isTV) {
+    return (
+      <div 
+        className="tv-settings-container"
+        style={{
+          display: 'flex',
+          height: '100vh',
+          width: '100vw',
+          background: 'radial-gradient(circle at 10% 20%, rgba(20, 20, 25, 0.98) 0%, rgba(10, 10, 12, 0.99) 100%)',
+          color: '#ffffff',
+          overflow: 'hidden',
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          zIndex: 2000
+        }}
+      >
+        {/* LEFT PANEL: Settings Navigation list (Smart width & premium layout spacing) */}
+        <div style={{
+          width: '32vw',
+          maxWidth: '360px',
+          minWidth: '280px',
+          height: '100%',
+          overflowY: 'auto',
+          background: 'rgba(2, 2, 4, 0.4)',
+          backdropFilter: 'blur(30px)',
+          WebkitBackdropFilter: 'blur(30px)',
+          borderRight: '1px solid rgba(255,255,255,0.08)',
+          padding: '4vh 2.5vw 6vh 3vw',
+          boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+          flexShrink: 0
+        }} className="no-scrollbar">
+          {/* Profile Info Card with Leave/Back Button */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.8vw', marginBottom: '2.5vh', flexShrink: 0 }}>
+            {/* Leave Button */}
+            <button
+              onClick={() => { triggerHaptic('light'); onNavigate('home'); }}
+              className="tv-focusable"
+              aria-label="Back to Home"
+              style={{
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                color: '#ffffff',
+                width: '36px',
+                height: '36px',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                marginRight: '6px',
+                outline: 'none',
+                flexShrink: 0
+              }}
+            >
+              <ChevronLeft size={18} />
+            </button>
+
+            <img src={activeProfile?.avatar} alt="" style={{ width: 'clamp(40px, 6vh, 52px)', height: 'clamp(40px, 6vh, 52px)', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.1)', flexShrink: 0 }} />
+            <div style={{ textAlign: 'left', minWidth: 0, marginLeft: '4px' }}>
+              <h3 style={{ margin: 0, fontSize: 'clamp(0.85rem, 2vh, 1rem)', fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeProfile?.name}</h3>
+              <span style={{ fontSize: 'clamp(0.6rem, 1.4vh, 0.72rem)', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', fontWeight: 800 }}>{activeProfile?.isKids ? 'Kids' : 'Adult'}</span>
+            </div>
+          </div>
+
+          {/* Menu List */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1vh' }}>
+            {[
+              { id: 'streaming', label: t('streaming_settings'), icon: <Play size={14} /> },
+              { id: 'subtitles', label: t('subtitle_engine'), icon: <Languages size={14} /> },
+              { id: 'appearance', label: t('appearance_theme'), icon: <Sliders size={14} /> },
+              { id: 'social', label: t('social_friends'), icon: <Users size={14} /> },
+              { id: 'account', label: t('account_privacy'), icon: <Shield size={14} /> },
+              { id: 'statistics', label: t('statistics_insights'), icon: <BarChart2 size={14} /> },
+              { id: 'mylist', label: t('watchlist'), icon: <List size={14} /> }
+            ].map(opt => {
+              const isActive = activeSubPage === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => { triggerHaptic('light'); onActiveSubPageChange?.(opt.id as any); }}
+                  onFocus={() => onActiveSubPageChange?.(opt.id as any)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowRight') {
+                      e.preventDefault();
+                      const rightPanel = document.querySelector('.tv-settings-right-panel');
+                      if (rightPanel) {
+                        const firstFocusable = rightPanel.querySelector('.tv-focusable') as HTMLElement | null;
+                        if (firstFocusable) {
+                          firstFocusable.focus();
+                        }
+                      }
+                    }
+                  }}
+                  className={`settings-tv-menu-btn tv-focusable${isActive ? ' active' : ''}`}
+                  style={{
+                    width: '100%',
+                    padding: '1.4vh 1.4vw',
+                    background: isActive ? 'rgba(255,255,255,0.06)' : 'transparent',
+                    color: isActive ? '#fff' : 'rgba(255,255,255,0.6)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: 'clamp(0.75rem, 1.9vh, 0.88rem)',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.8vw',
+                    textAlign: 'left',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  {opt.icon}
+                  <span>{opt.label}</span>
+                </button>
+              );
+            })}
+
+            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '1.5vh 0' }} />
+
+            {/* Logout/Switch Profile Actions */}
+            <button
+              onClick={onSwitchProfile}
+              className="tv-focusable"
+              style={{
+                width: '100%', padding: '1.4vh 1.4vw', background: 'rgba(255,255,255,0.03)', color: '#fff', border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: '8px', fontSize: 'clamp(0.7rem, 1.7vh, 0.82rem)', fontWeight: 800, cursor: 'pointer', outline: 'none'
+              }}
+            >
+              {t('switch_profile')}
+            </button>
+            <button
+              onClick={onLogout}
+              className="tv-focusable"
+              style={{
+                width: '100%',
+                padding: '1.4vh 1.4vw',
+                background: isGuestMode ? '#ffffff' : 'rgba(239,68,68,0.08)',
+                color: isGuestMode ? '#000000' : '#f87171',
+                border: isGuestMode ? 'none' : '1px solid rgba(239,68,68,0.15)',
+                borderRadius: '8px',
+                fontSize: 'clamp(0.7rem, 1.7vh, 0.82rem)',
+                fontWeight: 800,
+                cursor: 'pointer',
+                outline: 'none'
+              }}
+            >
+              {isGuestMode ? 'Log In' : t('log_out')}
+            </button>
+          </div>
+        </div>
+
+        {/* RIGHT PANEL: Focused subpage settings editor */}
+        <div 
+          className="tv-settings-right-panel no-scrollbar"
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowLeft') {
+              // Pressing ArrowLeft in the editor panel always returns focus to the active menu category button on the left
+              const activeBtn = document.querySelector('.settings-tv-menu-btn.tv-focusable.active') as HTMLElement | null;
+              if (activeBtn) {
+                e.preventDefault();
+                activeBtn.focus();
+              }
+            }
+          }}
+          style={{
+            flex: 1,
+            height: '100%',
+            overflowY: 'auto',
+            background: 'rgba(5, 5, 8, 0.25)',
+            padding: '5vh 4vw 8vh 4vw',
+            boxSizing: 'border-box'
+          }}
+        >
+          {activeSubPage ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '3vh', width: '100%' }}>
+              <h2 style={{ 
+                margin: '0 0 2vh 0', 
+                fontSize: 'clamp(1.2rem, 3.2vh, 1.7rem)', 
+                fontWeight: 950, 
+                textTransform: 'uppercase', 
+                letterSpacing: '0.06em', 
+                textAlign: 'left',
+                background: 'linear-gradient(to right, #ffffff 0%, rgba(255,255,255,0.7) 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.5))'
+              }}>
+                {activeSubPage === 'streaming' && t('streaming_settings')}
+                {activeSubPage === 'subtitles' && t('subtitle_engine')}
+                {activeSubPage === 'appearance' && t('appearance_theme')}
+                {activeSubPage === 'social' && t('social_friends')}
+                {activeSubPage === 'account' && t('account_privacy')}
+                {activeSubPage === 'statistics' && t('statistics_insights')}
+                {activeSubPage === 'mylist' && t('watchlist')}
+              </h2>
+
+              <div style={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
+                {activeSubPage === 'streaming' && (
+                  <StreamingSubPage
+                    settings={settings}
+                    isMobile={isMobile}
+                    toggleAutoNext={toggleAutoNext}
+                    toggleHostControlsOnly={toggleHostControlsOnly}
+                    toggleAutoJoinParty={toggleAutoJoinParty}
+                    sectionHeaderStyle={sectionHeaderStyle}
+                    serverUrl={serverUrl}
+                    setServerUrl={setServerUrl}
+                    serverUrlSaved={serverUrlSaved}
+                    setServerUrlSaved={setServerUrlSaved}
+                    isTestingUrl={isTestingUrl}
+                    testStatus={testStatus}
+                    testError={testError}
+                    handleTestConnection={handleTestConnection}
+                    updateSetting={updateSetting}
+                    triggerHaptic={triggerHaptic}
+                  />
+                )}
+
+                {activeSubPage === 'subtitles' && (
+                  <SubtitlesSubPage
+                    settings={settings}
+                    updateSetting={updateSetting}
+                    isMobile={isMobile}
+                    osApiKey={osApiKey}
+                    setOsApiKey={setOsApiKey}
+                    osUsername={osUsername}
+                    setOsUsername={setOsUsername}
+                    osPassword={osPassword}
+                    setOsPassword={setOsPassword}
+                    osSaved={osSaved}
+                    setOsSaved={setOsSaved}
+                    showOsPassword={showOsPassword}
+                    setShowOsPassword={setShowOsPassword}
+                    triggerHaptic={triggerHaptic}
+                    sectionHeaderStyle={sectionHeaderStyle}
+                  />
+                )}
+
+                {activeSubPage === 'appearance' && (
+                  <AppearanceSubPage
+                    settings={settings}
+                    isMobile={isMobile}
+                    toggleMinimalHome={toggleMinimalHome}
+                    updateSetting={updateSetting}
+                    toggleHaptics={toggleHaptics}
+                    toggleDebug={toggleDebug}
+                    triggerHaptic={triggerHaptic}
+                    showToast={showToast}
+                    sectionHeaderStyle={sectionHeaderStyle}
+                  />
+                )}
+
+                {activeSubPage === 'account' && (
+                  <AccountSubPage
+                    currentUser={currentUser}
+                    authProvider={authProvider}
+                    isMobile={isMobile}
+                    activeProfile={activeProfile}
+                    newPassword={newPassword}
+                    setNewPassword={setNewPassword}
+                    confirmNewPassword={confirmNewPassword}
+                    setConfirmNewPassword={setConfirmNewPassword}
+                    showPasswordChangeForm={showPasswordChangeForm}
+                    setShowPasswordChangeForm={setShowPasswordChangeForm}
+                    handleClearHistory={handleClearHistory}
+                    handleClearSearchHistory={handleClearSearchHistory}
+                    handleDeleteProfile={handleDeleteProfile}
+                    handleDeleteAccount={handleDeleteAccount}
+                    setReauthAction={setReauthAction}
+                    showToast={showToast}
+                    triggerHaptic={triggerHaptic}
+                    onLogout={onLogout}
+                    sectionHeaderStyle={sectionHeaderStyle}
+                  />
+                )}
+
+                {activeSubPage === 'social' && (
+                  <SocialSubPage
+                    isMobile={isMobile}
+                    friends={friends}
+                    requests={requests}
+                    sentRequests={sentRequests}
+                    friendsLoading={friendsLoading}
+                    accountName={accountName}
+                    socialTab={socialTab}
+                    setSocialTab={setSocialTab}
+                    searchQuery={searchQuery}
+                    setSearchQuery={setSearchQuery}
+                    searchResults={searchResults}
+                    isSearching={isSearching}
+                    handleUserSearch={handleUserSearch}
+                    handleRemoveFriend={handleRemoveFriend}
+                    acceptFriend={acceptFriend}
+                    declineReceivedRequest={declineReceivedRequest}
+                    cancelSentRequest={cancelSentRequest}
+                    addFriend={addFriend}
+                    triggerHaptic={triggerHaptic}
+                    getFriendStatus={getFriendStatus}
+                    onLogout={onLogout}
+                    userId={userId}
+                    copied={copied}
+                    setCopied={setCopied}
+                    friendInput={friendInput}
+                    setFriendInput={setFriendInput}
+                    isSending={isSending}
+                    setIsSending={setIsSending}
+                    socialMessage={socialMessage}
+                    setSocialMessage={setSocialMessage}
+                    showToast={showToast}
+                  />
+                )}
+
+                {activeSubPage === 'statistics' && (
+                  <StatisticsSubPage
+                    profileStats={profileStats}
+                    isMobile={isMobile}
+                    onResetStatsClick={() => {
+                      setConfirmModal({
+                        type: 'reset_statistics',
+                        title: 'Reset Viewing Statistics?',
+                        message: 'Are you sure you want to completely clear your viewing history stats, streaks, and achievements? Your active watch progress in Continue Watching will remain, but analytics dashboards will be fully wiped.',
+                        actionText: 'Reset Stats',
+                        isDanger: true
+                      });
+                    }}
+                    triggerHaptic={triggerHaptic}
+                    getBackdropUrl={getBackdropUrl}
+                    getPosterUrl={getPosterUrl}
+                    COLORS={COLORS}
+                  />
+                )}
+
+                {activeSubPage === 'mylist' && (
+                  <MyListSubPage
+                    isMobile={isMobile}
+                    sectionHeaderStyle={sectionHeaderStyle}
+                    onMovieClick={onMovieClick}
+                  />
+                )}
+              </div>
+            </div>
+          ) : (
+            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.2)' }}>
+              Select a category on the left to edit settings
+            </div>
+          )}
+        </div>
+        
+        <style>{`
+          .settings-tv-menu-btn.tv-focusable:focus {
+            background: #ffffff !important;
+            color: #000000 !important;
+            box-shadow: 0 0 0 3px #ffffff !important;
+          }
+          button.tv-focusable:focus {
+            background: #ffffff !important;
+            color: #000000 !important;
+            box-shadow: 0 0 0 3px #ffffff !important;
+          }
+          /* TV layout overrides for subpages inputs and lists items */
+          .settings-row-container.tv-focusable:focus {
+            background: rgba(255,255,255,0.06) !important;
+          }
+          .settings-group-container input:focus {
+            border-color: #ffffff !important;
+            box-shadow: 0 0 0 2px #ffffff !important;
+          }
+        `}</style>
+      </div>
+    );
   }
 
   return (
@@ -1584,6 +1961,12 @@ export default function SettingsPage({
                   <button
                     onClick={async () => {
                       triggerHaptic('medium');
+                      if (downloadState === 'error') {
+                        // Fallback for old/failing downloads: Open directly in default web browser
+                        const { openDownloadUrl } = await import('../../../services/core/updater');
+                        openDownloadUrl(updateAvailable.downloadUrl);
+                        return;
+                      }
                       setDownloadState('downloading');
                       setDownloadProgress(0);
                       try {
@@ -1607,15 +1990,15 @@ export default function SettingsPage({
                       padding: '14px',
                       borderRadius: '14px',
                       border: 'none',
-                      background: '#007aff',
+                      background: downloadState === 'error' ? '#22c55e' : '#007aff',
                       color: '#ffffff',
                       fontWeight: 900,
                       fontSize: '0.9rem',
                       cursor: 'pointer',
-                      boxShadow: '0 4px 15px rgba(0, 122, 255, 0.3)'
+                      boxShadow: downloadState === 'error' ? '0 4px 15px rgba(34, 197, 94, 0.3)' : '0 4px 15px rgba(0, 122, 255, 0.3)'
                     }}
                   >
-                    Install Now
+                    {downloadState === 'error' ? 'Open in Browser' : 'Install Now'}
                   </button>
                 </>
               )}
