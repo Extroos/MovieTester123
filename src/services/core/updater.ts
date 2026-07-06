@@ -9,7 +9,7 @@ interface VersionInfo {
 }
 
 export const APP_VERSION = '0.8.0';
-export const UPDATE_MANIFEST_URL = 'https://raw.githubusercontent.com/Extroos/CineMovie/main/version.json';
+export const UPDATE_MANIFEST_URL = 'https://raw.githubusercontent.com/Extroos/MovieTester123/main/version.json';
 
 export async function checkForUpdates(): Promise<VersionInfo | null> {
   try {
