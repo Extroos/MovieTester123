@@ -62,7 +62,7 @@ export async function downloadAndInstallUpdate(
   }
 
   try {
-    const fileName = 'WatchMovie-update.apk';
+    const fileName = 'CineMovie-update.apk';
     
     // Download the APK using fetch with progress tracking
     const response = await fetch(downloadUrl);
@@ -97,17 +97,17 @@ export async function downloadAndInstallUpdate(
     const blob = new Blob(chunks as any, { type: 'application/vnd.android.package-archive' });
     const base64 = await blobToBase64(blob);
     
-    // Save to Downloads directory (external storage for Android)
+    // Save to Cache directory (no permissions required, matches file_paths.xml cache-path)
     await Filesystem.writeFile({
       path: fileName,
       data: base64,
-      directory: Directory.External,
+      directory: Directory.Cache,
     });
     
     // Get the file URI
     const fileUri = await Filesystem.getUri({
       path: fileName,
-      directory: Directory.External,
+      directory: Directory.Cache,
     });
     
     // Trigger Android install intent
