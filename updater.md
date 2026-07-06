@@ -14,8 +14,8 @@ sequenceDiagram
     JS->>JS: Fetch raw.githubusercontent version.json
     JS->>JS: Compare APP_VERSION with remote version
     Note over JS: If update found, render "Update Now"
-    JS->>FS: Download APK blob to External Directory
-    JS->>NE: installApk({ fileUri: externalUri })
+    JS->>FS: Download APK blob to Cache Directory
+    JS->>NE: installApk({ fileUri: cacheUri })
     NE->>NE: Convert file:// to FileProvider content:// URI
     NE->>OS: Start Activity (ACTION_VIEW, package-archive) with FLAG_GRANT_READ_URI_PERMISSION
     OS->>OS: Show system package installer dialog directly
@@ -74,9 +74,6 @@ async function installApk(fileUri: string): Promise<void> {
     await NativeStreamingEngine.installApk({ fileUri });
   } catch (e) {
     console.error('Native APK installer call failed:', e);
-    // Fallback if plugin fails
-    const { Browser } = await import('@capacitor/browser');
-    await Browser.open({ url: fileUri });
   }
 }
 ```
@@ -85,23 +82,25 @@ async function installApk(fileUri: string): Promise<void> {
 
 ## 3. Step-by-Step Guide: How to Release a New Version (Do NOT Forget)
 
-Follow these exact steps when releasing a new version of the app (e.g. going from `0.7.0` to `0.8.0`):
+Follow these exact steps when releasing a new version of the app (e.g. going from `0.8.0` to `0.9.0`):
 
 ### Step 1: Update Version Numbers in the Codebase
-1. **`package.json`**: Update the `"version"` field (e.g., `"0.8.0"`).
-2. **[updater.ts](file:///c:/Users/user/Desktop/CineMovie/src/services/core/updater.ts#L11)**: Update `APP_VERSION` string to match:
+1. **`package.json`**: Update the `"version"` field (e.g., `"0.9.0"`).
+2. **[updater.ts](file:///c:/Users/user/Desktop/CineMovie/src/services/core/updater.ts#L11)**: Update `APP_VERSION` string and verify the repo manifest URL matches the active origin repository:
    ```typescript
-   export const APP_VERSION = '0.8.0';
+   export const APP_VERSION = '0.9.0';
+   export const UPDATE_MANIFEST_URL = 'https://raw.githubusercontent.com/Extroos/MovieTester123/main/version.json';
    ```
 3. **[version.json](file:///c:/Users/user/Desktop/CineMovie/version.json)**:
    * Update the `"version"` field.
-   * Update the filename in `"downloadUrl"` to match the new version name, e.g.:
+   * Update `"downloadUrl"` to point to the remote link hosting the APK:
      ```json
-     "downloadUrl": "https://github.com/Extroos/CineMovie/releases/latest/download/Cinemovie.v0.8.0.apk"
+     "downloadUrl": "https://github.com/Extroos/MovieTester123/releases/latest/download/Cinemovie.v0.9.0.apk"
      ```
+   * Set `"releaseNotes"` to inform users of the update details. Keep descriptions concise.
 4. **[build.gradle](file:///c:/Users/user/Desktop/CineMovie/android/app/build.gradle#L38)**: Update the gradle output filename version to match:
    ```groovy
-   outputFileName = "Cinemovie.v0.8.0.apk"
+   outputFileName = "Cinemovie.v0.9.0.apk"
    ```
 
 ### Step 2: Build the Production APK
@@ -115,27 +114,28 @@ npm run build:apk-release
 Stage and push your version config updates:
 ```bash
 git add package.json version.json src/services/core/updater.ts android/app/build.gradle
-git commit -m "chore: bump version to v0.8.0"
+git commit -m "chore: bump version to v0.9.0"
 git push origin main
 ```
 
 ### Step 4: Create and Push the Release Tag
 Tag the commit to prepare the GitHub release:
 ```bash
-git tag v0.8.0
-git push origin v0.8.0
+git tag v0.9.0
+git push origin v0.9.0
 ```
 
 ### Step 5: Draft the GitHub Release and Upload APK
 1. Go to your repository release panel: `https://github.com/Extroos/MovieTester123/releases`
-2. Click **Draft a new release**, select the tag `v0.8.0`.
-3. Give it a title (e.g. `Release v0.8.0`) and enter release notes.
-4. Drag and drop the compiled APK (`Cinemovie.v0.8.0.apk` from your local build output path) into the upload container.
+2. Click **Draft a new release**, select the tag `v0.9.0`.
+3. Give it a title (e.g. `Release v0.9.0`) and enter release notes.
+4. Drag and drop the compiled APK (`Cinemovie.v0.9.0.apk` from your local build output path) into the upload container.
 5. Click **Publish release**.
 
 ---
 
-## 4. Android Security Configuration
+## 4. Android Security & File Configuration
 
-* **FileProvider Configuration**: Mandatory inside `AndroidManifest.xml` under the `<provider>` section linking to `@xml/file_paths` to allow reading the external storage directory without triggering safety exceptions on modern Android versions (API >= 24).
+* **Zero-Permission Directory**: The installer downloads the update file to the app's internal cache folder (`Directory.Cache`). This completely avoids dangerous external storage WRITE permission prompts on Android 10+ and modern API levels.
+* **FileProvider Configuration**: Mandatory inside `AndroidManifest.xml` under the `<provider>` section linking to `@xml/file_paths` to allow reading the cache storage directory without triggering safety exceptions on modern Android versions (API >= 24).
 * **Install Packages Permission**: The APK must request `<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />` in the Manifest to launch the package installer.
