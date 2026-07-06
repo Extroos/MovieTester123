@@ -1961,12 +1961,6 @@ export default function SettingsPage({
                   <button
                     onClick={async () => {
                       triggerHaptic('medium');
-                      if (downloadState === 'error') {
-                        // Fallback for old/failing downloads: Open directly in default web browser
-                        const { openDownloadUrl } = await import('../../../services/core/updater');
-                        openDownloadUrl(updateAvailable.downloadUrl);
-                        return;
-                      }
                       setDownloadState('downloading');
                       setDownloadProgress(0);
                       try {
@@ -1990,15 +1984,15 @@ export default function SettingsPage({
                       padding: '14px',
                       borderRadius: '14px',
                       border: 'none',
-                      background: downloadState === 'error' ? '#22c55e' : '#007aff',
+                      background: '#007aff',
                       color: '#ffffff',
                       fontWeight: 900,
                       fontSize: '0.9rem',
                       cursor: 'pointer',
-                      boxShadow: downloadState === 'error' ? '0 4px 15px rgba(34, 197, 94, 0.3)' : '0 4px 15px rgba(0, 122, 255, 0.3)'
+                      boxShadow: '0 4px 15px rgba(0, 122, 255, 0.3)'
                     }}
                   >
-                    {downloadState === 'error' ? 'Open in Browser' : 'Install Now'}
+                    Install Now
                   </button>
                 </>
               )}
