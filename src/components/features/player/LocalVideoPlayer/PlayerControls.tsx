@@ -563,7 +563,54 @@ export const PlayerControls = React.memo(function PlayerControls({
           </button>
         )}
         
-
+        {!isTV && (
+          <button 
+            onClick={async (e) => {
+              e.stopPropagation();
+              import('../../../../utils/haptics').then(m => m.triggerHaptic('light'));
+              try {
+                const { ScreenOrientation } = await import('@capacitor/screen-orientation');
+                const current = await ScreenOrientation.getCurrentOrientation();
+                const nextOrientation = current.type === 'landscape-primary' 
+                  ? 'landscape-secondary' 
+                  : 'landscape-primary';
+                await ScreenOrientation.lock({ orientation: nextOrientation }).catch(() => {});
+              } catch (err) {
+                try {
+                  const currentType = (screen.orientation as any)?.type;
+                  const nextType = currentType === 'landscape-primary' 
+                    ? 'landscape-secondary' 
+                    : 'landscape-primary';
+                  if ((screen.orientation as any)?.lock) {
+                    await (screen.orientation as any).lock(nextType).catch(() => {});
+                  }
+                } catch (webErr) {}
+              }
+            }}
+            tabIndex={0}
+            className="tv-focusable"
+            style={{ 
+              background: 'rgba(255,255,255,0.08)', 
+              border: '1px solid rgba(255,255,255,0.1)', 
+              color: '#fff', 
+              width: 44, 
+              height: 44, 
+              borderRadius: '50%', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+            onMouseDown={e => e.currentTarget.style.transform = 'scale(0.92)'}
+            onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+            title="Rotate Screen"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+            </svg>
+          </button>
+        )}
 
         <button 
           onClick={(e) => {
