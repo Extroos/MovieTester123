@@ -88,6 +88,18 @@ export default function SettingsPage({
   const [downloadState, setDownloadState] = useState<'idle' | 'downloading' | 'installing' | 'error'>('idle');
 
   useEffect(() => {
+    if (showUpdateModal) {
+      setTimeout(() => {
+        const modalContainer = document.querySelector('.tv-updater-modal-content');
+        if (modalContainer) {
+          const firstBtn = modalContainer.querySelector('.tv-focusable') as HTMLElement | null;
+          if (firstBtn) firstBtn.focus();
+        }
+      }, 150);
+    }
+  }, [showUpdateModal]);
+
+  useEffect(() => {
     const fetchUser = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
@@ -916,7 +928,22 @@ export default function SettingsPage({
             }}
           >
             <div
+              className="tv-updater-modal-content"
               onClick={e => e.stopPropagation()}
+              onKeyDown={(e) => {
+                const buttons = e.currentTarget.querySelectorAll('.tv-focusable') as NodeListOf<HTMLElement>;
+                if (buttons.length > 0) {
+                  const activeEl = document.activeElement as HTMLElement;
+                  const activeIdx = Array.from(buttons).indexOf(activeEl);
+                  
+                  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const nextIdx = activeIdx === 0 ? 1 : 0;
+                    buttons[nextIdx].focus();
+                  }
+                }
+              }}
               style={{
                 width: '100%',
                 maxWidth: '380px',
