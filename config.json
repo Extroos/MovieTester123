@@ -72,8 +72,7 @@
   },
   "embed_urls": {
     "vidsrc_pm_gateways": [
-      "https://streamdata.vaplayer.ru",
-      "https://streamdata2.vaplayer.ru"
+      "https://streamdata.vaplayer.ru"
     ],
     "vidlink_gateways": [
       "https://vidlink.pro",

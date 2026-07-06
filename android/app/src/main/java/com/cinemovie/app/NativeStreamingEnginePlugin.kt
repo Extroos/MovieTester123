@@ -66,8 +66,7 @@ class NativeStreamingEnginePlugin : Plugin() {
       },
       "embed_urls": {
         "vidsrc_pm_gateways": [
-          "https://streamdata.vaplayer.ru",
-          "https://streamdata2.vaplayer.ru"
+          "https://streamdata.vaplayer.ru"
         ],
         "vidsrc_pm_fallback": "https://streamdata.vaplayer.ru/api.php?tmdb={id}&type={type}{tv_params}",
         "vidsrc_pm_movie": "https://streamdata.vaplayer.ru/api.php?tmdb={id}&type=movie",
@@ -751,7 +750,6 @@ class NativeStreamingEnginePlugin : Plugin() {
                 }
                 if (gateways.isEmpty()) {
                     gateways.add("https://streamdata.vaplayer.ru")
-                    gateways.add("https://streamdata2.vaplayer.ru")
                 }
 
                 // 2. Try each gateway until one succeeds
