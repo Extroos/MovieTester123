@@ -100,7 +100,16 @@ export const ReviewService = {
           .in('user_id', userIds);
 
         if (profilesData) {
-          profilesData.forEach(p => {
+          // Sort profiles so that profiles with custom names (not default CineMovie User / cinemovie User) come first
+          const sortedProfiles = [...profilesData].sort((a, b) => {
+            const aIsDefault = !a.name || a.name.toLowerCase() === 'cinemovie user' || a.name.toLowerCase() === 'guest';
+            const bIsDefault = !b.name || b.name.toLowerCase() === 'cinemovie user' || b.name.toLowerCase() === 'guest';
+            if (aIsDefault && !bIsDefault) return 1;
+            if (!aIsDefault && bIsDefault) return -1;
+            return 0;
+          });
+
+          sortedProfiles.forEach(p => {
             if (p.user_id && !profilesMap[p.user_id]) {
               profilesMap[p.user_id] = {
                 name: p.name,
@@ -121,12 +130,43 @@ export const ReviewService = {
         userLikes = (likes || []).map(l => l.review_id);
       }
 
-      return data.map(r => ({
-        ...r,
-        profiles: profilesMap[r.user_id] || { name: 'CineMovie User', avatar: 'https://upload.wikimedia.org/wikipedia/commons/0/0b/Netflix-avatar.png' },
-        likes_count: r.likes?.[0]?.count || 0,
-        is_liked: userLikes.includes(r.id)
-      }));
+      // Fetch active profile cache if it exists
+      let activeProfile: any = null;
+      try {
+        const cached = localStorage.getItem('watchmovie_active_profile_cache');
+        if (cached) {
+          activeProfile = JSON.parse(cached);
+        }
+      } catch (e) {}
+
+      return data.map(r => {
+        let prof = profilesMap[r.user_id] || { name: 'CineMovie User', avatar: 'https://upload.wikimedia.org/wikipedia/commons/0/0b/Netflix-avatar.png' };
+        
+        // If this review belongs to the current logged-in user, use their active profile name/avatar
+        if (user && r.user_id === user.id && activeProfile) {
+          prof = {
+            name: activeProfile.name || prof.name,
+            avatar: activeProfile.avatar || prof.avatar
+          };
+        }
+
+        // Clean up case variations of default name
+        if (prof.name && prof.name.toLowerCase() === 'cinemovie user') {
+          if (user && r.user_id === user.id && activeProfile) {
+            prof.name = activeProfile.name || 'CineMovie User';
+            prof.avatar = activeProfile.avatar || prof.avatar;
+          } else {
+            prof.name = 'CineMovie User';
+          }
+        }
+
+        return {
+          ...r,
+          profiles: prof,
+          likes_count: r.likes?.[0]?.count || 0,
+          is_liked: userLikes.includes(r.id)
+        };
+      });
     } catch (e) {
       console.error('Error fetching reviews:', e);
       return [];

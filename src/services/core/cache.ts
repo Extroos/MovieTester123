@@ -16,7 +16,7 @@ interface CacheItem<T> {
   version: number;
 }
 
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2; // bumped to bust old season caches with missing still_path/air_date
 const CACHE_PREFIX = 'cine_cache_';
 
 // Fast in-memory cache storage
@@ -104,10 +104,20 @@ export const CacheService = {
       memoryCache.set(key, item);
       
       // Persist to disk
-      localStorage.setItem(key, JSON.stringify(item));
+      try {
+        localStorage.setItem(key, JSON.stringify(item));
+      } catch (writeError) {
+        console.warn('LocalStorage write failed, pruning cache...', writeError);
+        CacheService.prune(true); // Aggressive prune
+        try {
+          // Retry write once
+          localStorage.setItem(key, JSON.stringify(item));
+        } catch (retryError) {
+          console.warn('Cache write failed permanently after pruning:', retryError);
+        }
+      }
     } catch (e) {
-      console.warn('Cache write error (quota exceeded?)', e);
-      CacheService.prune();
+      console.warn('Cache set general error:', e);
     }
   },
 
@@ -131,10 +141,7 @@ export const CacheService = {
     });
   },
 
-  /**
-   * Remove expired items and oldest items to free up space
-   */
-  prune: (): void => {
+  prune: (aggressive: boolean = false): void => {
     const entries: { key: string; timestamp: number }[] = [];
     
     // Collect all cache entries with their timestamps
@@ -159,16 +166,19 @@ export const CacheService = {
       }
     });
     
-    // If still too many entries, remove oldest 50%
-    if (entries.length > 50) {
-      entries.sort((a, b) => a.timestamp - b.timestamp);
-      const toRemove = Math.floor(entries.length / 2);
-      for (let i = 0; i < toRemove; i++) {
+    // Sort oldest first
+    entries.sort((a, b) => a.timestamp - b.timestamp);
+
+    // If aggressive, remove 60% of entries. Otherwise, prune 30% if count exceeds 80.
+    const limit = aggressive ? 0 : 80;
+    if (entries.length > limit) {
+      const toRemove = aggressive ? Math.ceil(entries.length * 0.6) : Math.ceil(entries.length * 0.3);
+      for (let i = 0; i < Math.min(toRemove, entries.length); i++) {
         const k = entries[i].key;
         memoryCache.delete(k);
         localStorage.removeItem(k);
       }
-      console.log(`Cache pruned: removed ${toRemove} oldest entries`);
+      console.log(`Cache pruned: removed ${toRemove} oldest entries (aggressive: ${aggressive})`);
     }
   }
 };

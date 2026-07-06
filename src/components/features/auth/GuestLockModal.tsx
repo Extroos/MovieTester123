@@ -87,7 +87,17 @@ export default function GuestLockModal({ isOpen, onClose, title, description }: 
               <div style={{ display: 'flex', gap: '12px', width: '100%' }}>
                 <button
                   onClick={onClose}
-                  className="guest-lock-modal-btn-cancel"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onClose();
+                    } else if (e.key === 'ArrowRight') {
+                      e.preventDefault();
+                      (e.currentTarget.nextElementSibling as HTMLElement)?.focus();
+                    }
+                  }}
+                  className="guest-lock-modal-btn-cancel tv-focusable"
+                  tabIndex={0}
                   style={{
                     flex: 1,
                     height: '46px',
@@ -97,7 +107,8 @@ export default function GuestLockModal({ isOpen, onClose, title, description }: 
                     color: '#fff',
                     fontWeight: 900,
                     fontSize: '0.95rem',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    outline: 'none'
                   }}
                 >
                   Cancel
@@ -108,7 +119,19 @@ export default function GuestLockModal({ isOpen, onClose, title, description }: 
                     onClose();
                     window.dispatchEvent(new CustomEvent('navigateToLogin'));
                   }}
-                  className="guest-lock-modal-btn-login"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      triggerHaptic('medium');
+                      onClose();
+                      window.dispatchEvent(new CustomEvent('navigateToLogin'));
+                    } else if (e.key === 'ArrowLeft') {
+                      e.preventDefault();
+                      (e.currentTarget.previousElementSibling as HTMLElement)?.focus();
+                    }
+                  }}
+                  className="guest-lock-modal-btn-login tv-focusable"
+                  tabIndex={0}
                   style={{
                     flex: 1.5,
                     height: '46px',
@@ -118,7 +141,8 @@ export default function GuestLockModal({ isOpen, onClose, title, description }: 
                     color: '#000',
                     fontWeight: 900,
                     fontSize: '0.95rem',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    outline: 'none'
                   }}
                 >
                   Login / Register

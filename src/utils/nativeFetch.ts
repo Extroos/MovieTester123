@@ -1,5 +1,5 @@
-import { Capacitor, CapacitorHttp, registerPlugin } from '@capacitor/core';
-const NativeStreamingEngine = registerPlugin<any>('NativeStreamingEngine');
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
+import { NativeStreamingEngine } from '../services/native/NativeStreamingEngine';
 
 export function getHeadersForUrl(url: string): Record<string, string> {
   const ua = 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36';

@@ -1,7 +1,6 @@
-import { Capacitor, registerPlugin } from '@capacitor/core';
+import { Capacitor } from '@capacitor/core';
 import { scrapeVidlinkStream, scrapeVidsrcPmStream, scrapeVidzeeStream } from './ClientScraperService';
-
-const NativeStreamingEngine = registerPlugin<any>('NativeStreamingEngine');
+import { NativeStreamingEngine } from '../native/NativeStreamingEngine';
 
 
 /**
@@ -321,10 +320,12 @@ export async function resolveMovieStream(
   const base = getLocalServerUrl();
   if (!base) return null;
 
+  const activeServer = (server && server !== 'undefined') ? server : selectedServer;
+
   const attempts = [
     // Consumet /meta/tmdb endpoint (direct TMDB ID support)
     async () => {
-      const url = `${base}/meta/tmdb/watch/${tmdbId}?type=movie&title=${encodeURIComponent(title)}&server=${server}`;
+      const url = `${base}/meta/tmdb/watch/${tmdbId}?type=movie&title=${encodeURIComponent(title)}&server=${activeServer}`;
       console.log(`[LocalStream] Trying: ${url}`);
       const res = await fetch(url, { signal: getTimeoutSignal(45000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -535,10 +536,11 @@ export async function resolveTVStream(
   const base = getLocalServerUrl();
   if (!base) return null;
 
+  const activeServer = (server && server !== 'undefined') ? server : selectedServer;
+
   const attempts = [
-    // Consumet /meta/tmdb endpoint
     async () => {
-      const url = `${base}/meta/tmdb/watch/${tmdbId}?type=tv&s=${season}&e=${episode}&title=${encodeURIComponent(showName)}&server=${server}`;
+      const url = `${base}/meta/tmdb/watch/${tmdbId}?type=tv&s=${season}&e=${episode}&title=${encodeURIComponent(showName)}${activeServer ? `&server=${encodeURIComponent(activeServer)}` : ''}`;
       console.log(`[LocalStream] Trying: ${url}`);
       const res = await fetch(url, { signal: getTimeoutSignal(45000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);

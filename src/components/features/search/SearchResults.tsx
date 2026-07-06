@@ -3,6 +3,7 @@ import type { Movie } from '../../../types';
 import { getPosterUrl } from '../../../services/tmdb';
 import { COLORS } from '../../../constants';
 import { triggerHaptic } from '../../../utils/haptics';
+import { t } from '../../../utils/i18n';
 
 interface SearchResultsProps {
   query: string;
@@ -14,18 +15,21 @@ interface SearchResultsProps {
 
 export default function SearchResults({ query, results, loading, onMovieClick, onClose }: SearchResultsProps) {
   return (
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      zIndex: 2000,
-      background: 'rgba(10, 10, 10, 0.5)', 
-      backdropFilter: 'blur(25px) saturate(200%) brightness(1.1)',
-      WebkitBackdropFilter: 'blur(25px) saturate(200%) brightness(1.1)',
-      overflowY: 'auto',
-      WebkitOverflowScrolling: 'touch',
-      overscrollBehavior: 'contain',
-      animation: 'resultsIn 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
-    }}>
+    <div 
+      className="search-results-container"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 2000,
+        background: 'rgba(10, 10, 10, 0.5)', 
+        backdropFilter: 'blur(25px) saturate(200%) brightness(1.1)',
+        WebkitBackdropFilter: 'blur(25px) saturate(200%) brightness(1.1)',
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch',
+        overscrollBehavior: 'contain',
+        animation: 'resultsIn 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
+      }}
+    >
       {/* Floating Search Results Capsule - Styled exactly like Header.tsx */}
       <div style={{
         position: 'fixed',
@@ -47,7 +51,8 @@ export default function SearchResults({ query, results, loading, onMovieClick, o
         <button
           onClick={() => { triggerHaptic('light'); onClose(); }}
           aria-label="Back"
-          className="search-overlay-back-btn"
+          className="search-overlay-back-btn tv-focusable"
+          tabIndex={0}
           style={{
             background: 'transparent',
             border: 'none',
@@ -81,7 +86,7 @@ export default function SearchResults({ query, results, loading, onMovieClick, o
             letterSpacing: '-0.2px',
             lineHeight: 1.2
           }}>
-            {query ? `"${query}"` : 'Results'}
+            {query ? `"${query}"` : t('results')}
           </h2>
           <p style={{
             fontSize: '9px',
@@ -90,7 +95,7 @@ export default function SearchResults({ query, results, loading, onMovieClick, o
             fontWeight: 600,
             letterSpacing: '0.2px'
           }}>
-            {results.length} {results.length === 1 ? 'result' : 'results'} found
+            {results.length} {results.length === 1 ? t('result_found') : t('results_found')}
           </p>
         </div>
       </div>
@@ -130,8 +135,8 @@ export default function SearchResults({ query, results, loading, onMovieClick, o
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
-            <p style={{ fontSize: '15px', fontWeight: 600, margin: '0 0 6px', color: '#fff' }}>No matches found</p>
-            <p style={{ fontSize: '13px', opacity: 0.6, margin: 0 }}>Try changing your keywords</p>
+            <p style={{ fontSize: '15px', fontWeight: 600, margin: '0 0 6px', color: '#fff' }}>{t('no_matches_found')}</p>
+            <p style={{ fontSize: '13px', opacity: 0.6, margin: 0 }}>{t('try_changing_keywords')}</p>
           </div>
         ) : (
           <div style={{
@@ -149,7 +154,18 @@ export default function SearchResults({ query, results, loading, onMovieClick, o
                   triggerHaptic('medium'); 
                   onMovieClick(movie); 
                 }}
-                className="search-grid-card"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    if (document.activeElement instanceof HTMLElement) {
+                      document.activeElement.blur();
+                    }
+                    triggerHaptic('medium');
+                    onMovieClick(movie);
+                  }
+                }}
+                className="search-grid-card tv-focusable"
+                tabIndex={0}
                 style={{
                   cursor: 'pointer',
                   WebkitTapHighlightColor: 'transparent',

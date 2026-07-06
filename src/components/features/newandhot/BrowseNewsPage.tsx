@@ -191,11 +191,28 @@ export default function BrowseNewsPage({ trending, upcoming, onItemClick, select
     );
   }
 
+  const isTVMode = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+
+  // State to track currently focused item on TV mode so the right details pane updates live
+  const [focusedItem, setFocusedItem] = useState<any>(null);
+
+  // Sync focused item when tab changes
+  useEffect(() => {
+    if (activeTab === 'coming') {
+      setFocusedItem(upcomingList[0] || null);
+    } else if (activeTab === 'categories') {
+      setFocusedItem(null); // No preview needed for categories tab
+    } else {
+      setFocusedItem(trendingList[0] || null);
+    }
+  }, [activeTab, trendingList, upcomingList]);
+
   const heroItem = useMemo(() => {
+    if (isTVMode) return focusedItem || trendingList[0] || null;
     if (activeTab === 'coming') return upcomingList[0] || null;
     if (activeTab === 'categories') return trendingList[1] || trendingList[0] || null;
     return trendingList[0] || null;
-  }, [activeTab, trendingList, upcomingList]);
+  }, [activeTab, trendingList, upcomingList, isTVMode, focusedItem]);
 
   const heroBadgeConfig = useMemo(() => {
     if (activeTab === 'coming') {
@@ -225,7 +242,10 @@ export default function BrowseNewsPage({ trending, upcoming, onItemClick, select
     };
   }, [activeTab]);
 
-  const remainingTrendingList = useMemo(() => trendingList.slice(1), [trendingList]);
+  const remainingTrendingList = useMemo(() => {
+    if (isTVMode) return trendingList; // Show all items in list on TV mode
+    return trendingList.slice(1);
+  }, [trendingList, isTVMode]);
 
   const formatReleaseDate = (item: any): string => {
     const raw = item.releaseDate || item.release_date;
@@ -233,6 +253,275 @@ export default function BrowseNewsPage({ trending, upcoming, onItemClick, select
     const d = new Date(raw);
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // RENDER TV MODE: Horizontal Split-Screen Layout (Left: list scroll, Right: preview pane)
+  // ─────────────────────────────────────────────────────────────────────────────
+  if (isTVMode) {
+    return (
+      <div style={{
+        height: '100vh',
+        background: '#070708',
+        color: '#ffffff',
+        display: 'flex',
+        overflow: 'hidden',
+        position: 'relative'
+      }}>
+        <CustomStyles />
+
+        {/* LEFT COLUMN: Scrollable news feed, category selector & tab headers */}
+        <div style={{
+          flex: '1.2',
+          height: '100%',
+          overflowY: 'auto',
+          padding: '120px 32px 100px 48px',
+          boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+          borderRight: '1px solid rgba(255,255,255,0.06)'
+        }} className="no-scrollbar">
+          {/* Header */}
+          <h2 style={{
+            fontSize: '1.2rem',
+            fontWeight: 900,
+            textTransform: 'uppercase',
+            letterSpacing: '0.04em',
+            margin: '0 0 16px 0',
+            color: '#ffffff'
+          }}>
+            {t('new_and_hot')}
+          </h2>
+
+          {/* Navigation Tab Bar */}
+          <div style={{ display: 'flex', gap: '4px', background: 'rgba(255,255,255,0.03)', padding: '4px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '24px', flexShrink: 0 }}>
+            {tabLabels.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => { triggerHaptic('light'); setActiveTab(tab.id as any); }}
+                className={`browse-news-tab-btn${activeTab === tab.id ? ' active' : ''} tv-focusable`}
+                style={{
+                  flex: 1,
+                  height: '32px',
+                  background: activeTab === tab.id ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                  border: 'none',
+                  color: activeTab === tab.id ? '#fff' : 'rgba(255,255,255,0.45)',
+                  fontSize: '0.68rem',
+                  fontWeight: 800,
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                  outline: 'none'
+                }}
+              >
+                {tab.icon}{tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* List items depending on selected tab */}
+          <div style={{ flex: 1 }}>
+            {activeTab === 'categories' ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
+                {genresWithImages.map((genre) => (
+                  <button
+                    key={genre.id}
+                    onClick={() => { triggerHaptic('medium'); onSelectedGenreChange(genre.id); }}
+                    className="genre-editorial-card tv-focusable"
+                    style={{ position: 'relative', aspectRatio: '16/9', borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.08)', overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: '10px 12px', cursor: 'pointer', color: '#ffffff', outline: 'none', textAlign: 'left', width: '100%', boxSizing: 'border-box', background: '#121214' }}
+                  >
+                    {genre.imagePath && (
+                      <img src={genre.imagePath} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 1, opacity: 0.5 }} loading="lazy" />
+                    )}
+                    <div style={{ position: 'absolute', inset: 0, zIndex: 2, background: `linear-gradient(to top, rgba(7,7,8, 0.95) 0%, rgba(7,7,8, 0.3) 100%)` }} />
+                    <span style={{ position: 'relative', zIndex: 3, fontWeight: 900, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                      {genre.name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : activeTab === 'coming' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {upcomingList.map((item: any) => {
+                  const releaseDate = formatReleaseDate(item);
+                  const isFocused = focusedItem?.id === item.id;
+                  return (
+                    <div
+                      key={item.id}
+                      className="seamless-news-row tv-focusable"
+                      tabIndex={0}
+                      onFocus={() => setFocusedItem(item)}
+                      onClick={() => onItemClick(item)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          onItemClick(item);
+                        } else if (e.key === 'ArrowRight') {
+                          e.preventDefault();
+                          const infoBtn = document.querySelector('.featured-play-btn') as HTMLElement | null;
+                          if (infoBtn) infoBtn.focus();
+                        }
+                      }}
+                      style={{
+                        display: 'flex',
+                        gap: '12px',
+                        alignItems: 'center',
+                        padding: '10px',
+                        borderRadius: '12px',
+                        background: isFocused ? 'rgba(255,255,255,0.06)' : 'transparent',
+                        border: '1px solid transparent',
+                        cursor: 'pointer',
+                        outline: 'none',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <div style={{ flexShrink: 0, width: '48px', aspectRatio: '2/3', borderRadius: '6px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)' }}>
+                        <img src={getPosterUrl(item.posterPath, 'small')} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                        <span style={{ fontSize: '0.55rem', fontWeight: 800, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{releaseDate}</span>
+                        <h4 style={{ margin: '2px 0 0 0', fontSize: '0.8rem', fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {item.title}
+                        </h4>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {remainingTrendingList.map((item: any) => {
+                  const isFocused = focusedItem?.id === item.id;
+                  return (
+                    <div
+                      key={item.id}
+                      className="seamless-news-row tv-focusable"
+                      tabIndex={0}
+                      onFocus={() => setFocusedItem(item)}
+                      onClick={() => onItemClick(item)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          onItemClick(item);
+                        } else if (e.key === 'ArrowRight') {
+                          e.preventDefault();
+                          const infoBtn = document.querySelector('.featured-play-btn') as HTMLElement | null;
+                          if (infoBtn) infoBtn.focus();
+                        }
+                      }}
+                      style={{
+                        display: 'flex',
+                        gap: '12px',
+                        alignItems: 'center',
+                        padding: '10px',
+                        borderRadius: '12px',
+                        background: isFocused ? 'rgba(255,255,255,0.06)' : 'transparent',
+                        border: '1px solid transparent',
+                        cursor: 'pointer',
+                        outline: 'none',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <div style={{ flexShrink: 0, width: '70px', aspectRatio: '16/9', borderRadius: '6px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)' }}>
+                        <img src={getBackdropUrl(item.backdropPath, 'small') || getPosterUrl(item.posterPath, 'small')} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                        <h4 style={{ margin: 0, fontSize: '0.8rem', fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {item.title || item.name}
+                        </h4>
+                        <p style={{ margin: '2px 0 0 0', fontSize: '0.68rem', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {item.overview}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN: Stable sticky preview panel displaying the focused item */}
+        <div style={{
+          flex: '1.5',
+          height: '100%',
+          position: 'relative',
+          display: 'flex',
+          alignItems: 'flex-end',
+          justifyContent: 'flex-start',
+          background: 'transparent'
+        }}>
+          {heroItem ? (
+            <>
+              {/* Stable Backdrop image */}
+              <div style={{ position: 'absolute', inset: 0, zIndex: 1, filter: 'brightness(0.55) contrast(1.05)' }}>
+                <img
+                  src={getBackdropUrl(heroItem.backdropPath, 'large') || getPosterUrl(heroItem.posterPath, 'large')}
+                  alt=""
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, #070708 0%, transparent 50%), linear-gradient(to top, #070708 0%, transparent 40%)' }} />
+              </div>
+
+              {/* Text content details */}
+              <div style={{ padding: '48px', width: '100%', boxSizing: 'border-box', textAlign: 'left', zIndex: 2, position: 'relative' }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: heroBadgeConfig.bg, border: heroBadgeConfig.border, color: heroBadgeConfig.color, padding: '4px 10px', borderRadius: '20px', fontSize: '0.6rem', fontWeight: 900, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '12px' }}>
+                  {heroBadgeConfig.icon}{heroBadgeConfig.label}
+                </div>
+                <h1 style={{ fontSize: '2rem', fontWeight: 950, letterSpacing: '-0.04em', margin: '0 0 10px 0', lineHeight: 1.1, color: '#ffffff', textShadow: '0 4px 12px rgba(0,0,0,0.8)' }}>
+                  {heroItem.title || heroItem.name}
+                </h1>
+                <p style={{ fontSize: '0.78rem', color: 'rgba(255, 255, 255, 0.75)', lineHeight: '1.55', maxWidth: '480px', margin: '0 0 20px 0', textShadow: '0 2px 6px rgba(0,0,0,0.5)' }}>
+                  {heroItem.overview || 'No overview description available.'}
+                </p>
+                <button
+                  onClick={() => onItemClick(heroItem)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowLeft') {
+                      e.preventDefault();
+                      const activeRow = document.querySelector('.seamless-news-row[style*="rgba(255,255,255,0.06)"], .seamless-news-row:focus') as HTMLElement | null;
+                      if (activeRow) {
+                        activeRow.focus();
+                      } else {
+                        const firstRow = document.querySelector('.seamless-news-row') as HTMLElement | null;
+                        if (firstRow) firstRow.focus();
+                      }
+                    }
+                  }}
+                  className="featured-play-btn tv-focusable"
+                  style={{
+                    background: '#ffffff',
+                    color: '#000000',
+                    border: 'none',
+                    borderRadius: '10px',
+                    padding: '8px 18px',
+                    fontWeight: 900,
+                    fontSize: '0.75rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: 'pointer',
+                    outline: 'none',
+                    boxShadow: '0 4px 14px rgba(255,255,255,0.2)'
+                  }}
+                >
+                  <Play size={12} fill="#000" /> {t('watch_info')}
+                </button>
+              </div>
+            </>
+          ) : (
+            <div style={{ margin: 'auto', color: 'rgba(255,255,255,0.2)', fontSize: '0.8rem', fontWeight: 700 }}>
+              Hover or focus items on the left to see details
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{
@@ -371,9 +660,16 @@ export default function BrowseNewsPage({ trending, upcoming, onItemClick, select
                         return (
                           <div
                             key={item.id}
-                            className="seamless-news-row"
-                            style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', paddingBottom: '20px', paddingTop: '4px', borderBottom: isLast ? 'none' : '1px solid rgba(255, 255, 255, 0.05)', cursor: 'pointer' }}
+                            className="seamless-news-row tv-focusable"
+                            tabIndex={0}
+                            style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', paddingBottom: '20px', paddingTop: '4px', borderBottom: isLast ? 'none' : '1px solid rgba(255, 255, 255, 0.05)', cursor: 'pointer', outline: 'none' }}
                             onClick={() => onItemClick(item)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                onItemClick(item);
+                              }
+                            }}
                           >
                             {/* Poster thumbnail */}
                             <div style={{ flexShrink: 0, width: '80px', aspectRatio: '2/3', borderRadius: '10px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)', background: '#111', position: 'relative' }}>
@@ -425,10 +721,18 @@ export default function BrowseNewsPage({ trending, upcoming, onItemClick, select
                 return (
                   <div
                     key={item.id}
-                    className="seamless-news-row"
-                    style={{ display: 'flex', flexDirection: 'column', width: '100%', paddingBottom: '24px', borderBottom: isLast ? 'none' : '1px solid rgba(255, 255, 255, 0.06)', willChange: 'transform', transform: 'translate3d(0, 0, 0)' }}
+                    className="seamless-news-row tv-focusable"
+                    tabIndex={0}
+                    style={{ display: 'flex', flexDirection: 'column', width: '100%', paddingBottom: '24px', borderBottom: isLast ? 'none' : '1px solid rgba(255, 255, 255, 0.06)', willChange: 'transform', transform: 'translate3d(0, 0, 0)', cursor: 'pointer', outline: 'none' }}
+                    onClick={() => onItemClick(item)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onItemClick(item);
+                      }
+                    }}
                   >
-                    <div onClick={() => onItemClick(item)} className="news-media-box tv-focusable" style={{ position: 'relative', aspectRatio: '16/9', width: '100%', cursor: 'pointer', borderRadius: '14px', overflow: 'hidden' }}>
+                    <div className="news-media-box" style={{ position: 'relative', aspectRatio: '16/9', width: '100%', borderRadius: '14px', overflow: 'hidden', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
                       <img src={getBackdropUrl(item.backdropPath, 'medium') || getPosterUrl(item.posterPath, 'large')} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />
                       <div style={{ position: 'absolute', top: '12px', left: '12px', background: 'rgba(7, 7, 8, 0.85)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', padding: '5px 10px', borderRadius: '8px', fontSize: '0.6rem', fontWeight: 800, letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '5px', textTransform: 'uppercase' }}>
                         {isTV ? <Tv size={10} /> : <Film size={10} />}
@@ -437,16 +741,13 @@ export default function BrowseNewsPage({ trending, upcoming, onItemClick, select
                     </div>
                     <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', textAlign: 'left' }}>
                       <div style={{ flex: 1, marginRight: '16px' }}>
-                        <h3 onClick={() => onItemClick(item)} className="editorial-title-text" style={{ margin: 0, fontSize: '1.25rem', fontWeight: 900, letterSpacing: '-0.02em', lineHeight: 1.25, cursor: 'pointer', color: '#fff' }}>
+                        <h3 className="editorial-title-text" style={{ margin: 0, fontSize: '1.25rem', fontWeight: 900, letterSpacing: '-0.02em', lineHeight: 1.25, color: '#fff' }}>
                           {(item as Movie).title || (item as TVShow).name}
                         </h3>
                         <p style={{ margin: '8px 0 0', fontSize: '0.82rem', color: 'rgba(255, 255, 255, 0.6)', lineHeight: '1.5', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', fontWeight: 400 }}>
                           {item.overview}
                         </p>
                       </div>
-                      <button onClick={() => onItemClick(item)} className="tv-focusable" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, transition: 'all 0.2s', outline: 'none' }}>
-                        <Info size={16} />
-                      </button>
                     </div>
                   </div>
                 );
@@ -500,38 +801,41 @@ const CustomStyles = React.memo(() => (
     }
 
     /* TV focus states */
-    .tv-focusable:focus-visible {
-      outline: 2px solid #ffffff !important;
-      outline-offset: 2px;
-      transform: scale(1.02) !important;
+    .tv-focusable:focus-visible,
+    .tv-focusable:focus {
+      outline: none !important;
+      box-shadow: none !important;
+      border-color: transparent !important;
     }
 
-    /* Shimmer Effect */
-    @keyframes shimmer {
-      0% { background-position: -200% 0; }
-      100% { background-position: 200% 0; }
-    }
-    .shimmer-placeholder {
-      background: linear-gradient(90deg, var(--bg-primary, #121214) 25%, var(--bg-card, #1a1a1f) 50%, var(--bg-primary, #121214) 75%);
-      background-size: 200% 100%;
-      animation: shimmer 1.5s infinite linear;
-      border: 1px solid var(--border-color);
+    .editorial-poster-card.tv-focusable:focus {
+      transform: scale(1.06) !important;
+      box-shadow: 0 0 0 3.5px #ffffff !important;
+      border-color: #ffffff !important;
     }
 
-    /* Small Screen Responsive Layouts (e.g. 360x750) */
-    @media (max-width: 400px), (max-height: 800px) {
-      .hero-banner-container {
-        height: 48vh !important;
-        min-height: 320px !important;
-      }
-      .featured-play-btn {
-        padding: 8px 16px !important;
-        font-size: 0.72rem !important;
-      }
-      .browse-news-tab-btn {
-        height: 32px !important;
-        font-size: 0.65rem !important;
-      }
+    .genre-editorial-card.tv-focusable:focus {
+      transform: scale(1.05) !important;
+      box-shadow: 0 0 0 3.5px #ffffff !important;
+      border-color: #ffffff !important;
+    }
+
+    .news-media-box.tv-focusable:focus {
+      transform: scale(1.03) !important;
+      box-shadow: 0 0 0 3.5px #ffffff !important;
+      border-color: #ffffff !important;
+    }
+
+    button.tv-focusable:focus {
+      background: #ffffff !important;
+      color: #000000 !important;
+      box-shadow: 0 0 0 3px #ffffff !important;
+    }
+
+    .search-overlay-back-btn.tv-focusable:focus {
+      background: rgba(255, 255, 255, 0.12) !important;
+      border-radius: 8px !important;
+      box-shadow: none !important;
     }
   `}</style>
 ));

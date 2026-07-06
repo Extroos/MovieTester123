@@ -13,7 +13,8 @@ const TMDB_LANG_MAP: Record<string, string> = {
   de: 'de-DE',
   it: 'it-IT',
   pt: 'pt-BR',
-  ru: 'ru-RU'
+  ru: 'ru-RU',
+  ar: 'ar-SA'
 };
 
 // Retry configuration
@@ -131,6 +132,10 @@ function checkInTheatersOnly(releaseDatesResult: any): boolean {
   let hasDigitalOrPhysical = false;
   const now = new Date();
 
+  // Fallback for smaller or indie films: if the earliest theatrical release was more than 120 days ago,
+  // assume it is no longer exclusively in theaters (even if digital/physical flags are missing).
+  let earliestTheatricalDate: Date | null = null;
+
   for (const country of releaseDatesResult.results) {
     if (!Array.isArray(country.release_dates)) continue;
     for (const rel of country.release_dates) {
@@ -141,6 +146,9 @@ function checkInTheatersOnly(releaseDatesResult: any): boolean {
       const type = rel.type;
       if (type === 2 || type === 3) {
         hasTheatrical = true;
+        if (!earliestTheatricalDate || relDate < earliestTheatricalDate) {
+          earliestTheatricalDate = relDate;
+        }
       }
       if (type === 4 || type === 5 || type === 6) {
         hasDigitalOrPhysical = true;
@@ -148,7 +156,38 @@ function checkInTheatersOnly(releaseDatesResult: any): boolean {
     }
   }
 
+  if (hasTheatrical && earliestTheatricalDate) {
+    const daysSinceRelease = (now.getTime() - earliestTheatricalDate.getTime()) / (1000 * 60 * 60 * 24);
+    if (daysSinceRelease > 120) {
+      return false; // No longer exclusively in theaters after 4 months
+    }
+  }
+
   return hasTheatrical && !hasDigitalOrPhysical;
+}
+
+function getMovieCertification(releaseDates: any): string {
+  if (!releaseDates || !Array.isArray(releaseDates.results)) return '';
+  const usRelease = releaseDates.results.find((r: any) => r.iso_3166_1 === 'US');
+  if (usRelease && Array.isArray(usRelease.release_dates)) {
+    const cert = usRelease.release_dates.find((d: any) => d.certification);
+    if (cert) return cert.certification;
+  }
+  for (const r of releaseDates.results) {
+    if (Array.isArray(r.release_dates)) {
+      const cert = r.release_dates.find((d: any) => d.certification);
+      if (cert) return cert.certification;
+    }
+  }
+  return '';
+}
+
+function getTVShowCertification(contentRatings: any): string {
+  if (!contentRatings || !Array.isArray(contentRatings.results)) return '';
+  const usRating = contentRatings.results.find((r: any) => r.iso_3166_1 === 'US');
+  if (usRating) return usRating.rating;
+  const anyRating = contentRatings.results.find((r: any) => r.rating);
+  return anyRating ? anyRating.rating : '';
 }
 
 function transformMovie(data: any): Movie {
@@ -171,6 +210,7 @@ function transformMovie(data: any): Movie {
     revenue: data.revenue,
     originalLanguage: data.original_language,
     inTheaters: data.release_dates ? checkInTheatersOnly(data.release_dates) : undefined,
+    certification: data.release_dates ? getMovieCertification(data.release_dates) : data.certification || '',
   };
 }
 
@@ -193,6 +233,7 @@ function transformTVShow(data: any): TVShow {
     originCountry: data.origin_country, // Map origin_country
     popularity: data.popularity,
     imdbId: data.external_ids?.imdb_id,
+    certification: data.content_ratings ? getTVShowCertification(data.content_ratings) : data.certification || '',
   };
 }
 
@@ -413,12 +454,82 @@ export async function getMovieDetails(movieId: number | string): Promise<Movie |
   if (!numericId || isNaN(numericId)) return null;
 
   try {
-    const data: any = await fetchFromApi(`/movie/${numericId}`, { append_to_response: 'release_dates' }, LONG_TTL/2);
+    const data: any = await fetchFromApi(`/movie/${numericId}`, { append_to_response: 'release_dates,images', include_image_language: 'en,null' }, LONG_TTL/2);
     if (!data || !data.id) return null;
-    return transformMovie(data);
+    const movie = transformMovie(data);
+    
+    // Extract and attach logoUrl
+    if (data.images?.logos && data.images.logos.length > 0) {
+      const logos = data.images.logos;
+      const enPng = logos.find((l: any) => l.iso_639_1 === 'en' && l.file_path?.endsWith('.png'));
+      const anyPng = logos.find((l: any) => l.file_path?.endsWith('.png'));
+      const best = enPng || anyPng || logos[0];
+      if (best?.file_path) {
+        (movie as any).logoUrl = getLogoUrl(best.file_path);
+      }
+    }
+    
+    if (data.belongs_to_collection) {
+      (movie as any).belongsToCollection = {
+        id: data.belongs_to_collection.id,
+        name: data.belongs_to_collection.name,
+        posterPath: data.belongs_to_collection.poster_path,
+        backdropPath: data.belongs_to_collection.backdrop_path,
+      };
+    }
+    
+    return movie;
   } catch (error) {
     console.error('Error fetching movie details:', error);
     return null;
+  }
+}
+
+export async function getMovieCollection(collectionId: number | string): Promise<{ name: string; parts: Movie[] } | null> {
+  const numericId = typeof collectionId === 'string' ? parseInt(collectionId.replace(/\D/g, ''), 10) : collectionId;
+  if (!numericId || isNaN(numericId)) return null;
+
+  try {
+    const data: any = await fetchFromApi(`/collection/${numericId}`, {}, LONG_TTL);
+    if (!data || !Array.isArray(data.parts)) return null;
+
+    const parts = data.parts
+      .map(transformMovie)
+      .sort((a: Movie, b: Movie) => {
+        const dateA = a.releaseDate ? new Date(a.releaseDate).getTime() : 0;
+        const dateB = b.releaseDate ? new Date(b.releaseDate).getTime() : 0;
+        return dateA - dateB;
+      });
+
+    return {
+      name: data.name || 'Collection',
+      parts,
+    };
+  } catch (error) {
+    console.error('Error fetching movie collection:', error);
+    return null;
+  }
+}
+
+/**
+ * Fetches ONLY the release_dates for a movie with a short 2-hour TTL.
+ * Use this to get an always-fresh `inTheaters` status that is never stale
+ * from the long-cached full details response.
+ * Returns `true` if the movie is currently in theaters only (no digital/physical
+ * release yet), `false` otherwise.
+ */
+const THEATERS_TTL = 2 * 60 * 60 * 1000; // 2 hours
+export async function getMovieInTheaters(movieId: number | string): Promise<boolean> {
+  const cleanIdStr = typeof movieId === 'string' ? movieId.replace(/\D/g, '') : String(movieId);
+  const numericId = parseInt(cleanIdStr, 10);
+  if (!numericId || isNaN(numericId)) return false;
+
+  try {
+    const data: any = await fetchFromApi(`/movie/${numericId}/release_dates`, {}, THEATERS_TTL);
+    if (!data) return false;
+    return checkInTheatersOnly(data);
+  } catch {
+    return false;
   }
 }
 
@@ -565,9 +676,22 @@ export async function getTVShowDetails(tvId: number | string): Promise<TVShow | 
   if (!numericId || isNaN(numericId)) return null;
 
   try {
-    const data: any = await fetchFromApi(`/tv/${numericId}`, { append_to_response: 'external_ids' }, LONG_TTL/2);
+    const data: any = await fetchFromApi(`/tv/${numericId}`, { append_to_response: 'content_ratings,external_ids,images', include_image_language: 'en,null' }, LONG_TTL/2);
     if (!data || !data.id) return null;
-    return transformTVShow(data);
+    const show = transformTVShow(data);
+
+    // Extract and attach logoUrl
+    if (data.images?.logos && data.images.logos.length > 0) {
+      const logos = data.images.logos;
+      const enPng = logos.find((l: any) => l.iso_639_1 === 'en' && l.file_path?.endsWith('.png'));
+      const anyPng = logos.find((l: any) => l.file_path?.endsWith('.png'));
+      const best = enPng || anyPng || logos[0];
+      if (best?.file_path) {
+        (show as any).logoUrl = getLogoUrl(best.file_path);
+      }
+    }
+
+    return show;
   } catch (error) {
     console.error('Error fetching TV show details:', error);
     return null;
@@ -740,30 +864,129 @@ export async function getPersonCombinedCredits(personId: number, signal?: AbortS
   }
 }
 
+/**
+ * Returns the URL for a media logo (title art) image stored on TMDB.
+ * TMDB logos come in SVG or PNG format. We prefer PNG for widest support.
+ */
+export function getLogoUrl(path: string | null, size: 'w185' | 'w300' | 'w500' | 'original' = 'w500'): string {
+  if (!path) return '';
+  if (path.startsWith('http')) return path;
+  return `${TMDB_IMAGE_BASE_URL}/${size}${path}`;
+}
+
+/**
+ * Fetch the best available English logo for a movie or TV show.
+ * TMDB /images endpoint returns language-tagged logos. We prefer
+ * English logos (file_path ending in .png preferred over .svg).
+ * Returns null if no logo is found.
+ */
+export async function getMediaLogo(id: number, type: 'movie' | 'tv'): Promise<string | null> {
+  try {
+    const cacheKey = CacheService.generateKey(`/${type}/${id}/images/logo`, {});
+    const cached = CacheService.get<string | null>(cacheKey);
+    if (cached && !cached.isStale) return (cached as any).data;
+
+    const url = new URL(`${BASE_URL}/${type}/${id}/images`);
+    url.searchParams.append('api_key', API_KEY);
+    // include_image_language fetches English logos (and null = fallback any lang)
+    url.searchParams.append('include_image_language', 'en,null');
+
+    const res = await fetch(url.toString());
+    if (!res.ok) { CacheService.set(cacheKey, null, LONG_TTL); return null; }
+    const data = await res.json();
+
+    const logos: any[] = data.logos || [];
+    if (logos.length === 0) { CacheService.set(cacheKey, null, LONG_TTL); return null; }
+
+    // Prefer English PNG logos, then any PNG, then any logo
+    const enPng = logos.find(l => l.iso_639_1 === 'en' && l.file_path?.endsWith('.png'));
+    const anyPng = logos.find(l => l.file_path?.endsWith('.png'));
+    const best = enPng || anyPng || logos[0];
+
+    const logoUrl = best?.file_path ? getLogoUrl(best.file_path) : null;
+    CacheService.set(cacheKey, logoUrl, LONG_TTL);
+    return logoUrl;
+  } catch {
+    return null;
+  }
+}
+
 
 export async function getTVShowSeason(tvId: number, seasonNumber: number): Promise<any> {
   try {
-    const data: any = await fetchFromApi(`/tv/${tvId}/season/${seasonNumber}`, {}, LONG_TTL);
+    // Episode stills (still_path) and air_date are ONLY reliably returned by TMDB
+    // in the English response. Non-English requests often return null for these fields.
+    // Strategy: always fetch in en-US for metadata, then overlay the user's language
+    // for translated names and overviews.
+    const enUrl = new URL(`${BASE_URL}/tv/${tvId}/season/${seasonNumber}`);
+    enUrl.searchParams.append('api_key', API_KEY);
+    enUrl.searchParams.append('language', 'en-US');
+    const enCacheKey = CacheService.generateKey(`/tv/${tvId}/season/${seasonNumber}`, { language: 'en-US' });
+
+    const SEASON_TTL = 30 * 60 * 1000; // 30 minutes to prevent locking newly released episodes in cache
+    let enData: any = null;
+    const cached = CacheService.get<any>(enCacheKey);
+    if (cached && !cached.isStale) {
+      enData = (cached as any).data;
+    } else {
+      try {
+        const res = await fetch(enUrl.toString());
+        if (res.ok) {
+          enData = await res.json();
+          CacheService.set(enCacheKey, enData, SEASON_TTL);
+        }
+      } catch (e) {
+        // If English fetch fails, fall back to the standard fetchFromApi path below
+      }
+    }
+
+    // Optionally fetch the user's language for translated names/overviews
+    const userLang = SettingsService.get('appLanguage') || 'en';
+    let localData: any = enData;
+    if (userLang !== 'en' && enData) {
+      try {
+        const localDataRaw: any = await fetchFromApi(`/tv/${tvId}/season/${seasonNumber}`, {}, SEASON_TTL);
+        if (localDataRaw?.episodes) {
+          localData = {
+            ...enData,
+            episodes: enData.episodes?.map((ep: any, i: number) => {
+              const locEp = localDataRaw.episodes[i];
+              return {
+                ...ep,
+                // Use translated name/overview when available, keep English as fallback
+                name: (locEp?.name && locEp.name !== ep.name) ? locEp.name : ep.name,
+                overview: locEp?.overview || ep.overview,
+              };
+            }),
+          };
+        }
+      } catch (e) {
+        // Non-critical — fall back to English data
+      }
+    }
+
+    // Use English data as the definitive source if fetch succeeded
+    const data = localData || (await fetchFromApi(`/tv/${tvId}/season/${seasonNumber}`, {}, SEASON_TTL));
     if (!data) return null;
-    
+
     // Transform episodes to match our Episode interface
     if (data.episodes) {
       data.episodes = data.episodes.map((ep: any) => ({
         id: ep.id,
         name: ep.name,
         overview: ep.overview,
-        voteAverage: ep.vote_average,
-        voteCount: ep.vote_count,
-        airDate: ep.air_date,
-        episodeNumber: ep.episode_number,
-        seasonNumber: ep.season_number,
-        stillPath: ep.still_path, // Map snake_case to camelCase
+        voteAverage: ep.vote_average ?? ep.voteAverage,
+        voteCount: ep.vote_count ?? ep.voteCount,
+        airDate: ep.air_date ?? ep.airDate,
+        episodeNumber: ep.episode_number ?? ep.episodeNumber,
+        seasonNumber: ep.season_number ?? ep.seasonNumber,
+        stillPath: ep.still_path ?? ep.stillPath,
         runtime: ep.runtime,
         crew: ep.crew,
-        guestStars: ep.guest_stars,
+        guestStars: ep.guest_stars ?? ep.guestStars,
       }));
     }
-    
+
     return data;
   } catch (error) {
     console.error('Error fetching TV show season:', error);
@@ -785,11 +1008,15 @@ export function getBackdropUrl(path: string | null, size: 'small' | 'medium' | '
   return `${TMDB_IMAGE_BASE_URL}/${IMAGE_SIZES.backdrop[size]}${path}`;
 }
 
-export function getProfileUrl(path: string | null): string {
+export function getProfileUrl(path: string | null, size: 'small' | 'medium' | 'large' = 'medium'): string {
   if (!path) return '';
   if (path.startsWith('http')) return path; // Handle full URLs
-  // Upgraded to w342 for better clarity on mobile/high-dpi screens
-  return `${TMDB_IMAGE_BASE_URL}/w342${path}`;
+  const sizeMap = {
+    small: 'w45',
+    medium: 'w185',
+    large: 'h632'
+  };
+  return `${TMDB_IMAGE_BASE_URL}/${sizeMap[size] || 'w185'}${path}`;
 }
 
 export function getStillUrl(path: string | null): string {

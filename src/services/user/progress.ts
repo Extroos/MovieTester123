@@ -126,12 +126,12 @@ export const WatchProgressService = {
                          (item.origin_country?.includes('JP') || item.originCountry?.includes('JP')));
     const type = isAnimeShow ? 'anime' : ((item as any).name ? 'tv' : 'movie'); 
 
-    // Throttle progress saves to at most once every 5 seconds per item, unless it's completion
+    // Throttle: at most one save every 30 seconds per item (unless completion)
     const throttleKey = `${item.id}::${type}`;
     const now = Date.now();
     const lastSaved = WatchProgressService._lastSaved.get(throttleKey) || 0;
     const isComplete = duration > 0 && progress / duration > 0.90;
-    if (now - lastSaved < 5000 && progress > 0 && !isComplete) {
+    if (now - lastSaved < 30000 && progress > 0 && !isComplete) {
       return;
     }
     WatchProgressService._lastSaved.set(throttleKey, now);
@@ -312,6 +312,10 @@ export const WatchProgressService = {
 
         if (error) {
           console.warn(`[Progress] Sync failed for ${entry.itemId}, will retry later:`, error.message);
+          // If RLS violation (e.g. stale entries from a previous session/profile), discard from queue immediately
+          if (error.code === '42501' || error.message.toLowerCase().includes('row-level security')) {
+            success = true;
+          }
         } else {
           if (DEBUG) console.log(`[Progress] Synced offline entry: ${entry.itemId}`);
           success = true;

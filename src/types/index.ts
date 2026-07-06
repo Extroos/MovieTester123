@@ -22,6 +22,7 @@ export interface Movie {
   revenue?: number;
   originalLanguage?: string;
   inTheaters?: boolean;
+  certification?: string;
   // Screenscape source tracking
   _source?: 'tmdb' | 'vidsrc' | 'kmmovies' | 'animesalt';
   _sourceUrl?: string;
@@ -48,6 +49,7 @@ export interface TVShow {
   lastAirDate?: string;
   networks?: { name: string; id: number }[];
   originalLanguage?: string;
+  certification?: string;
   // Screenscape source tracking
   _source?: 'tmdb' | 'vidsrc' | 'kmmovies' | 'animesalt';
   _sourceUrl?: string;

@@ -14,12 +14,20 @@ const MovieCard = React.memo(function MovieCard({ movie, onClick }: MovieCardPro
   return (
     <div
       onClick={() => onClick?.(movie)}
-      className="responsive-movie-card"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick?.(movie);
+        }
+      }}
+      className="responsive-movie-card movie-card tv-focusable"
+      tabIndex={0}
       style={{
         cursor: 'pointer',
         WebkitTapHighlightColor: 'transparent',
         userSelect: 'none',
         WebkitUserSelect: 'none',
+        outline: 'none',
         // Reveal animation on mount - Optimized to avoid blur during transition
         animation: 'revealCard 0.5s cubic-bezier(0.16, 1, 0.3, 1) both',
       }}

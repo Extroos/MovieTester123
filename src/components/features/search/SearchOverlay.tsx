@@ -3,14 +3,16 @@ import type { Movie } from '../../../types';
 import { searchMulti, getPosterUrl, getTrendingByGenre, getDiscoverNetflix, getDiscoverDisney, getDiscoverOscars, getTrending, getUpcoming } from '../../../services/tmdb';
 import { COLORS, GENRES } from '../../../constants';
 import { triggerHaptic } from '../../../utils/haptics';
+import { t } from '../../../utils/i18n';
 
 interface SearchOverlayProps {
   onClose: () => void;
   onMovieClick: (movie: Movie) => void;
   onShowResults: (query: string, results: Movie[]) => void;
+  disabled?: boolean;
 }
 
-export default function SearchOverlay({ onClose, onMovieClick, onShowResults }: SearchOverlayProps) {
+export default function SearchOverlay({ onClose, onMovieClick, onShowResults, disabled = false }: SearchOverlayProps) {
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [suggestions, setSuggestions] = useState<Movie[]>([]);
@@ -58,6 +60,16 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults }: 
       document.body.style.overflow = 'unset';
     };
   }, [onClose]);
+
+  useEffect(() => {
+    if (disabled) {
+      inputRef.current?.blur();
+    } else {
+      setTimeout(() => {
+        if (!disabled) inputRef.current?.focus();
+      }, 80);
+    }
+  }, [disabled]);
 
   useEffect(() => {
     if (!query.trim()) {
@@ -339,15 +351,18 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults }: 
   const headerOffset = showFilters ? 146 : 92;
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 2000,
-      background: 'rgba(10, 10, 10, 0.5)', 
-      backdropFilter: 'blur(25px) saturate(200%) brightness(1.1)',
-      WebkitBackdropFilter: 'blur(25px) saturate(200%) brightness(1.1)',
-      display: 'flex', flexDirection: 'column',
-      overscrollBehavior: 'contain',
-      animation: 'backdropFadeBlur 0.4s ease-out forwards',
-    }}>
+    <div 
+      className="search-overlay-container"
+      style={{
+        position: 'fixed', inset: 0, zIndex: 2000,
+        background: 'rgba(10, 10, 10, 0.5)', 
+        backdropFilter: 'blur(25px) saturate(200%) brightness(1.1)',
+        WebkitBackdropFilter: 'blur(25px) saturate(200%) brightness(1.1)',
+        display: 'flex', flexDirection: 'column',
+        overscrollBehavior: 'contain',
+        animation: 'backdropFadeBlur 0.4s ease-out forwards',
+      }}
+    >
       <style>{`
         @keyframes slideDownFilter {
           from {
@@ -384,7 +399,8 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults }: 
         <button 
           onClick={() => { inputRef.current?.blur(); onClose(); }} 
           aria-label="Back"
-          className="search-overlay-back-btn"
+          className="search-overlay-back-btn tv-focusable"
+          tabIndex={0}
           style={{ 
             background: 'transparent', 
             border: 'none', 
@@ -429,9 +445,12 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults }: 
           <input
             ref={inputRef}
             type="text"
-            placeholder="Search movies, TV shows..."
+            placeholder={t('search_placeholder')}
             value={query}
+            disabled={disabled}
             onChange={(e) => setQuery(e.target.value)}
+            className="tv-focusable"
+            tabIndex={0}
             style={{ 
               width: '100%', 
               height: '100%',
@@ -451,6 +470,8 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults }: 
               <button
                 type="button"
                 onClick={() => { triggerHaptic('light'); setQuery(''); inputRef.current?.focus(); }}
+                className="tv-focusable"
+                tabIndex={0}
                 style={{
                   background: 'transparent',
                   border: 'none',
@@ -472,7 +493,8 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults }: 
             <button 
               type="button" 
               onClick={() => { triggerHaptic('light'); setShowFilters(!showFilters); }} 
-              className={`search-overlay-filter-btn${showFilters ? ' active' : ''}`}
+              className={`search-overlay-filter-btn tv-focusable${showFilters ? ' active' : ''}`}
+              tabIndex={0}
               style={{ 
                 background: showFilters ? COLORS.primary : 'transparent', 
                 border: 'none', 
@@ -513,12 +535,12 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults }: 
           animation: 'slideDownFilter 0.25s cubic-bezier(0.16, 1, 0.3, 1) both',
           scrollbarWidth: 'none'
         }}>
-          <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', padding: '6px 10px', borderRadius: '8px', outline: 'none', fontSize: '12px', fontWeight: 600 }}>
-            <option value="All">All Years</option>
+          <select className="tv-focusable" tabIndex={0} value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', padding: '6px 10px', borderRadius: '8px', outline: 'none', fontSize: '12px', fontWeight: 600 }}>
+            <option value="All">{t('all_years')}</option>
             {[...Array(30)].map((_, i) => <option key={i} value={2024 - i}>{2024 - i}</option>)}
           </select>
-          <select value={selectedGenre || ''} onChange={(e) => setSelectedGenre(Number(e.target.value) || null)} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', padding: '6px 10px', borderRadius: '8px', outline: 'none', fontSize: '12px', fontWeight: 600 }}>
-            <option value="">All Genres</option>
+          <select className="tv-focusable" tabIndex={0} value={selectedGenre || ''} onChange={(e) => setSelectedGenre(Number(e.target.value) || null)} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', padding: '6px 10px', borderRadius: '8px', outline: 'none', fontSize: '12px', fontWeight: 600 }}>
+            <option value="">{t('all_genres')}</option>
             {Object.entries(GENRES).map(([name, id]) => <option key={id} value={id}>{name.replace(/_/g, ' ')}</option>)}
           </select>
         </div>
@@ -541,15 +563,17 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults }: 
         transition: 'top 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
       }}>
         {([
-          { id: 'all', label: 'All' },
-          { id: 'movie', label: 'Movies' },
-          { id: 'tv', label: 'TV Shows' },
-          { id: 'anime', label: 'Anime' }
+          { id: 'all', label: t('all') },
+          { id: 'movie', label: t('movies') },
+          { id: 'tv', label: t('series') },
+          { id: 'anime', label: t('anime_corner') }
         ] as const).map(pill => {
           const isActive = filterType === pill.id;
           return (
             <button
               key={pill.id}
+              className="tv-focusable"
+              tabIndex={0}
               onClick={() => { triggerHaptic('light'); setFilterType(pill.id); }}
               style={{
                 flexShrink: 0,
@@ -573,6 +597,8 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults }: 
 
         <button
           onClick={() => { triggerHaptic('light'); setHighRatingOnly(!highRatingOnly); }}
+          className="tv-focusable"
+          tabIndex={0}
           style={{
             flexShrink: 0,
             background: highRatingOnly ? COLORS.rating : 'rgba(255,255,255,0.05)',
@@ -592,7 +618,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults }: 
           <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
           </svg>
-          Top Rated
+          {t('top_rated')}
         </button>
       </div>
 
@@ -615,22 +641,23 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults }: 
           <div>
             {recentSearches.length > 0 && (
               <div style={{ marginBottom: '20px' }}>
-                <p style={{ fontSize: '11px', fontWeight: 800, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Recent</p>
+                <p style={{ fontSize: '11px', fontWeight: 800, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>{t('recent')}</p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                   {recentSearches.map((term, index) => (
-                    <button key={term} onClick={() => setQuery(term)} className="search-overlay-tag-btn" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', padding: '5px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, animation: 'fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both', animationDelay: `${index * 20}ms` }}>{term}</button>
+                    <button key={term} onClick={() => setQuery(term)} className="search-overlay-tag-btn tv-focusable" tabIndex={0} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', padding: '5px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, animation: 'fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both', animationDelay: `${index * 20}ms` }}>{term}</button>
                   ))}
                 </div>
               </div>
             )}
             
-            <p style={{ fontSize: '11px', fontWeight: 800, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Vibes</p>
+            <p style={{ fontSize: '11px', fontWeight: 800, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>{t('vibes')}</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '20px' }}>
               {['Atmospheric', 'Intense', 'Light-hearted', 'Dark', 'Hopeful', 'Crime', 'Horror', 'Mystery', 'Romance', 'Comedy', 'Sci-Fi', 'Action', 'Adventure', 'Fantasy', 'Family', 'Animation'].map((vibe, index) => (
                 <button 
                   key={vibe} 
                   onClick={() => handleVibeClick(vibe)} 
-                  className={`search-overlay-tag-btn${query === vibe ? ' active' : ''}`}
+                  className={`search-overlay-tag-btn tv-focusable${query === vibe ? ' active' : ''}`}
+                  tabIndex={0}
                   style={{ 
                     background: query === vibe ? COLORS.primary : 'rgba(255,255,255,0.05)', 
                     border: '1px solid rgba(255,255,255,0.08)', 
@@ -648,28 +675,34 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults }: 
               ))}
             </div>
 
-            <p style={{ fontSize: '11px', fontWeight: 800, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Browse</p>
+            <p style={{ fontSize: '11px', fontWeight: 800, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>{t('browse')}</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-              {['Trending', 'New', 'Oscar Winners', 'Disney+', 'Netflix'].map((tag, index) => (
-                <button 
-                  key={tag} 
-                  onClick={() => { triggerHaptic('medium'); setQuery(tag); }} 
-                  className={`search-overlay-tag-btn${query === tag ? ' active' : ''}`}
-                  style={{ 
-                    background: query === tag ? COLORS.primary : 'rgba(255,255,255,0.05)', 
-                    border: '1px solid rgba(255,255,255,0.08)', 
-                    color: '#fff', 
-                    padding: '6px 12px', 
-                    borderRadius: '10px', 
-                    fontSize: '13px', 
-                    fontWeight: 600,
-                    animation: 'fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both',
-                    animationDelay: `${index * 20}ms`
-                  }}
-                >
-                  {tag}
-                </button>
-              ))}
+              {['Trending', 'New', 'Oscar Winners', 'Disney+', 'Netflix'].map((tag, index) => {
+                const label = tag === 'Trending' ? t('trending') :
+                              tag === 'New' ? t('new') :
+                              tag === 'Oscar Winners' ? t('oscar_winners') : tag;
+                return (
+                  <button 
+                    key={tag} 
+                    onClick={() => { triggerHaptic('medium'); setQuery(tag); }} 
+                    className={`search-overlay-tag-btn tv-focusable${query === tag ? ' active' : ''}`}
+                    tabIndex={0}
+                    style={{ 
+                      background: query === tag ? COLORS.primary : 'rgba(255,255,255,0.05)', 
+                      border: '1px solid rgba(255,255,255,0.08)', 
+                      color: '#fff', 
+                      padding: '6px 12px', 
+                      borderRadius: '10px', 
+                      fontSize: '13px', 
+                      fontWeight: 600,
+                      animation: 'fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both',
+                      animationDelay: `${index * 20}ms`
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -681,8 +714,8 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults }: 
             <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
             </div>
-            <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.92rem', fontWeight: 700, margin: 0 }}>No results for "{query}"</p>
-            <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.78rem', margin: 0 }}>Check the spelling or choose another tag</p>
+            <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.92rem', fontWeight: 700, margin: 0 }}>{t('no_results_for')} "{query}"</p>
+            <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.78rem', margin: 0 }}>{t('check_spelling_or_tag')}</p>
           </div>
         ) : filteredSuggestions.map((movie, index) => (
           <div 
@@ -694,7 +727,18 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults }: 
               addToRecent(movie.title || (movie as any).name || query);
               onMovieClick(movie);
             }}
-            className="search-result-row"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                if (document.activeElement instanceof HTMLElement) {
+                  document.activeElement.blur();
+                }
+                addToRecent(movie.title || (movie as any).name || query);
+                onMovieClick(movie);
+              }
+            }}
+            className="search-result-row tv-focusable"
+            tabIndex={0}
             style={{ 
               display: 'flex', 
               alignItems: 'center', 

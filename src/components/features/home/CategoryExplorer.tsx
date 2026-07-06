@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import type { Movie, TVShow } from '../../../types';
-import { getPosterUrl } from '../../../services/tmdb';
+import { getPosterUrl, getMovieDetails, getMovieInTheaters } from '../../../services/tmdb';
 import { triggerHaptic } from '../../../utils/haptics';
+import { t } from '../../../utils/i18n';
 
 interface CategoryExplorerProps {
   title: string;
@@ -19,9 +20,50 @@ const CHUNK_SIZE = 20;
 const CategoryCard = React.memo(({ movie, onClick }: { movie: Movie | TVShow; onClick: () => void }) => {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
 
   const displayTitle = (movie as Movie).title || (movie as TVShow).name;
   const posterPath = movie.posterPath || (movie as any).poster_path;
+
+  // CAM/inTheaters — verified live against TMDB when prop says true
+  const releaseDate = (movie as Movie).releaseDate || (movie as any).release_date || '';
+  const isUpcomingInitial = !!(releaseDate && new Date(releaseDate).getTime() > Date.now());
+  const [inTheaters, setInTheaters] = useState<boolean>(!!((movie as Movie).inTheaters) && !isUpcomingInitial);
+
+  useEffect(() => {
+    const isMovie = !(movie as any).name;
+    if (!isMovie) return;
+
+    const isUpcoming = !!(releaseDate && new Date(releaseDate).getTime() > Date.now());
+
+    // Only skip TMDB fetch when definitively false — the movie is confirmed not in theaters.
+    // For `undefined` (list endpoints don't include release_dates) and `true` (might be stale),
+    // always do a live TMDB check so the badge is always accurate.
+    if ((movie as Movie).inTheaters === false) {
+      setInTheaters(false);
+      return;
+    }
+
+    let isMounted = true;
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries[0];
+      if (entry && entry.isIntersecting) {
+        observer.disconnect();
+        getMovieInTheaters(movie.id)
+          .then((inT) => {
+            if (isMounted) {
+              setInTheaters(inT && !isUpcoming);
+            }
+          })
+          .catch(() => {
+            if (isMounted) setInTheaters(!!(movie as Movie).inTheaters && !isUpcoming);
+          });
+      }
+    }, { rootMargin: '100px' });
+
+    if (cardRef.current) observer.observe(cardRef.current);
+    return () => { isMounted = false; observer.disconnect(); };
+  }, [movie.id, (movie as Movie).inTheaters, releaseDate]);
 
   const handleImageLoad = () => {
     setImageLoaded(true);
@@ -36,10 +78,22 @@ const CategoryCard = React.memo(({ movie, onClick }: { movie: Movie | TVShow; on
     ? `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="300" viewBox="0 0 200 300"><rect width="100%" height="100%" fill="%2318181b"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="800" font-size="13" fill="%2371717a">NO POSTER</text></svg>`
     : getPosterUrl(posterPath, 'medium');
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onClick();
+    }
+  };
+
+  const isTV = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+
   return (
     <div
+      ref={cardRef}
       onClick={onClick}
-      className="category-explorer-card"
+      onKeyDown={handleKeyDown}
+      tabIndex={0}
+      className="category-explorer-card tv-focusable"
       style={{
         cursor: 'pointer',
         WebkitTapHighlightColor: 'transparent',
@@ -48,6 +102,7 @@ const CategoryCard = React.memo(({ movie, onClick }: { movie: Movie | TVShow; on
         gap: '6px',
         userSelect: 'none',
         WebkitUserSelect: 'none',
+        outline: 'none'
       }}
     >
       <div 
@@ -60,6 +115,7 @@ const CategoryCard = React.memo(({ movie, onClick }: { movie: Movie | TVShow; on
           background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 100%)',
           border: '1px solid rgba(255, 255, 255, 0.08)',
           boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+          transition: 'all 0.15s ease'
         }}
       >
         {/* Shimmer Placeholder */}
@@ -90,6 +146,26 @@ const CategoryCard = React.memo(({ movie, onClick }: { movie: Movie | TVShow; on
             zIndex: 2,
           }}
         />
+        {/* CAM Badge */}
+        {inTheaters && (
+          <div style={{
+            position: 'absolute',
+            top: '8px',
+            right: '8px',
+            background: '#ffffff',
+            border: '1px solid rgba(255, 255, 255, 0.3)',
+            color: '#000000',
+            fontSize: '8px',
+            fontWeight: 950,
+            padding: '2px 6px',
+            borderRadius: '4px',
+            zIndex: 10,
+            letterSpacing: '0.04em',
+            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.4)',
+          }}>
+            CAM
+          </div>
+        )}
       </div>
       <h3 style={{
         fontSize: '11.5px',
@@ -113,6 +189,7 @@ const CategoryCard = React.memo(({ movie, onClick }: { movie: Movie | TVShow; on
 CategoryCard.displayName = 'CategoryCard';
 
 export default function CategoryExplorer({ title, movies, onClose, onMovieClick }: CategoryExplorerProps) {
+  const isTVMode = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
   const [visibleCount, setVisibleCount] = useState(CHUNK_SIZE);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -173,7 +250,7 @@ export default function CategoryExplorer({ title, movies, onClose, onMovieClick 
         <button
           onClick={() => { triggerHaptic('light'); onClose(); }}
           aria-label="Back"
-          className="search-overlay-back-btn"
+          className="search-overlay-back-btn tv-focusable"
           style={{
             background: 'transparent',
             border: 'none',
@@ -223,10 +300,10 @@ export default function CategoryExplorer({ title, movies, onClose, onMovieClick 
 
       {/* Grid Content */}
       <div style={{ 
-        padding: '20px 16px 120px',
+        padding: isTVMode ? '80px 48px 120px' : '80px 16px 120px',
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
-        gap: '20px 12px',
+        gridTemplateColumns: isTVMode ? 'repeat(auto-fill, minmax(130px, 1fr))' : 'repeat(auto-fill, minmax(100px, 1fr))',
+        gap: isTVMode ? '28px 18px' : '20px 12px',
       }}>
         {movies.slice(0, visibleCount).map((movie, index) => (
           <CategoryCard
@@ -246,6 +323,24 @@ export default function CategoryExplorer({ title, movies, onClose, onMovieClick 
           </div>
         )}
       </div>
+
+      {/* Style overrides for TV D-pad focus indicators */}
+      <style>{`
+        .category-explorer-card.tv-focusable {
+          transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        }
+        .category-explorer-card.tv-focusable:focus {
+          transform: scale(1.06) !important;
+        }
+        .category-explorer-card.tv-focusable:focus .category-explorer-image-wrapper {
+          box-shadow: 0 0 0 3px #ffffff !important;
+          border-color: #ffffff !important;
+        }
+        .search-overlay-back-btn.tv-focusable:focus {
+          background: rgba(255, 255, 255, 0.12) !important;
+          border-radius: 8px !important;
+        }
+      `}</style>
     </motion.div>
   );
 }

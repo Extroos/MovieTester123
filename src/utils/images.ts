@@ -29,7 +29,12 @@ export function getBackdropUrl(path: string | null | undefined, size: 'small' | 
 }
 
 // Get profile URL with null check
-export function getProfileUrl(path: string | null | undefined): string {
+export function getProfileUrl(path: string | null | undefined, size: 'small' | 'medium' | 'large' = 'medium'): string {
   if (!path) return '';
-  return `https://image.tmdb.org/t/p/w185${path}`;
+  const sizeMap = {
+    small: 'w45',
+    medium: 'w185',
+    large: 'h632'
+  };
+  return `https://image.tmdb.org/t/p/${sizeMap[size] || 'w185'}${path}`;
 }

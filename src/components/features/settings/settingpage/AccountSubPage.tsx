@@ -109,7 +109,7 @@ export default function AccountSubPage({
               textTransform: 'uppercase',
               color: '#fff'
             }}>
-              {authProvider || 'email'}
+              {authProvider || t('email_address')}
             </span>
           </SettingRow>
 
@@ -126,6 +126,8 @@ export default function AccountSubPage({
                   triggerHaptic('light');
                   setShowPasswordChangeForm(!showPasswordChangeForm);
                 }}
+                tabIndex={0}
+                className="tv-focusable"
                 style={{
                   background: showPasswordChangeForm ? 'rgba(255,255,255,0.08)' : '#ffffff',
                   border: showPasswordChangeForm ? '1px solid rgba(255,255,255,0.15)' : 'none',
@@ -135,7 +137,8 @@ export default function AccountSubPage({
                   fontSize: '0.75rem',
                   fontWeight: 800,
                   cursor: 'pointer',
-                  whiteSpace: 'nowrap'
+                  whiteSpace: 'nowrap',
+                  outline: 'none'
                 }}
               >
                 {showPasswordChangeForm ? t('cancel_change') : t('change_password')}
@@ -163,11 +166,13 @@ export default function AccountSubPage({
                 <label style={{ fontSize: '0.7rem', fontWeight: 700, color: 'rgba(255,255,255,0.5)' }}>{t('new_password')}</label>
                 <input
                   type="password"
-                  placeholder="Min 6 characters"
+                  placeholder={t('min_6_chars')}
                   value={newPassword}
                   onFocus={() => setPassFocus1(true)}
                   onBlur={() => setPassFocus1(false)}
                   onChange={(e) => setNewPassword(e.target.value)}
+                  tabIndex={0}
+                  className="tv-focusable"
                   style={{
                     background: passFocus1 ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.02)',
                     border: passFocus1 ? '1px solid rgba(255,255,255,0.25)' : '1px solid var(--border-color)',
@@ -183,11 +188,13 @@ export default function AccountSubPage({
                 <label style={{ fontSize: '0.7rem', fontWeight: 700, color: 'rgba(255,255,255,0.5)' }}>{t('confirm_password')}</label>
                 <input
                   type="password"
-                  placeholder="Confirm password"
+                  placeholder={t('confirm_password_placeholder')}
                   value={confirmNewPassword}
                   onFocus={() => setPassFocus2(true)}
                   onBlur={() => setPassFocus2(false)}
                   onChange={(e) => setConfirmNewPassword(e.target.value)}
+                  tabIndex={0}
+                  className="tv-focusable"
                   style={{
                     background: passFocus2 ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.02)',
                     border: passFocus2 ? '1px solid rgba(255,255,255,0.25)' : '1px solid var(--border-color)',
@@ -212,6 +219,8 @@ export default function AccountSubPage({
                   }
                   setReauthAction('change_password');
                 }}
+                tabIndex={0}
+                className="tv-focusable"
                 style={{
                   background: '#ffffff',
                   color: '#000000',
@@ -221,7 +230,8 @@ export default function AccountSubPage({
                   fontWeight: 800,
                   fontSize: '0.8rem',
                   cursor: 'pointer',
-                  marginTop: '4px'
+                  marginTop: '4px',
+                  outline: 'none'
                 }}
               >
                 {t('confirm_password_update')}
@@ -239,6 +249,8 @@ export default function AccountSubPage({
       >
         <button 
           onClick={handleClearHistory}
+          tabIndex={0}
+          className="tv-focusable"
           style={{
             background: 'rgba(255,255,255,0.04)',
             border: '1px solid var(--border-color)',
@@ -248,7 +260,8 @@ export default function AccountSubPage({
             borderRadius: '8px',
             fontWeight: 700,
             fontSize: '0.75rem',
-            whiteSpace: 'nowrap'
+            whiteSpace: 'nowrap',
+            outline: 'none'
           }}
         >
           {t('wipe_progress_btn')}
@@ -262,6 +275,8 @@ export default function AccountSubPage({
       >
         <button 
           onClick={handleClearSearchHistory}
+          tabIndex={0}
+          className="tv-focusable"
           style={{
             background: 'rgba(255,255,255,0.04)',
             border: '1px solid var(--border-color)',
@@ -271,7 +286,8 @@ export default function AccountSubPage({
             borderRadius: '8px',
             fontWeight: 700,
             fontSize: '0.75rem',
-            whiteSpace: 'nowrap'
+            whiteSpace: 'nowrap',
+            outline: 'none'
           }}
         >
           {t('clear_search_btn')}
@@ -286,6 +302,8 @@ export default function AccountSubPage({
       >
         <button 
           onClick={handleDeleteProfile}
+          tabIndex={0}
+          className="tv-focusable"
           style={{
             background: 'rgba(239, 68, 68, 0.08)',
             border: '1px solid rgba(239, 68, 68, 0.2)',
@@ -295,37 +313,14 @@ export default function AccountSubPage({
             borderRadius: '8px',
             fontWeight: 700,
             fontSize: '0.75rem',
-            whiteSpace: 'nowrap'
+            whiteSpace: 'nowrap',
+            outline: 'none'
           }}
         >
           {t('delete_btn')}
         </button>
       </SettingRow>
 
-      {!isGuest && (
-        <SettingRow 
-          label={t('terminate_account')} 
-          sub={t('terminate_desc')} 
-          isMobile={isMobile}
-        >
-          <button 
-            onClick={handleDeleteAccount}
-            style={{
-              background: '#ef4444',
-              color: '#ffffff',
-              border: 'none',
-              cursor: 'pointer',
-              padding: '8px 14px',
-              borderRadius: '8px',
-              fontWeight: 800,
-              fontSize: '0.75rem',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            {t('terminate_btn')}
-          </button>
-        </SettingRow>
-      )}
     </>
   );
 }

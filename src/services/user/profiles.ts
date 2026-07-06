@@ -15,7 +15,7 @@ export interface Profile {
 
 const ACTIVE_PROFILE_KEY = 'watchmovie_active_profile_id';
 const DEFAULT_AVATAR = 'https://upload.wikimedia.org/wikipedia/commons/0/0b/Netflix-avatar.png'; // Fallback
-const TOTAL_LOCAL_AVATARS = 67;
+const TOTAL_LOCAL_AVATARS = 201;
 
 const getLocalGuestProfiles = (): Profile[] => {
   try {

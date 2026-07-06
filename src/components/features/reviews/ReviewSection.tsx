@@ -46,29 +46,29 @@ export default function ReviewSection({ itemId, type }: ReviewSectionProps) {
     }
   };
 
-  if (loading) return (
-    <div style={{ padding: '40px', textAlign: 'center' }}>
-      <div className="spinner" style={{ margin: '0 auto' }} />
-    </div>
-  );
-
   return (
-    <div style={{ padding: '40px 0', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '32px' }}>
-        <div>
-          <h3 style={{ margin: '0 0 8px', fontSize: '1.8rem', fontWeight: 900, letterSpacing: '-0.05em' }}>Critique & Community</h3>
-          <p style={{ margin: 0, opacity: 0.6, fontWeight: 700 }}>What the Cinemovie pulse is saying.</p>
+    <div style={{ padding: '40px 0', borderTop: '1px solid rgba(255,255,255,0.1)', minHeight: '450px', position: 'relative' }}>
+      {loading ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'absolute', inset: 0 }}>
+          <div className="spinner" />
         </div>
-        
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '3rem', fontWeight: 900, color: COLORS.primary, lineHeight: 1 }}>
-            {stats.average > 0 ? stats.average : '—'}
+      ) : (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '32px' }}>
+            <div>
+              <h3 style={{ margin: '0 0 8px', fontSize: '1.8rem', fontWeight: 900, letterSpacing: '-0.05em' }}>Critique & Community</h3>
+              <p style={{ margin: 0, opacity: 0.6, fontWeight: 700 }}>What the Cinemovie pulse is saying.</p>
+            </div>
+            
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '3rem', fontWeight: 900, color: COLORS.primary, lineHeight: 1 }}>
+                {stats.average > 0 ? stats.average : '—'}
+              </div>
+              <div style={{ fontSize: '0.8rem', fontWeight: 800, opacity: 0.5, marginTop: '4px' }}>
+                CINESCORE ({stats.count} RATINGS)
+              </div>
+            </div>
           </div>
-          <div style={{ fontSize: '0.8rem', fontWeight: 800, opacity: 0.5, marginTop: '4px' }}>
-            CINESCORE ({stats.count} RATINGS)
-          </div>
-        </div>
-      </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
         {reviews.length === 0 ? (
@@ -142,7 +142,14 @@ export default function ReviewSection({ itemId, type }: ReviewSectionProps) {
 
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button
-                  onClick={() => handleToggleLike(review.id)}
+                  onClick={() => {
+                    const isGuest = localStorage.getItem('cinemovie_is_guest') === 'true';
+                    if (isGuest) {
+                      alert('Liking reviews requires a signed-in account. Please register or log in.');
+                      return;
+                    }
+                    handleToggleLike(review.id);
+                  }}
                   className="review-section-like-btn"
                   style={{
                     display: 'flex',
@@ -156,7 +163,8 @@ export default function ReviewSection({ itemId, type }: ReviewSectionProps) {
                     color: review.is_liked ? COLORS.primary : '#fff',
                     fontSize: '0.8rem',
                     fontWeight: 800,
-                    cursor: 'pointer',
+                    cursor: localStorage.getItem('cinemovie_is_guest') === 'true' ? 'default' : 'pointer',
+                    opacity: localStorage.getItem('cinemovie_is_guest') === 'true' ? 0.5 : 1,
                     transition: 'all 0.2s'
                   }}
                 >
@@ -170,6 +178,8 @@ export default function ReviewSection({ itemId, type }: ReviewSectionProps) {
           ))
         )}
       </div>
+        </>
+      )}
     </div>
   );
 }

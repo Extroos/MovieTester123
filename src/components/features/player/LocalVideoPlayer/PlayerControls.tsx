@@ -53,6 +53,8 @@ interface PlayerControlsProps {
   setAspectRatio: (ratio: 'fit' | 'fill' | 'zoom') => void;
   zoomScale: number;
   setZoomScale: (scale: number) => void;
+  item?: any;
+  logoUrl?: string | null;
 }
 
 export const PlayerControls = React.memo(function PlayerControls({
@@ -95,8 +97,11 @@ export const PlayerControls = React.memo(function PlayerControls({
   aspectRatio,
   setAspectRatio,
   zoomScale,
-  setZoomScale
+  setZoomScale,
+  item,
+  logoUrl
 }: PlayerControlsProps) {
+  const isTV = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
   const [isScrubberHovered, setIsScrubberHovered] = useState(false);
   const [hoverPosition, setHoverPosition] = useState<{ x: number; time: number } | null>(null);
   const latestSeekTimeRef = React.useRef<number>(currentTime);
@@ -327,7 +332,7 @@ export const PlayerControls = React.memo(function PlayerControls({
         position: 'absolute', 
         inset: 0, 
         pointerEvents: showControls ? 'auto' : 'none', 
-        zIndex: 10010,
+        zIndex: 99999,
         opacity: showControls ? 1 : 0, 
         visibility: showControls ? 'visible' : 'hidden',
         transition: 'opacity 0.25s ease-out, visibility 0.25s ease-out',
@@ -434,37 +439,40 @@ export const PlayerControls = React.memo(function PlayerControls({
           </div>
         )}
 
-        <button 
-          onClick={(e) => { 
-            e.stopPropagation(); 
-            import('../../../../utils/haptics').then(m => m.triggerHaptic('medium'));
-            setIsLocked(true); 
-            setShowControls(false); 
-          }} 
-          tabIndex={0}
-          className="tv-focusable"
-          style={{ 
-            background: 'rgba(255,255,255,0.08)', 
-            border: '1px solid rgba(255,255,255,0.1)', 
-            color: '#fff', 
-            width: 44, 
-            height: 44, 
-            borderRadius: '50%', 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center', 
-            cursor: 'pointer',
-            transition: 'all 0.2s'
-          }}
-          onMouseDown={e => e.currentTarget.style.transform = 'scale(0.92)'}
-          onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
-          title="Lock Screen Controls"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-          </svg>
-        </button>
+        {/* Screen Lock button (hidden on TV) */}
+        {!isTV && (
+          <button 
+            onClick={(e) => { 
+              e.stopPropagation(); 
+              import('../../../../utils/haptics').then(m => m.triggerHaptic('medium'));
+              setIsLocked(true); 
+              setShowControls(false); 
+            }} 
+            tabIndex={0}
+            className="tv-focusable"
+            style={{ 
+              background: 'rgba(255,255,255,0.08)', 
+              border: '1px solid rgba(255,255,255,0.1)', 
+              color: '#fff', 
+              width: 44, 
+              height: 44, 
+              borderRadius: '50%', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+            onMouseDown={e => e.currentTarget.style.transform = 'scale(0.92)'}
+            onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+            title="Lock Screen Controls"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </button>
+        )}
 
         <button 
           onClick={(e) => {
@@ -523,7 +531,7 @@ export const PlayerControls = React.memo(function PlayerControls({
           </svg>
         </button>
 
-        {isCastAvailable && (
+        {!isTV && isCastAvailable && (
           <button 
             onClick={(e) => { e.stopPropagation(); handleCastClick(); }}
             tabIndex={0}
@@ -633,6 +641,124 @@ export const PlayerControls = React.memo(function PlayerControls({
         </button>
       </div>
 
+      {/* Paused Detail Overlay */}
+      {!playing && item && (
+        <div style={{
+          position: 'absolute',
+          left: IS_MOBILE_DEVICE ? '40px' : '72px',
+          bottom: IS_MOBILE_DEVICE ? '76px' : '116px',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          gap: IS_MOBILE_DEVICE ? '6px' : '8px',
+          maxWidth: IS_MOBILE_DEVICE ? '400px' : '550px',
+          zIndex: 10009,
+          pointerEvents: 'none',
+          animation: 'fadeIn 0.25s ease-out'
+        }}>
+          {logoUrl ? (
+            <img 
+              src={logoUrl} 
+              alt={title} 
+              style={{ 
+                maxHeight: IS_MOBILE_DEVICE ? '48px' : '70px', 
+                maxWidth: IS_MOBILE_DEVICE ? '180px' : '280px', 
+                objectFit: 'contain', 
+                marginBottom: IS_MOBILE_DEVICE ? '2px' : '4px' 
+              }} 
+            />
+          ) : (
+            <h1 style={{ 
+              margin: 0, 
+              fontSize: IS_MOBILE_DEVICE ? '1.3rem' : '1.8rem', 
+              fontWeight: 900, 
+              color: '#fff', 
+              textShadow: '0 2px 8px rgba(0,0,0,0.9)' 
+            }}>
+              {title}
+            </h1>
+          )}
+          
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: IS_MOBILE_DEVICE ? '6px' : '8px', 
+            fontSize: IS_MOBILE_DEVICE ? '0.72rem' : '0.78rem', 
+            fontWeight: 700, 
+            color: 'rgba(255,255,255,0.7)', 
+            textShadow: '0 1px 4px rgba(0,0,0,0.9)' 
+          }}>
+            {(() => {
+              const year = (item as any).release_date ? new Date((item as any).release_date).getFullYear() : ((item as any).first_air_date ? new Date((item as any).first_air_date).getFullYear() : null);
+              const formattedDuration = (() => {
+                if (duration && duration > 0) {
+                  const hours = Math.floor(duration / 3600);
+                  const minutes = Math.floor((duration % 3600) / 60);
+                  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+                }
+                if ((item as any).runtime) {
+                  const rt = (item as any).runtime;
+                  const hours = Math.floor(rt / 60);
+                  const minutes = rt % 60;
+                  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+                }
+                return '';
+              })();
+              
+              const parts = [];
+              if (year) parts.push(<span>{year}</span>);
+              if (formattedDuration) parts.push(<span>{formattedDuration}</span>);
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: IS_MOBILE_DEVICE ? '6px' : '8px' }}>
+                  {parts.map((p, idx) => (
+                    <React.Fragment key={idx}>
+                      {p}
+                      {idx < parts.length - 1 && <span>·</span>}
+                    </React.Fragment>
+                  ))}
+                  {((item as any).vote_average || (item as any).voteAverage) && (
+                    <>
+                      {parts.length > 0 && <span>·</span>}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <img 
+                          src="/streaming icons/imdb.png" 
+                          alt="IMDb" 
+                          style={{ 
+                            height: IS_MOBILE_DEVICE ? '12px' : '14px', 
+                            width: 'auto', 
+                            objectFit: 'contain' 
+                          }} 
+                        />
+                        <span style={{ fontWeight: 800 }}>
+                          {Number((item as any).vote_average || (item as any).voteAverage).toFixed(1)}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+          
+          {item.overview && (
+            <p style={{
+              margin: 0,
+              fontSize: IS_MOBILE_DEVICE ? '0.76rem' : '0.84rem',
+              lineHeight: 1.4,
+              color: 'rgba(255,255,255,0.75)',
+              fontWeight: 500,
+              textShadow: '0 1px 4px rgba(0,0,0,0.9)',
+              overflow: 'hidden',
+              display: '-webkit-box',
+              WebkitLineClamp: IS_MOBILE_DEVICE ? 2 : 3,
+              WebkitBoxOrient: 'vertical',
+            }}>
+              {item.overview}
+            </p>
+          )}
+        </div>
+      )}
+
       <div 
         onClick={(e) => e.stopPropagation()}
         data-player-controls="true"
@@ -658,6 +784,18 @@ export const PlayerControls = React.memo(function PlayerControls({
           onPointerCancel={handleScrubberEnd}
           onMouseLeave={() => { handleScrubberEnd(); setIsScrubberHovered(false); }}
           onMouseEnter={() => setIsScrubberHovered(true)}
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowLeft') {
+              e.preventDefault();
+              e.stopPropagation();
+              handleRewind();
+            } else if (e.key === 'ArrowRight') {
+              e.preventDefault();
+              e.stopPropagation();
+              handleForward();
+            }
+          }}
           style={{ 
             width: '100%', 
             height: '24px', 
@@ -665,7 +803,9 @@ export const PlayerControls = React.memo(function PlayerControls({
             alignItems: 'center',
             cursor: 'pointer',
             position: 'relative',
-            touchAction: 'none'
+            touchAction: 'none',
+            outline: 'none',
+            borderRadius: '4px'
           }}
         >
           {/* Seek Time Preview Bubble */}
@@ -693,13 +833,14 @@ export const PlayerControls = React.memo(function PlayerControls({
           )}
           {/* Visual Track */}
           <div 
+            className="scrubber-visual-track"
             style={{ 
               width: '100%', 
-              height: isScrubbingActive ? '6px' : '4px', 
-              borderRadius: '3px',
-              background: 'rgba(255, 255, 255, 0.2)',
+              height: isScrubbingActive ? '8px' : '6px', 
+              borderRadius: '4px',
+              background: 'rgba(255, 255, 255, 0.25)',
               position: 'relative',
-              transition: 'height 0.2s ease'
+              transition: 'height 0.15s ease'
             }}
           >
             {/* Buffered progress track bar */}
@@ -711,8 +852,8 @@ export const PlayerControls = React.memo(function PlayerControls({
                 bottom: 0,
                 width: `${bufferedPercent}%`,
                 maxWidth: '100%',
-                background: 'rgba(255, 255, 255, 0.24)',
-                borderRadius: '3px',
+                background: 'rgba(255, 255, 255, 0.3)',
+                borderRadius: '4px',
                 transition: 'width 0.3s ease'
               }}
             />
@@ -725,12 +866,13 @@ export const PlayerControls = React.memo(function PlayerControls({
                 bottom: 0,
                 width: `${playedPercent}%`,
                 maxWidth: '100%',
-                background: '#ff0000',
-                borderRadius: '3px'
+                background: '#e50914',
+                borderRadius: '4px'
               }}
             />
-            {/* Scrubber Thumb handle */}
+            {/* Scrubber Thumb handle (Netflix style red with a small white dot inside) */}
             <div 
+              className="scrubber-thumb-handle"
               style={{
                 position: 'absolute',
                 top: '50%',
@@ -738,12 +880,21 @@ export const PlayerControls = React.memo(function PlayerControls({
                 width: '14px',
                 height: '14px',
                 borderRadius: '50%',
-                background: '#ffffff',
-                border: '3px solid #ff0000',
-                transform: isScrubbingActive ? 'translate(-50%, -50%) scale(1.35)' : 'translate(-50%, -50%) scale(0.65)',
-                transition: isDraggingRef.current ? 'transform 0.15s ease' : 'left 0.1s linear, transform 0.15s ease'
+                background: '#e50914',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transform: isScrubbingActive ? 'translate(-50%, -50%) scale(1.4)' : 'translate(-50%, -50%) scale(0.9)',
+                transition: isDraggingRef.current ? 'transform 0.1s ease' : 'left 0.1s linear, transform 0.15s ease'
               }}
-            />
+            >
+              <div style={{
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
+                background: '#ffffff'
+              }} />
+            </div>
           </div>
         </div>
         
@@ -755,41 +906,43 @@ export const PlayerControls = React.memo(function PlayerControls({
               </div>
           </div>
 
-          {IS_MOBILE_DEVICE ? (
-            onNextEpisode && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  import('../../../../utils/haptics').then(m => m.triggerHaptic('medium'));
-                  onNextEpisode();
-                }}
-                style={{
-                  background: 'rgba(255,255,255,0.12)',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  color: '#ffffff',
-                  padding: '6px 14px',
-                  borderRadius: '20px',
-                  fontSize: '0.78rem',
-                  fontWeight: 700,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em'
-                }}
-                onMouseDown={e => e.currentTarget.style.transform = 'scale(0.95)'}
-                onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
-                title="Next Episode"
-              >
-                <span>Next Ep</span>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
-                </svg>
-              </button>
-            )
-          ) : (
+          {onNextEpisode && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                import('../../../../utils/haptics').then(m => m.triggerHaptic('medium'));
+                onNextEpisode();
+              }}
+              tabIndex={0}
+              className="tv-focusable"
+              style={{
+                background: 'rgba(255,255,255,0.12)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                color: '#ffffff',
+                padding: '6px 14px',
+                borderRadius: '20px',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em'
+              }}
+              onMouseDown={e => e.currentTarget.style.transform = 'scale(0.95)'}
+              onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+              title="Next Episode"
+            >
+              <span>Next Ep</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+              </svg>
+            </button>
+          )}
+
+          {!onNextEpisode && !IS_MOBILE_DEVICE && (
             <button
               onClick={toggleFullScreen}
               tabIndex={0}
@@ -824,6 +977,22 @@ export const PlayerControls = React.memo(function PlayerControls({
           )}
         </div>
       </div>
+
+      <style>{`
+        div[data-scrubber="true"]:focus {
+          outline: none !important;
+          box-shadow: none !important;
+          background: transparent !important;
+        }
+        div[data-scrubber="true"]:focus .scrubber-visual-track {
+          height: 10px !important;
+          background: rgba(255, 255, 255, 0.4) !important;
+        }
+        div[data-scrubber="true"]:focus .scrubber-thumb-handle {
+          transform: translate(-50%, -50%) scale(1.6) !important;
+          box-shadow: 0 0 12px rgba(229, 9, 20, 0.8) !important;
+        }
+      `}</style>
     </div>
   );
 });

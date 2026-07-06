@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Capacitor, registerPlugin } from '@capacitor/core';
-const NativeStreamingEngine = registerPlugin<any>('NativeStreamingEngine');
+import { Capacitor } from '@capacitor/core';
+import { NativeStreamingEngine } from '../../../../services/native/NativeStreamingEngine';
 
 interface UsePlayerGesturesProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
@@ -62,6 +62,11 @@ export function usePlayerGestures({
 
   const [rippleLeft, setRippleLeft] = useState(false);
   const [rippleRight, setRippleRight] = useState(false);
+  const [isHoldingSpeed, setIsHoldingSpeed] = useState(false);
+
+  const isHoldingSpeedRef = useRef(false);
+  const originalSpeedRef = useRef(1.0);
+  const holdTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const sliderTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const touchTypeRef = useRef<'none' | 'tap' | 'swipe_x' | 'swipe_y' | 'pinch'>('none');
@@ -92,6 +97,8 @@ export function usePlayerGestures({
   const currentTimeRef = useRef(currentTime);
   const handleLockedScreenTapRef = useRef(handleLockedScreenTap);
 
+  const originalBrightnessRef = useRef<number>(1.0);
+
   // Consolidated single effect for all ref mirrors — avoids 12 separate effect registrations
   useEffect(() => {
     isLockedRef.current = isLocked;
@@ -108,12 +115,35 @@ export function usePlayerGestures({
     currentTimeRef.current = currentTime;
     handleLockedScreenTapRef.current = handleLockedScreenTap;
   });
+
+  // Store original device brightness on mount, and restore it on unmount
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      NativeStreamingEngine.getDeviceBrightness().then(res => {
+        originalBrightnessRef.current = res.brightness;
+      }).catch(() => {});
+    }
+    return () => {
+      if (Capacitor.isNativePlatform()) {
+        NativeStreamingEngine.setDeviceBrightness({ brightness: originalBrightnessRef.current }).catch(() => {});
+      }
+    };
+  }, []);
   // No dependency array → runs after every render but as a single cheap sync (no cleanup, no scheduling overhead).
 
   // Sync volume display state from actual video element when src changes
   useEffect(() => {
     if (videoRef.current) {
-      setVolume(videoRef.current.volume);
+      if (Capacitor.isNativePlatform()) {
+        videoRef.current.volume = 1.0;
+        NativeStreamingEngine.getDeviceVolume().then(res => {
+          setVolume(res.volume);
+        }).catch(() => {
+          setVolume(1.0);
+        });
+      } else {
+        setVolume(videoRef.current.volume);
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoRef.current]);
@@ -205,6 +235,24 @@ export function usePlayerGestures({
       lastBrightnessVal = startBrightnessRef.current;
       
       touchTypeRef.current = 'tap';
+
+      // Hold to speed up 2x on the right side of the screen (Mobile only, not TV mode)
+      const isTV = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+      const containerWidth = container.clientWidth || window.innerWidth;
+      const x = touch.clientX;
+      const isRight = x > containerWidth * 0.6;
+      if (!isTV && isRight && videoRef.current && playing) {
+        if (holdTimeoutRef.current) clearTimeout(holdTimeoutRef.current);
+        holdTimeoutRef.current = setTimeout(() => {
+          if (touchTypeRef.current === 'tap' && videoRef.current) {
+            originalSpeedRef.current = videoRef.current.playbackRate || 1.0;
+            videoRef.current.playbackRate = 2.0;
+            isHoldingSpeedRef.current = true;
+            setIsHoldingSpeed(true);
+            import('../../../../utils/haptics').then(m => m.triggerHaptic('medium'));
+          }
+        }, 450);
+      }
     };
 
     const handleNativeTouchMove = (e: TouchEvent) => {
@@ -245,6 +293,10 @@ export function usePlayerGestures({
 
       if (touchTypeRef.current === 'tap') {
         if (Math.abs(deltaX) > 20 || Math.abs(deltaY) > 20) {
+          if (holdTimeoutRef.current) {
+            clearTimeout(holdTimeoutRef.current);
+            holdTimeoutRef.current = null;
+          }
           if (Math.abs(deltaX) > Math.abs(deltaY)) {
             if (hostControlsLocked) return;
             touchTypeRef.current = 'swipe_x';
@@ -285,7 +337,7 @@ export function usePlayerGestures({
             lastVolumeVal = nextVolume;
             setVolume(nextVolume);
             if (videoRef.current) {
-              videoRef.current.volume = nextVolume;
+              videoRef.current.volume = Capacitor.isNativePlatform() ? 1.0 : nextVolume;
             }
             if (Capacitor.isNativePlatform()) {
               NativeStreamingEngine.setDeviceVolume({ volume: nextVolume }).catch(() => {});
@@ -303,6 +355,22 @@ export function usePlayerGestures({
 
     const handleNativeTouchEnd = (e: TouchEvent) => {
       lastTouchTimeRef.current = Date.now();
+
+      if (holdTimeoutRef.current) {
+        clearTimeout(holdTimeoutRef.current);
+        holdTimeoutRef.current = null;
+      }
+
+      if (isHoldingSpeedRef.current) {
+        if (videoRef.current) {
+          videoRef.current.playbackRate = originalSpeedRef.current;
+        }
+        isHoldingSpeedRef.current = false;
+        setIsHoldingSpeed(false);
+        touchTypeRef.current = 'none';
+        if (e.cancelable) e.preventDefault();
+        return;
+      }
 
       const target = e.target as HTMLElement;
       if (showSettingsRef.current || (target && (
@@ -414,6 +482,7 @@ export function usePlayerGestures({
     rippleRight,
     setRippleRight,
     lastTouchTimeRef,
-    handleLockedScreenTap
+    handleLockedScreenTap,
+    isHoldingSpeed
   };
 }

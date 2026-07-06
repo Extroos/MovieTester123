@@ -9,7 +9,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { AlertCircle } from 'lucide-react';
 
 const SystemCast = registerPlugin<any>('SystemCast');
-const NativeStreamingEngine = registerPlugin<any>('NativeStreamingEngine');
+import { NativeStreamingEngine } from '../../../services/native/NativeStreamingEngine';
+import { isTVMode } from '../../../utils/tv';
 
 const isNative = Capacitor.isNativePlatform();
 
@@ -28,9 +29,10 @@ interface VideoPlayerProps {
   isPartyMode?: boolean;
   partySessionId?: string | null;
   isPartyHost?: boolean;
+  logoUrl?: string | null;
 }
 
-export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, season, episode, tracks, startTime, isOfflineMode: isOfflineProp = false, isPartyMode = false, partySessionId = null, isPartyHost = false }: VideoPlayerProps) {
+export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, season, episode, tracks, startTime, isOfflineMode: isOfflineProp = false, isPartyMode = false, partySessionId = null, isPartyHost = false, logoUrl }: VideoPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const isMountedRef = useRef(true);
 
@@ -539,7 +541,7 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
             }
             
             // 2. Lock Orientation
-            if ((isMobile || isNative) && isMountedRef.current) {
+            if (!isTVMode() && (isMobile || isNative) && isMountedRef.current) {
                 if (isNative) {
                     try {
                         const { ScreenOrientation } = await import('@capacitor/screen-orientation');
@@ -607,7 +609,17 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
                 disableKeepAwake();
             }
             
-            if (isNative) {
+            if (isTVMode()) {
+                if (isNative) {
+                    const unlockOrientation = async () => {
+                        try {
+                            const { ScreenOrientation } = await import('@capacitor/screen-orientation');
+                            await (ScreenOrientation as any).unlock().catch(() => {});
+                        } catch (e) {}
+                    };
+                    unlockOrientation();
+                }
+            } else if (isNative) {
                 const lockToPortrait = async () => {
                     try {
                         const { ScreenOrientation } = await import('@capacitor/screen-orientation');
@@ -649,7 +661,14 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' || e.key === 'Backspace') {
-          onClose();
+          const settingsOverlay = document.getElementById('player-settings-overlay');
+          if (settingsOverlay) {
+            e.preventDefault();
+            // Click to trigger onClick handler (setShowSettings(false))
+            settingsOverlay.click();
+          } else {
+            onClose();
+          }
       }
     };
     
@@ -660,7 +679,12 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
       try {
         const { App } = await import('@capacitor/app');
         backListener = await App.addListener('backButton', () => {
-          onClose();
+          const settingsOverlay = document.getElementById('player-settings-overlay');
+          if (settingsOverlay) {
+            settingsOverlay.click();
+          } else {
+            onClose();
+          }
         });
       } catch (e) {}
     };
@@ -675,7 +699,7 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
   const handleContextMenu = (e: React.MouseEvent) => e.preventDefault();
 
   if (Capacitor.getPlatform() === 'android' && resolving) {
-    return createPortal(
+    return (
       <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontFamily: 'sans-serif' }}>
         <div style={{ textAlign: 'center' }}>
           <p style={{ fontSize: '1.2rem', marginBottom: '1.5rem', fontWeight: 600 }}>Resolving Native Auto-Streams...</p>
@@ -686,12 +710,11 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
             }
           `}</style>
         </div>
-      </div>,
-      document.body
+      </div>
     );
   }
 
-  return createPortal(
+  return (
     <div
       ref={containerRef}
       className="video-player-overlay"
@@ -739,6 +762,7 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
         isPartyHost={isPartyHost}
         subtitleDelay={subtitleDelay}
         onSubtitleDelayChange={setSubtitleDelay}
+        logoUrl={logoUrl}
         onSubtitleStyleChange={handleSubtitleStyleChange}
       />
 
@@ -1043,7 +1067,6 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
       `}</style>
-    </div>,
-    document.body
+    </div>
   );
 }

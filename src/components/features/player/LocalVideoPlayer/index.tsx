@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { isTVMode } from '../../../../utils/tv';
 import Hls from 'hls.js';
 import { buildNativeHlsLoader } from '../../../../services/NativeHlsLoader';
 
@@ -88,6 +89,7 @@ interface LocalVideoPlayerProps {
   onSubtitleStyleChange?: (style: { size: string, color: string, opacity: number }) => void;
   onSubtitleDelayChange?: (delay: number) => void;
   subtitleDelay?: number;
+  logoUrl?: string | null;
 }
 
 export default function LocalVideoPlayer({
@@ -101,6 +103,9 @@ export default function LocalVideoPlayer({
   tracks,
   onSourceChange,
   isOfflineMode = false,
+  isPartyMode = false,
+  partySessionId = null,
+  isPartyHost = false,
   isCastAvailable,
   castConnected,
   resolving,
@@ -116,12 +121,11 @@ export default function LocalVideoPlayer({
   remotePlayerRef,
   remotePlayerControllerRef,
   startTime,
-  isPartyMode = false,
-  partySessionId = null,
-  isPartyHost = false,
-  onTracksChange,
   onSubtitleStyleChange,
-  onSubtitleDelayChange
+  onSubtitleDelayChange,
+  subtitleDelay: propSubtitleDelay,
+  logoUrl,
+  onTracksChange,
 }: LocalVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -141,6 +145,65 @@ export default function LocalVideoPlayer({
   const lastTimeUpdateStateRef = useRef<number>(0);
   const hlsNetworkRetryCountRef = useRef<number>(0);
   const initialLoadRef = useRef<string | null>(null);
+
+  // Audio Booster Web Audio API Refs
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
+  const audioSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const initAudioBooster = (videoElement: HTMLVideoElement) => {
+      if (audioSourceRef.current) return;
+      try {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioContextClass) return;
+        
+        const audioCtx = new AudioContextClass();
+        const source = audioCtx.createMediaElementSource(videoElement);
+        const gainNode = audioCtx.createGain();
+        
+        // Amplifies sound to 200% level
+        gainNode.gain.value = 2.0;
+        
+        source.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        
+        audioCtxRef.current = audioCtx;
+        gainNodeRef.current = gainNode;
+        audioSourceRef.current = source;
+        
+        console.log('[LocalVideoPlayer] Web Audio booster active: Gain 2.0x');
+      } catch (err) {
+        console.warn('[LocalVideoPlayer] AudioContext booster initiation error:', err);
+      }
+    };
+
+    const handlePlayForBooster = () => {
+      initAudioBooster(video);
+      if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume().catch(() => {});
+      }
+    };
+
+    video.addEventListener('play', handlePlayForBooster);
+    video.addEventListener('playing', handlePlayForBooster);
+    
+    return () => {
+      video.removeEventListener('play', handlePlayForBooster);
+      video.removeEventListener('playing', handlePlayForBooster);
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (audioCtxRef.current) {
+        audioCtxRef.current.close().catch(() => {});
+      }
+    };
+  }, []);
   
   // Dynamic stream / server selector states
   const [currentSrc, setCurrentSrc] = useState(src);
@@ -1223,8 +1286,10 @@ export default function LocalVideoPlayer({
       );
 
       if (preferredIndex !== -1) {
-        if (preferredIndex !== activeTrackIndex) {
-          console.log(`[LocalVideoPlayer] Automatically selecting preferred subtitle track: ${localTracks[preferredIndex].label}`);
+        const track = localTracks[preferredIndex];
+        const isBlob = track.file.startsWith('blob:');
+        if (preferredIndex !== activeTrackIndex || !isBlob) {
+          console.log(`[LocalVideoPlayer] Automatically selecting preferred subtitle track: ${track.label}`);
           handleTrackSelect(preferredIndex);
         }
         return; // Found and selected a local track, no need to query online
@@ -1875,7 +1940,8 @@ export default function LocalVideoPlayer({
     rippleRight,
     setRippleRight,
     lastTouchTimeRef,
-    handleLockedScreenTap
+    handleLockedScreenTap,
+    isHoldingSpeed
   } = usePlayerGestures({
     videoRef,
     containerRef,
@@ -2184,7 +2250,7 @@ export default function LocalVideoPlayer({
                 setQualities(directQualities);
                 setServerQualities(prev => ({ ...prev, [selectedServer]: directQualities }));
                 const currentIdx = data.sources.findIndex(s => s.url === currentSrc || s.url === src);
-                const qIdx = currentIdx !== -1 ? currentIdx : 0;
+                const qIdx = currentIdx !== -1 ? currentIdx : -1;
                 setCurrentQuality(qIdx);
                 setServerCurrentQuality(prev => ({ ...prev, [selectedServer]: qIdx }));
               }
@@ -2214,7 +2280,7 @@ export default function LocalVideoPlayer({
 
               let playStarted = false;
               const loadTimeout = setTimeout(() => {
-                  if (!playStarted && !finalUseNative && Capacitor.isNativePlatform() && !isProxied) {
+                  if (!playStarted && !finalUseNative && Capacitor.isNativePlatform() && !isProxied && !isOfflineMode) {
                       console.warn('[LocalVideoPlayer] Stream load timed out (5s). Switching to NativeHlsLoader fallback.');
                       if (videoRef.current) {
                           const curr = videoRef.current.currentTime;
@@ -2302,7 +2368,7 @@ export default function LocalVideoPlayer({
                       }
 
                       const isAdFree = ALL_SERVERS.some(s => s.id === selectedServer && s.isAdFree);
-                      if (Capacitor.isNativePlatform() && !isAdFree) {
+                      if (Capacitor.isNativePlatform() && !isOfflineMode && !isAdFree) {
                           console.warn('[LocalVideoPlayer] HLS manifest error on native mobile, falling back to official iframe player embed...');
                           setIframeFallback(true);
                           setIsInitialLoading(false);
@@ -2322,7 +2388,9 @@ export default function LocalVideoPlayer({
                       setIsInitialLoading(false);
                       setIsSwitchingServer(false);
                       setBuffering(false);
-                      triggerAutoFailover();
+                      if (!isOfflineMode) {
+                          triggerAutoFailover();
+                      }
                       return;
                   }
 
@@ -2347,7 +2415,9 @@ export default function LocalVideoPlayer({
                               setIsInitialLoading(false);
                               setIsSwitchingServer(false);
                               setBuffering(false);
-                              triggerAutoFailover();
+                              if (!isOfflineMode) {
+                                  triggerAutoFailover();
+                              }
                           }
                           break;
                       case Hls.ErrorTypes.MEDIA_ERROR:
@@ -2357,7 +2427,7 @@ export default function LocalVideoPlayer({
                        default:
                            const srv = (remoteServers.length > 0 ? remoteServers : ALL_SERVERS).find(s => s.id === selectedServer);
                            const isAdFree = srv ? srv.isAdFree : (selectedServer === 'vidlink-pro' || selectedServer === 'vidsrc-pm' || selectedServer === 'vidsrc-wtf-2');
-                           if (Capacitor.isNativePlatform() && !isAdFree) {
+                           if (Capacitor.isNativePlatform() && !isOfflineMode && !isAdFree) {
                               console.warn('[LocalVideoPlayer] Unrecoverable HLS error on native mobile, falling back to official iframe player embed...');
                               setIframeFallback(true);
                               setIsInitialLoading(false);
@@ -2373,7 +2443,9 @@ export default function LocalVideoPlayer({
                           setIsInitialLoading(false);
                           setIsSwitchingServer(false);
                           setBuffering(false);
-                          triggerAutoFailover();
+                          if (!isOfflineMode) {
+                              triggerAutoFailover();
+                          }
                           break;
                   }
               });
@@ -2475,7 +2547,7 @@ export default function LocalVideoPlayer({
                   const err = videoRef.current?.error;
                   console.error('[LocalVideoPlayer] Native HLS video error:', err?.code, err?.message);
                   const isAdFree = ALL_SERVERS.some(s => s.id === selectedServer && s.isAdFree);
-                  if (Capacitor.isNativePlatform() && !isAdFree) {
+                  if (Capacitor.isNativePlatform() && !isOfflineMode && !isAdFree) {
                       console.warn('[LocalVideoPlayer] Native HLS error on native mobile, falling back to official iframe player embed...');
                       setIframeFallback(true);
                       setIsInitialLoading(false);
@@ -2485,7 +2557,9 @@ export default function LocalVideoPlayer({
                   setServerError(msg);
                   if (selectedServer === 'vidlink-pro') setVidlinkDiagnostics(msg);
                   setIsInitialLoading(false);
-                  triggerAutoFailover();
+                  if (!isOfflineMode) {
+                      triggerAutoFailover();
+                  }
               };
               videoRef.current.addEventListener('loadedmetadata', handleLoadedMetadata);
               videoRef.current.addEventListener('durationchange', handleDurationChange);
@@ -2516,7 +2590,7 @@ export default function LocalVideoPlayer({
               const err = videoRef.current?.error;
               console.error('[LocalVideoPlayer] Native MP4 video error:', err?.code, err?.message);
               const isAdFree = ALL_SERVERS.some(s => s.id === selectedServer && s.isAdFree);
-              if (Capacitor.isNativePlatform() && !isAdFree) {
+              if (Capacitor.isNativePlatform() && !isOfflineMode && !isAdFree) {
                   console.warn('[LocalVideoPlayer] Native MP4 error on native mobile, falling back to official iframe player embed...');
                   setIframeFallback(true);
                   setIsInitialLoading(false);
@@ -2766,6 +2840,26 @@ export default function LocalVideoPlayer({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isLocked) return;
+
+      const activeEl = document.activeElement;
+      const isInteractive = activeEl && (
+        activeEl.tagName === 'BUTTON' || 
+        activeEl.tagName === 'INPUT' || 
+        activeEl.tagName === 'SELECT' || 
+        activeEl.getAttribute('tabindex') !== null ||
+        activeEl.classList.contains('tv-focusable')
+      );
+
+      // In TV Mode, if the user is focusing an interactive control element,
+      // let standard D-Pad focus navigation and button clicks execute naturally.
+      if (isTVMode() && isInteractive) {
+        if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Enter') {
+          // Keep controls visible when interacting
+          setShowControls(true);
+          resetControlsTimeout();
+          return;
+        }
+      }
       
       // Auto-show controls on any keydown event
       setShowControls(true);
@@ -2873,13 +2967,47 @@ export default function LocalVideoPlayer({
     try {
       let text = '';
       if (Capacitor.isNativePlatform()) {
-        console.log('[LocalVideoPlayer] Mobile native platform: fetching subtitle with CapacitorHttp to bypass CORS:', track.file);
-        const nativeFetch = await import('../../../../utils/nativeFetch');
-        const res = await nativeFetch.fetchWithCapacitor(track.file, 'text');
-        if (res.ok) {
-          text = await res.text();
+        const isLocal = track.file.startsWith('capacitor://') || 
+                        track.file.startsWith('http://localhost/') || 
+                        track.file.startsWith('https://localhost/') || 
+                        track.file.includes('_app_file_') ||
+                        track.file.includes('_capacitor_file_');
+        if (isLocal) {
+          console.log('[LocalVideoPlayer] Mobile native platform: reading local subtitle natively:', track.file);
+          try {
+            const { Filesystem, Encoding } = await import('@capacitor/filesystem');
+            let fileAtPath = track.file;
+            if (fileAtPath.includes('_capacitor_file_')) {
+              fileAtPath = fileAtPath.substring(fileAtPath.indexOf('_capacitor_file_') + 16);
+            } else if (fileAtPath.includes('_app_file_')) {
+              fileAtPath = fileAtPath.substring(fileAtPath.indexOf('_app_file_') + 10);
+            }
+            fileAtPath = decodeURIComponent(fileAtPath);
+            console.log('[LocalVideoPlayer] Native file path decoded:', fileAtPath);
+
+            const fileData = await Filesystem.readFile({
+              path: fileAtPath,
+              encoding: Encoding.UTF8
+            });
+            text = fileData.data;
+          } catch (readErr: any) {
+            console.warn('[LocalVideoPlayer] Filesystem.readFile failed, falling back to fetch:', readErr);
+            const res = await fetch(track.file);
+            if (res.ok) {
+              text = await res.text();
+            } else {
+              throw new Error(`Local fetch status ${res.status}`);
+            }
+          }
         } else {
-          throw new Error('Native request returned status');
+          console.log('[LocalVideoPlayer] Mobile native platform: fetching subtitle with CapacitorHttp to bypass CORS:', track.file);
+          const nativeFetch = await import('../../../../utils/nativeFetch');
+          const res = await nativeFetch.fetchWithCapacitor(track.file, 'text');
+          if (res.ok) {
+            text = await res.text();
+          } else {
+            throw new Error('Native request returned status');
+          }
         }
       } else {
         const proxyUrl = getSubtitleProxyUrl(track.file);
@@ -3381,6 +3509,32 @@ export default function LocalVideoPlayer({
         </div>
       )}
 
+      {isHoldingSpeed && (
+        <div style={{
+          position: 'absolute',
+          top: '24px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'rgba(0, 0, 0, 0.8)',
+          border: '1px solid rgba(255, 255, 255, 0.15)',
+          borderRadius: '20px',
+          padding: '6px 16px',
+          color: '#ffffff',
+          fontSize: '0.82rem',
+          fontWeight: 800,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          zIndex: 10008,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+          pointerEvents: 'none',
+          animation: 'fadeIn 0.15s ease-out'
+        }}>
+          <span>▶▶</span>
+          <span>2X Speed</span>
+        </div>
+      )}
+
       {/* Connecting Full Screen Server switcher Overlay */}
       {isSwitchingServer && (
         <div className="player-server-loader">
@@ -3478,6 +3632,8 @@ export default function LocalVideoPlayer({
           setAspectRatio={setAspectRatio}
           zoomScale={zoomScale}
           setZoomScale={setZoomScale}
+          item={item}
+          logoUrl={logoUrl}
         />
       </div>
 
@@ -3588,6 +3744,7 @@ export default function LocalVideoPlayer({
         vidlinkDiagnostics={vidlinkDiagnostics}
         vidsrcPmDiagnostics={vidsrcPmDiagnostics}
         testServerDiagnostics={testServerDiagnostics}
+        currentSrc={currentSrc}
       />
 
       {/* Toast Alert Feedback HUD */}

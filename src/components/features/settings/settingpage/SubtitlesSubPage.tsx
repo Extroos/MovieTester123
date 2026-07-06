@@ -40,25 +40,25 @@ export default function SubtitlesSubPage({
 }: SubtitlesSubPageProps) {
   
   const colors = [
-    { name: 'White', value: '#ffffff' },
-    { name: 'Yellow', value: '#ffeb3b' },
-    { name: 'Cyan', value: '#00e5ff' },
-    { name: 'Green', value: '#00e676' }
+    { name: t('color_white'), value: '#ffffff' },
+    { name: t('color_yellow'), value: '#ffeb3b' },
+    { name: t('color_cyan'), value: '#00e5ff' },
+    { name: t('color_green'), value: '#00e676' }
   ];
 
   const sizes = [
-    { id: 'small', name: 'Small', fs: '0.8rem', previewFs: '0.45rem' },
-    { id: 'medium', name: 'Medium', fs: '1rem', previewFs: '0.58rem' },
-    { id: 'large', name: 'Large', fs: '1.25rem', previewFs: '0.72rem' },
-    { id: 'xlarge', name: 'Extra Large', fs: '1.5rem', previewFs: '0.86rem' }
+    { id: 'small', name: t('size_small'), fs: '0.8rem', previewFs: '0.45rem' },
+    { id: 'medium', name: t('size_medium'), fs: '1rem', previewFs: '0.58rem' },
+    { id: 'large', name: t('size_large'), fs: '1.25rem', previewFs: '0.72rem' },
+    { id: 'xlarge', name: t('size_xlarge'), fs: '1.5rem', previewFs: '0.86rem' }
   ];
 
   const opacities = [
-    { value: 0, name: 'None' },
-    { value: 0.25, name: 'Low' },
-    { value: 0.5, name: 'Medium' },
-    { value: 0.75, name: 'High' },
-    { value: 1, name: 'Solid' }
+    { value: 0, name: t('opacity_none') },
+    { value: 0.25, name: t('opacity_low') },
+    { value: 0.5, name: t('opacity_medium') },
+    { value: 0.75, name: t('opacity_high') },
+    { value: 1, name: t('opacity_solid') }
   ];
 
   const activeSize = sizes.find(s => s.id === settings.subtitleSize) || sizes[1];
@@ -138,7 +138,7 @@ export default function SubtitlesSubPage({
                 whiteSpace: 'normal',
                 wordBreak: 'break-word'
               }}>
-                "This is a preview of the subtitles layout."
+                {t('sub_preview_text')}
               </span>
 
               {/* Minimalist TV HUD Indicator */}
@@ -154,7 +154,7 @@ export default function SubtitlesSubPage({
                 alignItems: 'center',
                 gap: '4px'
               }}>
-                <Play size={8} fill="rgba(255,255,255,0.4)" /> LIVE PREVIEW (1080p)
+                <Play size={8} fill="rgba(255,255,255,0.4)" /> {t('live_preview_1080p')}
               </div>
             </div>
           </div>
@@ -187,7 +187,7 @@ export default function SubtitlesSubPage({
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-primary)' }}>{t('subtitle_size')}</span>
-              <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', opacity: 0.6 }}>{activeSize.name} size</span>
+              <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', opacity: 0.6 }}>{activeSize.name}</span>
             </div>
             <div style={{
               display: 'flex',
@@ -207,6 +207,8 @@ export default function SubtitlesSubPage({
                       triggerHaptic('light');
                       updateSetting('subtitleSize', sz.id);
                     }}
+                    tabIndex={0}
+                    className="tv-focusable"
                     style={{
                       flex: 1,
                       background: isSel ? '#ffffff' : 'transparent',
@@ -219,7 +221,8 @@ export default function SubtitlesSubPage({
                       cursor: 'pointer',
                       transition: 'all 0.2s',
                       whiteSpace: 'nowrap',
-                      textAlign: 'center'
+                      textAlign: 'center',
+                      outline: 'none'
                     }}
                   >
                     {sz.name}
@@ -253,6 +256,8 @@ export default function SubtitlesSubPage({
                       triggerHaptic('light');
                       updateSetting('subtitleColor', c.value);
                     }}
+                    tabIndex={0}
+                    className="tv-focusable"
                     style={{
                       flex: 1,
                       background: isSel ? '#ffffff' : 'transparent',
@@ -268,7 +273,8 @@ export default function SubtitlesSubPage({
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: '4px'
+                      gap: '4px',
+                      outline: 'none'
                     }}
                   >
                     <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: c.value, border: '1px solid rgba(255,255,255,0.2)', flexShrink: 0 }} />
@@ -303,6 +309,8 @@ export default function SubtitlesSubPage({
                       triggerHaptic('light');
                       updateSetting('subtitleBgOpacity', op.value);
                     }}
+                    tabIndex={0}
+                    className="tv-focusable"
                     style={{
                       flex: 1,
                       background: isSel ? '#ffffff' : 'transparent',
@@ -315,7 +323,8 @@ export default function SubtitlesSubPage({
                       cursor: 'pointer',
                       transition: 'all 0.2s',
                       whiteSpace: 'nowrap',
-                      textAlign: 'center'
+                      textAlign: 'center',
+                      outline: 'none'
                     }}
                   >
                     {op.name}
@@ -342,7 +351,9 @@ export default function SubtitlesSubPage({
           type="text"
           value={osApiKey}
           onChange={(e) => { setOsApiKey(e.target.value); setOsSaved(false); }}
-          placeholder="Paste API Key here..."
+          placeholder={t('paste_api_key')}
+          tabIndex={0}
+          className="tv-focusable"
           style={{
             width: '100%',
             background: 'rgba(255,255,255,0.04)',

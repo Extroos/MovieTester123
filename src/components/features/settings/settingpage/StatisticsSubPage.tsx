@@ -60,6 +60,7 @@ export default function StatisticsSubPage({
         </p>
         <button
           onClick={() => { triggerHaptic('heavy'); window.dispatchEvent(new CustomEvent('requestLogin')); }}
+          className="tv-focusable"
           style={{
             background: '#ffffff',
             color: '#000000',
@@ -71,7 +72,8 @@ export default function StatisticsSubPage({
             cursor: 'pointer',
             width: '100%',
             marginTop: '8px',
-            boxShadow: '0 4px 12px rgba(255,255,255,0.1)'
+            boxShadow: '0 4px 12px rgba(255,255,255,0.1)',
+            outline: 'none'
           }}
         >
           {t('sign_in_sign_up')}
@@ -326,58 +328,78 @@ export default function StatisticsSubPage({
         gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
         gap: isMobile ? '10px' : '16px'
       }}>
-        <div style={{
-          background: 'rgba(255, 255, 255, 0.02)',
-          border: '1px solid rgba(255, 255, 255, 0.06)',
-          borderRadius: '16px',
-          padding: isMobile ? '12px' : '16px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '4px'
-        }}>
+        <div 
+          tabIndex={0}
+          className="tv-focusable"
+          style={{
+            background: 'rgba(255, 255, 255, 0.02)',
+            border: '1px solid rgba(255, 255, 255, 0.06)',
+            borderRadius: '16px',
+            padding: isMobile ? '12px' : '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px',
+            outline: 'none'
+          }}
+        >
           <span style={{ fontSize: '0.62rem', fontWeight: 900, color: 'rgba(255, 255, 255, 0.4)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{t('total_screen_time')}</span>
           <span style={{ fontSize: isMobile ? '1.2rem' : '1.45rem', fontWeight: 900, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {totalHrs > 0 ? `${totalHrs}h ` : ''}{totalMins}m
           </span>
         </div>
 
-        <div style={{
-          background: 'rgba(255, 255, 255, 0.02)',
-          border: '1px solid rgba(255, 255, 255, 0.06)',
-          borderRadius: '16px',
-          padding: isMobile ? '12px' : '16px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '4px'
-        }}>
+        <div 
+          tabIndex={0}
+          className="tv-focusable"
+          style={{
+            background: 'rgba(255, 255, 255, 0.02)',
+            border: '1px solid rgba(255, 255, 255, 0.06)',
+            borderRadius: '16px',
+            padding: isMobile ? '12px' : '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px',
+            outline: 'none'
+          }}
+        >
           <span style={{ fontSize: '0.62rem', fontWeight: 900, color: 'rgba(255, 255, 255, 0.4)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{t('daily_streak')}</span>
           <span style={{ fontSize: isMobile ? '1.2rem' : '1.45rem', fontWeight: 900, color: '#ff8c94', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             🔥 {currentStreak}d <span style={{ fontSize: '0.72rem', fontWeight: 650, color: 'rgba(255, 255, 255, 0.3)' }}>/ {longestStreak}d</span>
           </span>
         </div>
 
-        <div style={{
-          background: 'rgba(255, 255, 255, 0.02)',
-          border: '1px solid rgba(255, 255, 255, 0.06)',
-          borderRadius: '16px',
-          padding: isMobile ? '12px' : '16px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '4px'
-        }}>
+        <div 
+          tabIndex={0}
+          className="tv-focusable"
+          style={{
+            background: 'rgba(255, 255, 255, 0.02)',
+            border: '1px solid rgba(255, 255, 255, 0.06)',
+            borderRadius: '16px',
+            padding: isMobile ? '12px' : '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px',
+            outline: 'none'
+          }}
+        >
           <span style={{ fontSize: '0.62rem', fontWeight: 900, color: 'rgba(255, 255, 255, 0.4)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{t('movies_explored')}</span>
           <span style={{ fontSize: isMobile ? '1.2rem' : '1.45rem', fontWeight: 900, color: '#fff' }}>{moviesCount}</span>
         </div>
 
-        <div style={{
-          background: 'rgba(255, 255, 255, 0.02)',
-          border: '1px solid rgba(255, 255, 255, 0.06)',
-          borderRadius: '16px',
-          padding: isMobile ? '12px' : '16px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '4px'
-        }}>
+        <div 
+          tabIndex={0}
+          className="tv-focusable"
+          style={{
+            background: 'rgba(255, 255, 255, 0.02)',
+            border: '1px solid rgba(255, 255, 255, 0.06)',
+            borderRadius: '16px',
+            padding: isMobile ? '12px' : '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px',
+            outline: 'none'
+          }}
+        >
           <span style={{ fontSize: '0.62rem', fontWeight: 900, color: 'rgba(255, 255, 255, 0.4)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{t('completion_rate')}</span>
           <span style={{ fontSize: isMobile ? '1.2rem' : '1.45rem', fontWeight: 900, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{completionRate}% <span style={{ fontSize: '0.72rem', fontWeight: 650, color: 'rgba(255, 255, 255, 0.3)' }}>({totalCompleted})</span></span>
         </div>
@@ -392,6 +414,14 @@ export default function StatisticsSubPage({
             {favoriteMovie && (
               <div 
                 onClick={() => handleItemClick(favoriteMovie)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleItemClick(favoriteMovie);
+                  }
+                }}
+                tabIndex={0}
+                className="tv-focusable"
                 style={{
                   position: 'relative',
                   height: isMobile ? '130px' : '160px',
@@ -401,6 +431,7 @@ export default function StatisticsSubPage({
                   border: '1px solid rgba(255, 255, 255, 0.08)',
                   boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
                   transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                  outline: 'none'
                 }}
               >
                 <img
@@ -448,6 +479,14 @@ export default function StatisticsSubPage({
             {favoriteSeries && (
               <div 
                 onClick={() => handleItemClick(favoriteSeries)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleItemClick(favoriteSeries);
+                  }
+                }}
+                tabIndex={0}
+                className="tv-focusable"
                 style={{
                   position: 'relative',
                   height: isMobile ? '130px' : '160px',
@@ -457,6 +496,7 @@ export default function StatisticsSubPage({
                   border: '1px solid rgba(255, 255, 255, 0.08)',
                   boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
                   transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                  outline: 'none'
                 }}
               >
                 <img
@@ -506,15 +546,20 @@ export default function StatisticsSubPage({
 
       {/* Fun Comparisons equivalents */}
       {totalSeconds > 120 && (
-        <div style={{
-          background: 'rgba(255, 255, 255, 0.01)',
-          border: '1px solid rgba(255, 255, 255, 0.05)',
-          borderRadius: '20px',
-          padding: '20px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '12px'
-        }}>
+        <div 
+          tabIndex={0}
+          className="tv-focusable"
+          style={{
+            background: 'rgba(255, 255, 255, 0.01)',
+            border: '1px solid rgba(255, 255, 255, 0.05)',
+            borderRadius: '20px',
+            padding: '20px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+            outline: 'none'
+          }}
+        >
           <h4 style={{ margin: 0, fontSize: '0.82rem', fontWeight: 900, color: '#fff', letterSpacing: '0.04em', textTransform: 'uppercase' }}>{t('fun_comparisons')}</h4>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.82rem', color: 'rgba(255,255,255,0.7)', fontWeight: 600 }}>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -549,6 +594,15 @@ export default function StatisticsSubPage({
                 setSelectedAch(ach);
                 setCopied(false);
               }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  triggerHaptic('light');
+                  setSelectedAch(ach);
+                  setCopied(false);
+                }
+              }}
+              tabIndex={0}
               style={{
                 background: ach.unlocked ? 'rgba(255, 255, 255, 0.03)' : 'rgba(255, 255, 255, 0.01)',
                 border: ach.unlocked ? `1px solid ${ach.glow}` : '1px solid rgba(255, 255, 255, 0.04)',
@@ -561,7 +615,8 @@ export default function StatisticsSubPage({
                 boxShadow: ach.unlocked ? `0 4px 16px ${ach.glow.replace('0.4', '0.08')}` : 'none',
                 transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
                 overflow: 'hidden',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                outline: 'none'
               }}
               className="tv-focusable active-press"
             >
@@ -582,15 +637,20 @@ export default function StatisticsSubPage({
       </div>
 
       {/* Weekly Activity Column Chart */}
-      <div style={{
-        background: 'rgba(255, 255, 255, 0.01)',
-        border: '1px solid rgba(255, 255, 255, 0.05)',
-        borderRadius: '20px',
-        padding: isMobile ? '14px' : '20px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '16px'
-      }}>
+      <div 
+        tabIndex={0}
+        className="tv-focusable"
+        style={{
+          background: 'rgba(255, 255, 255, 0.01)',
+          border: '1px solid rgba(255, 255, 255, 0.05)',
+          borderRadius: '20px',
+          padding: isMobile ? '14px' : '20px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '16px',
+          outline: 'none'
+        }}
+      >
         <h4 style={{ margin: 0, fontSize: '0.82rem', fontWeight: 900, color: '#fff', letterSpacing: '0.04em', textTransform: 'uppercase' }}>{t('weekly_activity')}</h4>
         
         <div style={{
@@ -655,15 +715,20 @@ export default function StatisticsSubPage({
       </div>
 
       {/* Hourly Viewing Habits */}
-      <div style={{
-        background: 'rgba(255, 255, 255, 0.01)',
-        border: '1px solid rgba(255, 255, 255, 0.05)',
-        borderRadius: '20px',
-        padding: '20px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '16px'
-      }}>
+      <div 
+        tabIndex={0}
+        className="tv-focusable"
+        style={{
+          background: 'rgba(255, 255, 255, 0.01)',
+          border: '1px solid rgba(255, 255, 255, 0.05)',
+          borderRadius: '20px',
+          padding: '20px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '16px',
+          outline: 'none'
+        }}
+      >
         <h4 style={{ margin: 0, fontSize: '0.82rem', fontWeight: 900, color: '#fff', letterSpacing: '0.04em', textTransform: 'uppercase' }}>{t('viewing_habits')}</h4>
         
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -691,15 +756,20 @@ export default function StatisticsSubPage({
 
       {/* Top Genres Progress list */}
       {sortedGenres.length > 0 && (
-        <div style={{
-          background: 'rgba(255, 255, 255, 0.01)',
-          border: '1px solid rgba(255, 255, 255, 0.05)',
-          borderRadius: '20px',
-          padding: '20px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '16px'
-        }}>
+        <div 
+          tabIndex={0}
+          className="tv-focusable"
+          style={{
+            background: 'rgba(255, 255, 255, 0.01)',
+            border: '1px solid rgba(255, 255, 255, 0.05)',
+            borderRadius: '20px',
+            padding: '20px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+            outline: 'none'
+          }}
+        >
           <h4 style={{ margin: 0, fontSize: '0.82rem', fontWeight: 900, color: '#fff', letterSpacing: '0.04em', textTransform: 'uppercase' }}>{t('favorite_genres')}</h4>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -751,11 +821,21 @@ export default function StatisticsSubPage({
                 <div 
                   key={historyItem.id}
                   onClick={() => handleItemClick(historyItem)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleItemClick(historyItem);
+                    }
+                  }}
+                  tabIndex={0}
+                  className="tv-focusable"
                   style={{
                     flexShrink: 0,
                     width: '100px',
                     cursor: 'pointer',
-                    position: 'relative'
+                    position: 'relative',
+                    outline: 'none',
+                    borderRadius: '12px'
                   }}
                 >
                   <div style={{
@@ -806,33 +886,6 @@ export default function StatisticsSubPage({
         </div>
       )}
 
-      {/* Reset Statistics Action */}
-      <div style={{
-        marginTop: '12px',
-        borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-        paddingTop: '24px',
-        display: 'flex',
-        justifyContent: 'center'
-      }}>
-        <button
-          onClick={onResetStatsClick}
-          className="settings-btn-danger"
-          style={{
-            padding: '12px 30px',
-            fontSize: '0.85rem',
-            border: '1px solid rgba(239, 68, 68, 0.15)',
-            borderRadius: '6px',
-            fontWeight: 600,
-            cursor: 'pointer',
-            background: 'rgba(239, 68, 68, 0.08)',
-            color: '#ef4444',
-            transition: 'all 0.2s'
-          }}
-        >
-          Reset Statistics
-        </button>
-      </div>
-
       {/* Milestone Detail Overlay Modal */}
       {selectedAch && (
         <div
@@ -872,6 +925,7 @@ export default function StatisticsSubPage({
             {/* Close Button */}
             <button
               onClick={() => setSelectedAch(null)}
+              className="tv-focusable"
               style={{
                 position: 'absolute',
                 top: '16px',
@@ -885,7 +939,8 @@ export default function StatisticsSubPage({
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: '#fff',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                outline: 'none'
               }}
             >
               <X size={16} />
@@ -936,6 +991,7 @@ export default function StatisticsSubPage({
                   setCopied(true);
                   setTimeout(() => setCopied(false), 2000);
                 }}
+                className="tv-focusable"
                 style={{
                   width: '100%',
                   background: copied ? 'rgba(70,211,105,0.15)' : '#ffffff',
@@ -950,7 +1006,8 @@ export default function StatisticsSubPage({
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '8px',
-                  transition: 'all 0.2s'
+                  transition: 'all 0.2s',
+                  outline: 'none'
                 }}
               >
                 {copied ? <Check size={16} /> : <Share2 size={16} />}

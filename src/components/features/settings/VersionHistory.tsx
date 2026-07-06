@@ -8,6 +8,17 @@ interface VersionHistoryProps {
 
 const versionData = [
   {
+    version: 'v0.8.0',
+    date: '2026-07-06',
+    changes: [
+      'Offline video downloader integration.',
+      'Android TV Mode v1: Added TV navigation framework with D-pad remote focus overlays and layout adapters.',
+      'Unified Build Architecture: Single codebase and APK handling both mobile and TV layouts natively (no split APK required).',
+      'TV Performance: Initial optimizations to reduce UI render times, though layout constraints and performance optimizations remain ongoing.',
+      'Work in Progress: Several settings subpages and statistics cards are in draft/incomplete status and will be finalized in next releases.'
+    ]
+  },
+  {
     version: 'v0.7.0',
     date: '2026-06-29',
     changes: [
@@ -15,7 +26,7 @@ const versionData = [
       'Watchlist Performance: The saved movies/shows list now loads and scrolls much faster — no more lag when browsing your library.',
       'Login Page Improvements: The sign-in screen now fits perfectly on smaller phones with bigger buttons and inputs for easier typing.',
       'Episode Loading Indicator: Tapping an episode now shows a visible loading spinner so you know it\'s working before the player opens.',
-      'Offline Downloads: Offline video downloads are still in development and coming in a future update — you\'ll see a notice when you visit that section.',
+      'Offline Downloads Notice: Offline video downloads warning notice displays when you visit that section.',
       'Stability & Bug Fixes: Various under-the-hood improvements for smoother navigation and fewer crashes.',
     ]
   },

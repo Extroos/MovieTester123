@@ -64,24 +64,6 @@ export default function AvatarPicker({
         </button>
       </div>
 
-      <div style={{ marginBottom: '24px' }}>
-        <label style={{ 
-          display: 'block', 
-          padding: '16px 20px', 
-          background: '#ffffff', 
-          color: '#000000', 
-          borderRadius: '16px', 
-          textAlign: 'center', 
-          fontWeight: 900, 
-          cursor: 'pointer',
-          opacity: isUploading ? 0.5 : 1,
-          transition: 'all 0.2s',
-        }}>
-          {isUploading ? t('uploading') : t('upload_custom_image')}
-          <input type="file" accept="image/*" onChange={handleFileUpload} disabled={isUploading} style={{ display: 'none' }} />
-        </label>
-      </div>
-
       <div style={{ 
         flex: 1, 
         overflowY: 'auto', 
@@ -91,7 +73,7 @@ export default function AvatarPicker({
         paddingBottom: '40px',
         width: '100%'
       }}>
-        {Array.from({ length: 67 }).map((_, i) => (
+        {Array.from({ length: 201 }).map((_, i) => (
           <div
             key={i}
             onClick={() => handleSelectAvatar(`/avatars/avatar-${i + 1}.jpg`)}
@@ -119,6 +101,11 @@ export default function AvatarPicker({
                 height: '100%',
                 objectFit: 'cover',
                 pointerEvents: 'none'
+              }}
+              onError={(e) => {
+                const target = e.currentTarget as HTMLImageElement;
+                const fallbackId = Math.floor(Math.random() * 67) + 1;
+                target.src = `/avatars/avatar-${fallbackId}.jpg`;
               }}
             />
           </div>

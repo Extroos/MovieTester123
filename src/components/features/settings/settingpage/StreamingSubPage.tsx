@@ -124,6 +124,8 @@ export default function StreamingSubPage({
                   triggerHaptic('light');
                   updateSetting('mirrorPriority', mode.id);
                 }}
+                tabIndex={0}
+                className="tv-focusable"
                 style={{
                   flex: isMobile ? 1 : 'none',
                   background: isSel ? '#ffffff' : 'transparent',
@@ -136,7 +138,8 @@ export default function StreamingSubPage({
                   cursor: 'pointer',
                   transition: 'all 0.2s',
                   whiteSpace: 'nowrap',
-                  textAlign: 'center'
+                  textAlign: 'center',
+                  outline: 'none'
                 }}
               >
                 {mode.name}
@@ -243,6 +246,8 @@ export default function StreamingSubPage({
                   handleTestConnection();
                 }}
                 disabled={isTestingUrl}
+                tabIndex={0}
+                className="tv-focusable"
                 style={{
                   background: testStatus === 'success' ? '#46D369' : '#ffffff',
                   border: 'none',
@@ -259,7 +264,8 @@ export default function StreamingSubPage({
                   transition: 'all 0.2s ease',
                   opacity: isTestingUrl ? 0.6 : 1,
                   flexShrink: 0,
-                  boxShadow: testStatus === 'success' ? '0 2px 8px rgba(70, 211, 105, 0.3)' : 'none'
+                  boxShadow: testStatus === 'success' ? '0 2px 8px rgba(70, 211, 105, 0.3)' : 'none',
+                  outline: 'none'
                 }}
               >
                 {isTestingUrl ? (

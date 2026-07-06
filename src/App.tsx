@@ -23,6 +23,7 @@ import { SettingsService } from './services/settings';
 import DownloadCenter from './components/features/downloads/DownloadCenter';
 import { QueryClient, QueryClientProvider } from 'react-query';
 import { t } from './utils/i18n';
+import { isTVMode } from './utils/tv';
 import { FriendService } from './services/friends';
 import { WatchProgressService } from './services/progress';
 import { getTrending, getPosterUrl, getBackdropUrl, prewarmImages, getMovieDetails, getTVShowDetails } from './services/tmdb';
@@ -97,12 +98,15 @@ export default function App() {
   const [activeProfile, setActiveProfile] = useState<Profile | null>(_initialProfile);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  // If the app was already fully booted in this session (e.g. screen turned off/on),
+  // skip the loading screen entirely to avoid jarring re-render on resume.
+  const _alreadyBooted = sessionStorage.getItem('cinemovie_booted') === '1';
+  const [isLoading, setIsLoading] = useState(!_alreadyBooted);
   const [showProfileSelector, setShowProfileSelector] = useState(!_initialProfile);
-  const [minTimeDone, setMinTimeDone] = useState(false);
-  const [sessionLoaded, setSessionLoaded] = useState(false);
-  const [mediaPrefetched, setMediaPrefetched] = useState(false);
-  const [prefetchedPosters, setPrefetchedPosters] = useState<string[]>([]);
+  const [minTimeDone, setMinTimeDone] = useState(_alreadyBooted);
+  const [sessionLoaded, setSessionLoaded] = useState(_alreadyBooted);
+  const [mediaPrefetched, setMediaPrefetched] = useState(_alreadyBooted);
+  const [prefetchedPosters, setPrefetchedPosters] = useState<string[]>();
   
   const [showPasswordRecovery, setShowPasswordRecovery] = useState(false);
   const [recoveryPassword, setRecoveryPassword] = useState('');
@@ -150,9 +154,32 @@ export default function App() {
     const initNativeSettings = async () => {
       try {
         const { Capacitor } = await import('@capacitor/core');
+        
+        let isTVModeValue = isTVMode();
+        if (typeof localStorage !== 'undefined') {
+          const stored = localStorage.getItem('cinemovie_is_tv');
+          if (stored !== null) {
+            isTVModeValue = stored === 'true';
+          }
+        }
+
+        if (typeof document !== 'undefined') {
+          if (isTVModeValue) {
+            document.body.classList.add('tv-mode');
+            document.body.classList.remove('no-tv-mode');
+          } else {
+            document.body.classList.add('no-tv-mode');
+            document.body.classList.remove('tv-mode');
+          }
+        }
+
         if (Capacitor.isNativePlatform()) {
           const { ScreenOrientation } = await import('@capacitor/screen-orientation');
-          await (ScreenOrientation as any).lock({ orientation: 'portrait' }).catch(() => {});
+          if (!isTVModeValue) {
+            await (ScreenOrientation as any).lock({ orientation: 'portrait' }).catch(() => {});
+          } else {
+            await (ScreenOrientation as any).unlock().catch(() => {});
+          }
 
           const { StatusBar, Style } = await import('@capacitor/status-bar');
           await StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
@@ -220,17 +247,43 @@ export default function App() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setIsAuthenticated(!!session);
+      const isAuth = !!session;
+      setIsAuthenticated(isAuth);
       setCurrentUser(session?.user || null);
+      if (isAuth) {
+        setIsGuest(false);
+        localStorage.removeItem('cinemovie_is_guest');
+      }
       setSessionLoaded(true);
     });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
+      // Skip INITIAL_SESSION — handled by getSession() above
+      if (event === 'INITIAL_SESSION') return;
+
       const isAuth = !!session;
       setIsAuthenticated(isAuth);
       setCurrentUser(session?.user || null);
+      
+      if (isAuth) {
+        setIsGuest(false);
+        localStorage.removeItem('cinemovie_is_guest');
+        // Only show profile selector on a REAL fresh sign-in.
+        // TOKEN_REFRESHED fires on screen wake/resume — do NOT clear the active profile.
+        // We detect a real sign-in by checking if there's no active profile already saved.
+        if (event === 'SIGNED_IN') {
+          const existingProfile = ProfileService.getActiveProfile();
+          if (!existingProfile) {
+            // Genuinely new sign-in: show profile selector to pick/create a profile
+            setShowProfileSelector(true);
+            setActiveProfile(null);
+            ProfileService.clearActiveProfile();
+          }
+          // If existingProfile exists, user just resumed — keep them where they were
+        }
+      }
       
       if (event === 'PASSWORD_RECOVERY') {
         setShowPasswordRecovery(true);
@@ -575,8 +628,10 @@ export default function App() {
   useEffect(() => {
     if (sessionLoaded && minTimeDone && mediaPrefetched) {
       setIsLoading(false);
+      // Mark this session as fully booted so screen wake-ups skip the loading screen
+      sessionStorage.setItem('cinemovie_booted', '1');
     }
-  }, [sessionLoaded, minTimeDone, mediaPrefetched]); 
+  }, [sessionLoaded, minTimeDone, mediaPrefetched]);
 
   // Flush offline watch-progress queue when device regains connectivity
   const refreshContinueWatchingRef = React.useRef<(() => Promise<void>) | undefined>(undefined);
@@ -762,7 +817,13 @@ export default function App() {
     return topPicks.filter(item => (item as any).name !== undefined || (item as any).mediaType === 'tv');
   }, [topPicks]);
 
-  const [homeActiveProgressTab, setHomeActiveProgressTab] = useState<'continue' | 'friends'>('continue');
+  const [homeActiveProgressTab, setHomeActiveProgressTab] = useState<'continue' | 'friends'>(() => {
+    if (typeof localStorage !== 'undefined') {
+      const saved = localStorage.getItem('cinemovie_home_progress_tab');
+      if (saved === 'continue' || saved === 'friends') return saved;
+    }
+    return 'continue';
+  });
   const [homeActiveTrendingTab, setHomeActiveTrendingTab] = useState<'movies' | 'tv'>('movies');
 
   const [searchOpen, setSearchOpen] = useState(false);
@@ -880,6 +941,13 @@ export default function App() {
         let lastBackPress = 0;
         
         const listener = await CapApp.addListener('backButton', ({ canGoBack }) => {
+          // Priority -1: Trailer overlay check
+          const trailerOverlay = document.getElementById('trailer-modal-overlay') || document.querySelector('.trailer-modal-overlay');
+          if (trailerOverlay) {
+            window.dispatchEvent(new CustomEvent('closeTrailer'));
+            return;
+          }
+
           // Priority 0: Video Player (highest)
           if (document.querySelector('.video-player-overlay')) return;
 
@@ -1056,6 +1124,9 @@ export default function App() {
   }, []);
   const handleProgressTabChange = useCallback((id: string) => {
     setHomeActiveProgressTab(id as any);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('cinemovie_home_progress_tab', id);
+    }
   }, []);
   const handleTrendingTabChange = useCallback((id: string) => {
     setHomeActiveTrendingTab(id as any);
@@ -1300,9 +1371,61 @@ export default function App() {
           <ProfileSelector onProfileSelected={handleProfileSelected} />
         ) : (
           <div style={{ width: '100%', height: '100vh', overflow: 'hidden', position: 'relative' }}>
+            {/* Fixed blurred dynamic backdrop background that stays up in TV mode while main page rows scroll */}
+            {document.body.classList.contains('tv-mode') && (
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '80vh', zIndex: 0, pointerEvents: 'none', overflow: 'hidden' }}>
+                <div 
+                  id="tv-dynamic-backdrop-1"
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    opacity: 1,
+                    transition: 'opacity 1.0s ease-in-out',
+                    background: 'transparent'
+                  }}
+                />
+                <div 
+                  id="tv-dynamic-backdrop-2"
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    opacity: 0,
+                    transition: 'opacity 1.0s ease-in-out',
+                    background: 'transparent'
+                  }}
+                />
+                <div 
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    background: 'linear-gradient(to bottom, transparent 0%, rgba(var(--bg-primary-rgb, 10,10,10), 0.4) 30%, rgba(var(--bg-primary-rgb, 10,10,10), 0.85) 70%, var(--bg-primary) 100%)'
+                  }}
+                />
+              </div>
+            )}
             <Suspense fallback={<SimpleLoader />}>
-              <div style={{ width: '100%', height: '100vh', overflow: 'hidden', position: 'relative' }}>
+              <div style={{ width: '100%', height: '100vh', overflow: 'hidden', position: 'relative', zIndex: 1 }}>
                 <div style={{ display: isOverlayActive ? 'none' : 'block', width: '100%', height: '100vh', overflow: 'hidden', position: 'relative' }}>
+                  
+                  {/* Single Persistent Global Header — remains fully mounted on tab changes to retain active D-pad focus state */}
+                  {!(currentView === 'settings' && showVersionHistory) && (currentView !== 'downloads' || isTVMode()) && (
+                    <Header 
+                      onSearchOpen={handleSearchOpen} 
+                      onDownloadsOpen={handleDownloadsOpen}
+                      activeProfile={activeProfile} 
+                      onSwitchProfile={handleSwitchProfile} 
+                      hasActiveDownloads={hasActiveDownloads}
+                      currentView={currentView}
+                      onNavClick={handleNavClick}
+                      activeInviteToast={activeInviteToast}
+                      onAcceptInvite={handleJoinInviteClick}
+                      onDeclineInvite={handleDeclineInvite}
+                      activeSettingsSubPage={currentView === 'settings' ? activeSettingsSubPage : null}
+                      onBackSettingsSubPage={currentView === 'settings' ? (() => setActiveSettingsSubPage(null)) : undefined}
+                      activeNewsGenre={currentView === 'newandhot' ? selectedNewsGenre : null}
+                      onBackNewsGenre={currentView === 'newandhot' ? (() => setSelectedNewsGenre(null)) : undefined}
+                    />
+                  )}
 
               {/* PERSISTENT CONTENT VIEWS — Wraps main screens to keep them alive and prevent unmount-remount lag */}
               <div style={{
@@ -1316,21 +1439,10 @@ export default function App() {
               }}>
                 <div style={{ 
                   minHeight: '100vh', 
-                  background: COLORS.bgPrimary,
+                  background: document.body.classList.contains('tv-mode') ? 'transparent' : COLORS.bgPrimary,
+                  paddingLeft: '0px',
                   paddingBottom: 'calc(130px + env(safe-area-inset-bottom, 0px))',
                 }}>
-                  <Header 
-                    onSearchOpen={handleSearchOpen} 
-                    onDownloadsOpen={handleDownloadsOpen}
-                    activeProfile={activeProfile} 
-                    onSwitchProfile={handleSwitchProfile} 
-                    hasActiveDownloads={hasActiveDownloads}
-                    currentView={currentView}
-                    onNavClick={handleNavClick}
-                    activeInviteToast={activeInviteToast}
-                    onAcceptInvite={handleJoinInviteClick}
-                    onDeclineInvite={handleDeclineInvite}
-                  />
                   <div style={{ paddingTop: 0 }}>
                     {loading ? (
                       <div style={{ paddingTop: '64px' }}>
@@ -1340,7 +1452,7 @@ export default function App() {
                       </div>
                     ) : (
                       <>
-                        <Hero movie={heroMovie} onPlayClick={() => setSelectedMovie(heroMovie)} onInfoClick={() => setSelectedMovie(heroMovie)} />
+                        <Hero movie={heroMovie} isActive={currentView === 'home'} onPlayClick={() => setSelectedMovie(heroMovie)} onInfoClick={() => setSelectedMovie(heroMovie)} />
                         <div style={{ 
                           position: 'relative', 
                           marginTop: '-6rem', 
@@ -1386,21 +1498,47 @@ export default function App() {
                               />
                             )}
                             {!minimalHome && (
-                            <>
-                            {(trending.length > 0 || trendingTV.length > 0) && (
-                              <ContentRow 
-                                title={t('trending_now')}
-                                movies={homeActiveTrendingTab === 'movies' ? trending : trendingTV} 
-                                onMovieClick={homeActiveTrendingTab === 'movies' ? handleMovieClick : handleTVShowClick}
-                                onSeeAll={getSeeAllCallback('home-trending', t('trending_now'), homeActiveTrendingTab === 'movies' ? trending : trendingTV)}
-                                tabs={[
-                                  { id: 'movies', label: t('movies') },
-                                  { id: 'tv', label: t('series') }
-                                ]}
-                                activeTab={homeActiveTrendingTab}
-                                onTabChange={handleTrendingTabChange}
-                              />
-                            )}
+                              <>
+                              {(trending.length > 0 || trendingTV.length > 0) && (() => {
+                                const isTVMode = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+                                if (isTVMode) {
+                                // Merge movie and TV trends together in TV mode (interleave them nicely)
+                                const combinedTrending: (any)[] = [];
+                                const maxLength = Math.max(trending.length, trendingTV.length);
+                                for (let i = 0; i < maxLength; i++) {
+                                  if (i < trending.length) combinedTrending.push(trending[i]);
+                                  if (i < trendingTV.length) combinedTrending.push(trendingTV[i]);
+                                }
+                                return (
+                                  <ContentRow 
+                                    title={t('trending_now')}
+                                    movies={combinedTrending}
+                                    onMovieClick={(item: any) => {
+                                      if (item.firstAirDate || item.name) {
+                                        handleTVShowClick(item);
+                                      } else {
+                                        handleMovieClick(item);
+                                      }
+                                    }}
+                                    onSeeAll={getSeeAllCallback('home-trending', t('trending_now'), combinedTrending)}
+                                  />
+                                );
+                              }
+                              return (
+                                <ContentRow 
+                                  title={t('trending_now')}
+                                  movies={homeActiveTrendingTab === 'movies' ? trending : trendingTV} 
+                                  onMovieClick={homeActiveTrendingTab === 'movies' ? handleMovieClick : handleTVShowClick}
+                                  onSeeAll={getSeeAllCallback('home-trending', t('trending_now'), homeActiveTrendingTab === 'movies' ? trending : trendingTV)}
+                                  tabs={[
+                                    { id: 'movies', label: t('movies') },
+                                    { id: 'tv', label: t('series') }
+                                  ]}
+                                  activeTab={homeActiveTrendingTab}
+                                  onTabChange={handleTrendingTabChange}
+                                />
+                              );
+                            })()}
                             {topPicks.length > 0 && (
                               <ContentRow 
                                 title={t('top_picks_for_you')} 
@@ -1482,21 +1620,9 @@ export default function App() {
                 position: 'absolute',
                 inset: 0,
               }}>
-                <div style={{ minHeight: '100vh', background: COLORS.bgPrimary, paddingBottom: 'calc(130px + env(safe-area-inset-bottom, 0px))' }}>
-                  <Header 
-                    onSearchOpen={() => setSearchOpen(true)} 
-                    onDownloadsOpen={() => setDownloadsOpen(true)}
-                    activeProfile={activeProfile} 
-                    onSwitchProfile={handleSwitchProfile} 
-                    hasActiveDownloads={hasActiveDownloads}
-                    currentView={currentView}
-                    onNavClick={handleNavClick}
-                    activeInviteToast={activeInviteToast}
-                    onAcceptInvite={handleJoinInviteClick}
-                    onDeclineInvite={handleDeclineInvite}
-                  />
+                <div style={{ minHeight: '100vh', background: document.body.classList.contains('tv-mode') ? 'transparent' : COLORS.bgPrimary, paddingLeft: '0px', paddingBottom: 'calc(130px + env(safe-area-inset-bottom, 0px))' }}>
                   <div style={{ paddingTop: 0 }}>
-                    <Hero movie={heroMovie} onPlayClick={() => setSelectedMovie(heroMovie)} onInfoClick={() => setSelectedMovie(heroMovie)} onSurpriseMe={handleSurpriseMe} />
+                    <Hero movie={heroMovie} isActive={currentView === 'movies'} onPlayClick={() => setSelectedMovie(heroMovie)} onInfoClick={() => setSelectedMovie(heroMovie)} onSurpriseMe={handleSurpriseMe} />
                     <div style={{ position: 'relative', marginTop: '-6rem', zIndex: 10, background: 'linear-gradient(to bottom, transparent 0%, rgba(var(--bg-primary-rgb, 10,10,10), 0.0) 5%, rgba(var(--bg-primary-rgb, 10,10,10), 0.5) 35%, var(--bg-primary) 65%)', paddingTop: '6rem', pointerEvents: 'none' }}>
                       <div style={{ pointerEvents: 'auto' }}>
                         {topPicksMovies.length > 0 && ( <ContentRow title={t('top_picks_for_you')} movies={topPicksMovies} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-toppicks', t('top_picks_for_you'), topPicksMovies)} /> )}
@@ -1523,21 +1649,9 @@ export default function App() {
                 inset: 0,
               }}>
                 {heroTVShow && (
-                  <div style={{ minHeight: '100vh', background: COLORS.bgPrimary, paddingBottom: 'calc(130px + env(safe-area-inset-bottom, 0px))' }}>
-                    <Header 
-                      onSearchOpen={handleSearchOpen} 
-                      onDownloadsOpen={handleDownloadsOpen} 
-                      activeProfile={activeProfile} 
-                      onSwitchProfile={handleSwitchProfile}
-                      hasActiveDownloads={hasActiveDownloads}
-                      currentView={currentView}
-                      onNavClick={handleNavClick}
-                      activeInviteToast={activeInviteToast}
-                      onAcceptInvite={handleJoinInviteClick}
-                      onDeclineInvite={handleDeclineInvite}
-                    />
+                  <div style={{ minHeight: '100vh', background: document.body.classList.contains('tv-mode') ? 'transparent' : COLORS.bgPrimary, paddingLeft: '0px', paddingBottom: 'calc(130px + env(safe-area-inset-bottom, 0px))' }}>
                     <div style={{ paddingTop: 0 }}>
-                      <Hero movie={heroTVShow as any} onPlayClick={() => setSelectedTVShow(heroTVShow)} onInfoClick={() => setSelectedTVShow(heroTVShow)} />
+                      <Hero movie={heroTVShow as any} isActive={currentView === 'tvshows'} onPlayClick={() => setSelectedTVShow(heroTVShow)} onInfoClick={() => setSelectedTVShow(heroTVShow)} />
                       <div style={{ position: 'relative', marginTop: '-6rem', zIndex: 10, background: 'linear-gradient(to bottom, transparent 0%, rgba(var(--bg-primary-rgb, 10,10,10), 0.0) 5%, rgba(var(--bg-primary-rgb, 10,10,10), 0.5) 35%, var(--bg-primary) 65%)', paddingTop: '6rem', pointerEvents: 'none' }}>
                         <div style={{ pointerEvents: 'auto' }}>
                           {topPicksTV.length > 0 && ( <ContentRow title={t('top_picks_for_you')} movies={topPicksTV} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-toppicks', t('top_picks_for_you'), topPicksTV)} /> )}
@@ -1563,46 +1677,35 @@ export default function App() {
                   position: 'absolute',
                   inset: 0,
                 }}>
-                  <div style={{ minHeight: '100vh', background: COLORS.bgPrimary, paddingBottom: 'calc(160px + env(safe-area-inset-bottom, 0px))', paddingTop: 'calc(70px + env(safe-area-inset-top, 0px))' }}>
+                  <div style={{ minHeight: '100vh', background: COLORS.bgPrimary, paddingLeft: '0px', paddingBottom: 'calc(160px + env(safe-area-inset-bottom, 0px))', paddingTop: 'calc(70px + env(safe-area-inset-top, 0px))' }}>
                     <MyListSubPage isMobile={window.innerWidth < 768} sectionHeaderStyle={() => ({})} onMovieClick={handleMovieClick} />
                   </div>
                 </div>
               )}
  
-              {currentView === 'newandhot' && (
-                <div style={{
-                  width: '100%',
-                  height: '100vh',
-                  overflowY: 'auto',
-                  WebkitOverflowScrolling: 'touch',
-                  position: 'absolute',
-                  inset: 0,
-                }}>
-                  <div style={{ minHeight: '100vh', background: COLORS.bgPrimary, paddingBottom: 'calc(130px + env(safe-area-inset-bottom, 0px))' }}>
-                    <Header 
-                      onSearchOpen={handleSearchOpen} 
-                      onDownloadsOpen={handleDownloadsOpen}
-                      activeProfile={activeProfile} 
-                      onSwitchProfile={handleSwitchProfile} 
-                      hasActiveDownloads={hasActiveDownloads}
-                      currentView={currentView}
-                      onNavClick={handleNavClick}
-                      activeInviteToast={activeInviteToast}
-                      onAcceptInvite={handleJoinInviteClick}
-                      onDeclineInvite={handleDeclineInvite}
-                      activeNewsGenre={selectedNewsGenre}
-                      onBackNewsGenre={() => setSelectedNewsGenre(null)}
-                    />
-                    <BrowseNewsPage 
-                      trending={combinedTrending} 
-                      upcoming={upcoming} 
-                      onItemClick={(item: any) => { if (item.firstAirDate) { handleTVShowClick(item); } else { handleMovieClick(item); } }} 
-                      selectedGenre={selectedNewsGenre}
-                      onSelectedGenreChange={setSelectedNewsGenre}
-                    />
+              {currentView === 'newandhot' && (() => {
+                const isTV = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+                return (
+                  <div style={{
+                    width: '100%',
+                    height: '100vh',
+                    overflowY: isTV ? 'hidden' : 'auto',
+                    WebkitOverflowScrolling: 'touch',
+                    position: 'absolute',
+                    inset: 0,
+                  }}>
+                    <div style={{ minHeight: '100vh', background: COLORS.bgPrimary, paddingLeft: '0px', paddingBottom: isTV ? '0px' : 'calc(130px + env(safe-area-inset-bottom, 0px))' }}>
+                      <BrowseNewsPage 
+                        trending={combinedTrending} 
+                        upcoming={upcoming} 
+                        onItemClick={(item: any) => { if (item.firstAirDate) { handleTVShowClick(item); } else { handleMovieClick(item); } }} 
+                        selectedGenre={selectedNewsGenre}
+                        onSelectedGenreChange={setSelectedNewsGenre}
+                      />
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
  
               {currentView === 'settings' && (
                 <div style={{
@@ -1613,23 +1716,7 @@ export default function App() {
                   position: 'absolute',
                   inset: 0,
                 }}>
-                  <div style={{ minHeight: '100vh', background: COLORS.bgPrimary }}>
-                    {!showVersionHistory && (
-                      <Header 
-                        onSearchOpen={handleSearchOpen} 
-                        onDownloadsOpen={handleDownloadsOpen}
-                        activeProfile={activeProfile} 
-                        onSwitchProfile={handleSwitchProfile} 
-                        hasActiveDownloads={hasActiveDownloads}
-                        currentView={currentView}
-                        onNavClick={handleNavClick}
-                        activeInviteToast={activeInviteToast}
-                        onAcceptInvite={handleJoinInviteClick}
-                        onDeclineInvite={handleDeclineInvite}
-                        activeSettingsSubPage={activeSettingsSubPage}
-                        onBackSettingsSubPage={() => setActiveSettingsSubPage(null)}
-                      />
-                    )}
+                  <div style={{ minHeight: '100vh', background: COLORS.bgPrimary, paddingLeft: '0px' }}>
                     <SettingsPage 
                       isVisible={currentView === 'settings'}
                       onNavigate={setCurrentView} 
@@ -1657,7 +1744,9 @@ export default function App() {
                   position: 'absolute',
                   inset: 0,
                 }}>
-                  <DownloadsPage onNavigate={setCurrentView} />
+                  <div style={{ paddingLeft: '0px' }}>
+                    <DownloadsPage onNavigate={setCurrentView} />
+                  </div>
                 </div>
               )}
 
@@ -1665,7 +1754,7 @@ export default function App() {
                 </div>
 
 
-              {searchOpen && ( <SearchOverlay onClose={() => setSearchOpen(false)} onMovieClick={handleMovieClick} onShowResults={handleShowSearchResults} /> )}
+               {searchOpen && ( <SearchOverlay onClose={() => setSearchOpen(false)} onMovieClick={handleMovieClick} onShowResults={handleShowSearchResults} disabled={!!selectedMovie || !!selectedTVShow} /> )}
               {searchResultsOpen && ( <SearchResults query={searchQuery} results={searchResults} loading={searchLoading} onMovieClick={handleMovieClick} onClose={() => { setSearchResultsOpen(false); setSearchOpen(true); }} /> )}
               <DownloadCenter isOpen={downloadsOpen} onClose={() => setDownloadsOpen(false)} onItemClick={(item: any) => { if (item.firstAirDate || item.name) { handleTVShowClick(item); } else { handleMovieClick(item); } }} />
               <AnimatePresence>
@@ -1707,10 +1796,14 @@ export default function App() {
                   onClose={() => setSelectedActor(null)}
                   onMovieClick={(movie) => {
                     setSelectedActor(null);
+                    setSelectedTVShow(null);
+                    setSelectedMovie(null);
                     handleMovieClick(movie);
                   }}
                   onTVShowClick={(show) => {
                     setSelectedActor(null);
+                    setSelectedTVShow(null);
+                    setSelectedMovie(null);
                     handleTVShowClick(show);
                   }}
                 />

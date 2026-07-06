@@ -1,8 +1,13 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import type { Movie, TVShow } from '../../../types';
-import { getPosterUrl, getBackdropUrl, API_KEY, getMovieDetails } from '../../../services/tmdb';
+import { getPosterUrl, getBackdropUrl, API_KEY, getMovieDetails, getMovieInTheaters } from '../../../services/tmdb';
 import { triggerHaptic } from '../../../utils/haptics';
 import { COLORS } from '../../../constants';
+import { t } from '../../../utils/i18n';
+import { updateDynamicBackdropColor } from '../../../utils/tvColorHelper';
+
+// Cache the TV mode check at module level — no need to re-read localStorage per card focus
+const _isTVMode = () => typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
 
 // Module-level deduplication for image recovery fetches.
 // If multiple cards show the same broken movie ID, only one TMDB fetch fires.
@@ -45,8 +50,11 @@ const ContentCard = React.memo(({ movie, onClick, onReaction, index, isWide = fa
 
     const isUpcoming = !!((movie as Movie).releaseDate && new Date((movie as Movie).releaseDate || '').getTime() > Date.now());
 
-    if ((movie as Movie).inTheaters !== undefined) {
-      setInTheaters(!!(movie as Movie).inTheaters && !isUpcoming);
+    // If definitively false, trust it and skip network — the movie is not in theaters.
+    // For `undefined` (most list endpoints don't include release_dates) and `true`
+    // (might be stale cached data), we always do a live TMDB check.
+    if ((movie as Movie).inTheaters === false) {
+      setInTheaters(false);
       return;
     }
 
@@ -56,14 +64,17 @@ const ContentCard = React.memo(({ movie, onClick, onReaction, index, isWide = fa
       if (entry && entry.isIntersecting) {
         observer.disconnect();
 
-        getMovieDetails(movie.id)
-          .then((details) => {
-            if (isMounted && details) {
-              const detailsUpcoming = !!(details.releaseDate && new Date(details.releaseDate).getTime() > Date.now());
-              setInTheaters(!!details.inTheaters && !detailsUpcoming);
+        getMovieInTheaters(movie.id)
+          .then((inT) => {
+            if (isMounted) {
+              const isUpcomingCheck = !!((movie as Movie).releaseDate && new Date((movie as Movie).releaseDate || '').getTime() > Date.now());
+              setInTheaters(inT && !isUpcomingCheck);
             }
           })
-          .catch(() => {});
+          .catch(() => {
+            // On error fall back to prop value (or false if undefined)
+            if (isMounted) setInTheaters(!!(movie as Movie).inTheaters && !isUpcoming);
+          });
       }
     }, {
       rootMargin: '100px',
@@ -193,12 +204,23 @@ const ContentCard = React.memo(({ movie, onClick, onReaction, index, isWide = fa
     return imageSrc;
   };
 
+  const handleFocus = useCallback(() => {
+    // Static import — no dynamic module loading overhead on every D-pad focus event
+    if (_isTVMode()) {
+      updateDynamicBackdropColor(
+        movie.posterPath || (movie as any).poster_path ||
+        movie.backdropPath || (movie as any).backdrop_path || null
+      );
+    }
+  }, [movie]);
+
   return (
     <div
       ref={cardRef}
       className="content-card movie-card tv-focusable"
       onClick={handleClick}
       onKeyDown={handleKeyDown}
+      onFocus={handleFocus}
       role="button"
       tabIndex={0}
       style={{
@@ -225,7 +247,8 @@ const ContentCard = React.memo(({ movie, onClick, onReaction, index, isWide = fa
           border: '1px solid rgba(255, 255, 255, 0.06)',
           borderRadius: '16px',
           overflow: 'hidden',
-          transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+          // Only transition the properties that actually change — avoids scanning all CSS props on every render
+          transition: 'border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
         }}
       >
         {/* Shimmer */}
@@ -509,7 +532,9 @@ const ContentRow = React.memo(function ContentRow({
  }: ContentRowProps) {
   const rowRef = useRef<HTMLDivElement>(null);
 
-  if (!movies || movies.length === 0) return null;
+  const isTVMode = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+
+  if ((!movies || movies.length === 0) && (!tabs || tabs.length === 0)) return null;
 
   return (
     <div
@@ -518,8 +543,7 @@ const ContentRow = React.memo(function ContentRow({
       style={{ 
         marginBottom: '1.8rem', 
         position: 'relative', 
-        zIndex: 10,
-        contentVisibility: 'auto',
+        contentVisibility: isTVMode ? 'visible' : 'auto',
         containIntrinsicSize: isWide ? 'auto 180px' : 'auto 240px'
       }}
     >
@@ -593,7 +617,7 @@ const ContentRow = React.memo(function ContentRow({
             </div>
           )}
 
-          {onSeeAll && (
+          {onSeeAll && !isTVMode && (
             <button
               className="mobile-touch-target see-all-btn tv-focusable"
               tabIndex={0}
@@ -620,7 +644,7 @@ const ContentRow = React.memo(function ContentRow({
                 letterSpacing: '0.04em',
               }}
             >
-              See All
+              {t('see_all')}
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="9 18 15 12 9 6" />
               </svg>
@@ -650,16 +674,88 @@ const ContentRow = React.memo(function ContentRow({
             scrollPaddingRight: '4vw',
           }}
         >
-          {movies.map((movie, index) => (
-            <ContentCard
-              key={`${movie.id}-${(movie as any).name ? 'tv' : 'movie'}`}
-              movie={movie}
-              index={index}
-              onClick={onMovieClick}
-              onReaction={onReaction}
-              isWide={isWide}
-            />
-          ))}
+          {movies.length > 0 ? (
+            movies.map((movie, index) => (
+              <ContentCard
+                key={`${movie.id}-${(movie as any).name ? 'tv' : 'movie'}`}
+                movie={movie}
+                index={index}
+                onClick={onMovieClick}
+                onReaction={onReaction}
+                isWide={isWide}
+              />
+            ))
+          ) : (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '100%',
+              minHeight: isWide ? '135px' : '180px',
+              color: 'rgba(255, 255, 255, 0.4)',
+              fontSize: '0.8rem',
+              fontWeight: 700,
+              gap: '8px'
+            }}>
+              <span>No activity found under this tab.</span>
+            </div>
+          )}
+
+          {/* Append custom See All card inside category list if on TV Mode */}
+          {isTVMode && onSeeAll && (
+            <div
+              className="tv-focusable movie-card"
+              tabIndex={0}
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerHaptic('light');
+                onSeeAll();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  triggerHaptic('light');
+                  onSeeAll();
+                }
+              }}
+              style={{
+                flexShrink: 0,
+                width: isWide ? '240px' : '120px',
+                height: isWide ? '135px' : '180px',
+                borderRadius: '16px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.06)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                gap: '8px',
+                transition: 'all 0.2s ease',
+                scrollSnapAlign: 'start',
+                outline: 'none',
+                boxSizing: 'border-box'
+              }}
+            >
+              <div style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '50%',
+                background: 'rgba(255, 255, 255, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#ffffff' }}>
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </div>
+              <span style={{ fontSize: '10px', fontWeight: 900, color: '#ffffff', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                {t('see_all')}
+              </span>
+            </div>
+          )}
+
           {/* Elegant spacer div to fix CSS scroll-padding-right bug in mobile browsers */}
           <div style={{ minWidth: '4vw', width: '4vw', flexShrink: 0, height: '8px', pointerEvents: 'none' }} />
         </div>

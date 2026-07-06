@@ -49,9 +49,19 @@ export function Switch({ checked, onChange, isMobile }: { checked: boolean; onCh
   const knobSize = isMobile ? 18 : 22;
   const padding = 2;
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onChange();
+    }
+  };
+
   return (
     <div 
       onClick={onChange}
+      onKeyDown={handleKeyDown}
+      tabIndex={0}
+      className="tv-focusable"
       style={{
         width: `${trackWidth}px`,
         height: `${trackHeight}px`,
@@ -61,7 +71,8 @@ export function Switch({ checked, onChange, isMobile }: { checked: boolean; onCh
         transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
         cursor: 'pointer',
         border: checked ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(255,255,255,0.06)',
-        boxShadow: checked ? '0 0 16px rgba(16, 185, 129, 0.35)' : 'none'
+        boxShadow: checked ? '0 0 16px rgba(16, 185, 129, 0.35)' : 'none',
+        outline: 'none'
       }}
     >
       <div style={{

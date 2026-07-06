@@ -3,6 +3,7 @@ import { COLORS } from '../../../constants';
 import { Profile, ProfileService } from '../../../services/profiles';
 import { triggerHaptic, triggerSuccessHaptic } from '../../../utils/haptics';
 import { t } from '../../../utils/i18n';
+import { API_KEY } from '../../../services/api/tmdb';
 
 interface ProfileSelectorProps {
   onProfileSelected: (profile: Profile) => void;
@@ -22,10 +23,10 @@ export default function ProfileSelector({ onProfileSelected }: ProfileSelectorPr
   const [deleteProfileId, setDeleteProfileId] = useState<string | null>(null);
 
   const generateAvatarOptions = () => {
-    // Select 6 unique random avatars from 67 available
+    // Select 6 unique random avatars from 201 available
     const set = new Set<number>();
     while(set.size < 6) {
-        set.add(Math.floor(Math.random() * 67) + 1);
+        set.add(Math.floor(Math.random() * 201) + 1);
     }
     const urls = Array.from(set).map(id => `/avatars/avatar-${id}.jpg`);
     // Preload all avatar images eagerly so they appear instantly (no fade-in)
@@ -398,9 +399,82 @@ create policy "Users can delete request" on friend_requests for delete using (au
   };
 
 
+  // TV Mode variables
+  const isTVMode = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+  const [backgroundMediaList, setBackgroundMediaList] = useState<any[]>([]);
+  const [currentMediaIdx, setCurrentMediaIdx] = useState<number>(0);
+  const [activeProfileIdx, setActiveProfileIdx] = useState<number>(0);
+  const [isFading, setIsFading] = useState<boolean>(false);
+  const [activeMediaLogo, setActiveMediaLogo] = useState<string | null>(null);
+
+  // Fetch background media (TV mode only)
+  useEffect(() => {
+    if (!isTVMode) return;
+    Promise.all([
+      fetch(`https://api.themoviedb.org/3/trending/movie/week?api_key=${API_KEY}&language=en-US`).then(r => r.json()).catch(() => ({ results: [] })),
+      fetch(`https://api.themoviedb.org/3/trending/tv/week?api_key=${API_KEY}&language=en-US`).then(r => r.json()).catch(() => ({ results: [] }))
+    ]).then(([moviesData, tvData]) => {
+      const list = [];
+      const movies = moviesData.results || [];
+      const tv = tvData.results || [];
+      const len = Math.max(movies.length, tv.length);
+      for (let i = 0; i < len; i++) {
+        if (movies[i] && movies[i].backdrop_path) list.push({ ...movies[i], media_type: 'movie' });
+        if (tv[i] && tv[i].backdrop_path) list.push({ ...tv[i], media_type: 'tv' });
+      }
+      if (list.length > 0) {
+        setBackgroundMediaList(list.slice(0, 15));
+      }
+    });
+  }, [isTVMode]);
+
+  // Fetch current media logo
+  useEffect(() => {
+    if (!isTVMode || backgroundMediaList.length === 0) return;
+    const media = backgroundMediaList[currentMediaIdx];
+    if (!media) return;
+    setActiveMediaLogo(null);
+    const type = media.media_type || (media.title ? 'movie' : 'tv');
+    fetch(`https://api.themoviedb.org/3/${type}/${media.id}/images?api_key=${API_KEY}`)
+      .then(res => res.json())
+      .then(data => {
+        const logos = data.logos || [];
+        // Find first English logo
+        const englishLogo = logos.find((l: any) => l.iso_639_1 === 'en');
+        if (englishLogo) {
+          setActiveMediaLogo(`https://image.tmdb.org/t/p/w500${englishLogo.file_path}`);
+        }
+      })
+      .catch(() => {});
+  }, [isTVMode, backgroundMediaList, currentMediaIdx]);  // Rotates background media every 30 seconds with cross-fade animation to black (TV mode only)
+  useEffect(() => {
+    if (!isTVMode || backgroundMediaList.length === 0) return;
+    const interval = setInterval(() => {
+      // Start fade to black
+      setIsFading(true);
+      setTimeout(() => {
+        setCurrentMediaIdx(prev => (prev + 1) % backgroundMediaList.length);
+        // Wait in the dark for 1.2s to change state before fading in
+        setTimeout(() => {
+          setIsFading(false);
+        }, 1200);
+      }, 800); // 800ms transition duration to reach complete black screen
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [isTVMode, backgroundMediaList]);
+
+  const [selectingProfile, setSelectingProfile] = useState<Profile | null>(null);
+
   const handleSelect = (profile: Profile) => {
     triggerSuccessHaptic();
-    onProfileSelected(profile);
+    if (isTVMode) {
+      setSelectingProfile(profile);
+      setTimeout(() => {
+        onProfileSelected(profile);
+      }, 2400); // 2.4s delay to load backdrop, row cards, and hero elements silently in background
+    } else {
+      onProfileSelected(profile);
+    }
   };
 
   if (loading) {
@@ -420,8 +494,6 @@ create policy "Users can delete request" on friend_requests for delete using (au
      );
   }
 
-
-
   const handleDeleteProfile = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     triggerHaptic('medium');
@@ -437,6 +509,676 @@ create policy "Users can delete request" on friend_requests for delete using (au
     setDeleteProfileId(null);
     setLoading(false);
   };
+
+  const activeMedia = backgroundMediaList[currentMediaIdx];  // Render TV-optimized split layout
+  if (isTVMode) {
+    return (
+      <div 
+        className="profile-selector-container"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 10000,
+          background: '#000000',
+          display: 'flex',
+          flexDirection: 'row',
+          overflow: 'hidden',
+          fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+        }}
+      >
+        <StaticStyles />
+
+        {/* Fullscreen zoom-to-center select profile transition overlay */}
+        {selectingProfile && (
+          <div style={{
+            position: 'fixed',
+            inset: 0,
+            background: '#000000',
+            zIndex: 200,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            animation: 'fadeIn 0.3s ease-out'
+          }}>
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '24px',
+              animation: 'zoomToCenterFadeOut 2.2s cubic-bezier(0.16, 1, 0.3, 1) forwards'
+            }}>
+              <div style={{
+                width: '120px',
+                height: '120px',
+                borderRadius: '16px',
+                overflow: 'hidden',
+                boxShadow: '0 0 0 4px #ffffff, 0 20px 50px rgba(0,0,0,0.9)'
+              }}>
+                <img 
+                  src={selectingProfile.avatar} 
+                  alt="" 
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                />
+              </div>
+              <span style={{
+                fontSize: '1.8rem',
+                fontWeight: 900,
+                color: '#ffffff',
+                textShadow: '0 4px 12px rgba(0,0,0,0.6)'
+              }}>
+                {selectingProfile.name}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Left Side: Dark Profiles Panel (approx 38% width) */}
+        <div style={{
+          width: '38%',
+          minWidth: '420px',
+          height: '100%',
+          background: 'linear-gradient(to right, #000000 65%, rgba(0,0,0,0.92) 85%, transparent 100%)',
+          zIndex: 15,
+          padding: '60px 40px',
+          boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'flex-start',
+          position: 'relative'
+        }}>
+          {/* Brand Logo */}
+          <div style={{
+            position: 'absolute',
+            top: '55px',
+            left: '40px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px'
+          }}>
+            <img 
+              src="/cinemovie-logo.png" 
+              alt="CineMovie" 
+              style={{
+                height: '48px',
+                width: 'auto',
+                objectFit: 'contain'
+              }} 
+            />
+            <span style={{
+              fontSize: '0.88rem',
+              fontWeight: 700,
+              color: 'rgba(255, 255, 255, 0.45)',
+              letterSpacing: '0.04em',
+              textTransform: 'none',
+              marginLeft: '2px'
+            }}>
+              Choose a Profile
+            </span>
+          </div>
+
+          {isAdding ? (
+            /* TV-Optimized Create Profile Form */
+            <div style={{ width: '100%', marginTop: '90px', display: 'flex', flexDirection: 'column', gap: '20px', boxSizing: 'border-box', animation: 'fadeInScale 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+              <h2 style={{ color: '#fff', fontSize: '1.8rem', fontWeight: 900, margin: '0 0 10px 0', letterSpacing: '-0.03em' }}>{t('create_profile')}</h2>
+              
+              {/* Profile Setup Area (Removed Card Background) */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '100%', boxSizing: 'border-box' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', width: '100%' }}>
+                  {/* Selected Avatar Preview */}
+                  <div style={{ width: '64px', height: '64px', borderRadius: '12px', overflow: 'hidden', border: '2.5px solid rgba(255, 255, 255, 0.15)', flexShrink: 0 }}>
+                    <img src={selectedAvatar} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </div>
+                  {/* Input Name field */}
+                  <div style={{ flex: 1 }}>
+                    <input
+                      autoFocus
+                      type="text"
+                      value={newProfileName}
+                      onChange={(e) => setNewProfileName(e.target.value)}
+                      placeholder={t('profile_name')}
+                      className="profile-input-tv tv-focusable"
+                      style={{
+                        width: '100%',
+                        padding: '12px 16px',
+                        borderRadius: '12px',
+                        background: '#141414',
+                        border: '1.5px solid rgba(255,255,255,0.08)',
+                        color: '#fff',
+                        fontSize: '1rem',
+                        fontWeight: 700,
+                        outline: 'none',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Avatar Selection Area */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '4px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem', fontWeight: 800 }}>Choose Avatar</span>
+                    <button
+                      onClick={() => { triggerHaptic('light'); generateAvatarOptions(); }}
+                      className="tv-focusable"
+                      style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: '#fff', padding: '4px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}
+                    >
+                      Shuffle
+                    </button>
+                  </div>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px' }}>
+                    {avatarOptions.slice(0, 5).map((url: string, index: number) => (
+                      <div
+                        key={index}
+                        onClick={() => setSelectedAvatar(url)}
+                        className="tv-focusable"
+                        tabIndex={0}
+                        style={{
+                          aspectRatio: '1/1',
+                          borderRadius: '10px',
+                          overflow: 'hidden',
+                          cursor: 'pointer',
+                          border: selectedAvatar === url ? '2.5px solid #ffffff' : '1.5px solid rgba(255,255,255,0.08)',
+                          background: '#141414'
+                        }}
+                      >
+                        <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons Row */}
+              <div style={{ display: 'flex', gap: '12px', width: '100%' }}>
+                <button
+                  onClick={() => setIsAdding(false)}
+                  className="tv-focusable"
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    color: '#fff',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '12px',
+                    fontSize: '0.9rem',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    outline: 'none'
+                  }}
+                >
+                  {t('cancel')}
+                </button>
+                <button
+                  onClick={handleAddProfile}
+                  disabled={addingLoading || !newProfileName.trim()}
+                  className="tv-focusable"
+                  style={{
+                    flex: 1.5,
+                    padding: '12px',
+                    background: addingLoading || !newProfileName.trim() ? 'rgba(255, 255, 255, 0.05)' : '#ffffff',
+                    color: addingLoading || !newProfileName.trim() ? 'rgba(255, 255, 255, 0.2)' : '#000000',
+                    border: 'none',
+                    borderRadius: '12px',
+                    fontSize: '0.9rem',
+                    fontWeight: 900,
+                    cursor: addingLoading || !newProfileName.trim() ? 'not-allowed' : 'pointer',
+                    outline: 'none'
+                  }}
+                >
+                  {addingLoading ? t('saving') : t('save_profile')}
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* TV-Optimized Profile Grid list */
+            <>
+              {/* Profiles Grid (3 columns next to each other, no scrolling) */}
+              <div 
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: '16px',
+                  width: '100%',
+                  marginTop: '110px',
+                  boxSizing: 'border-box'
+                }}
+              >
+                {profiles.map((profile, idx) => {
+                  const isFocused = idx === activeProfileIdx;
+                  const hideName = profiles.length >= 4;
+                  return (
+                    <div
+                      key={profile.id}
+                      onClick={(e) => {
+                        if (isManaging) {
+                          handleDeleteProfile(profile.id, e);
+                        } else {
+                          handleSelect(profile);
+                        }
+                      }}
+                      onFocus={() => setActiveProfileIdx(idx)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          if (isManaging) {
+                            handleDeleteProfile(profile.id, e as any);
+                          } else {
+                            handleSelect(profile);
+                          }
+                        }
+                      }}
+                      tabIndex={0}
+                      className="profile-item tv-focusable"
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '8px',
+                        borderRadius: '12px',
+                        cursor: 'pointer',
+                        outline: 'none',
+                        position: 'relative',
+                        transition: 'all 0.2s ease',
+                        boxSizing: 'border-box'
+                      }}
+                    >
+
+                      {/* Profile Avatar Card Container */}
+                      <div style={{
+                        width: '76px',
+                        height: '76px',
+                        borderRadius: '8px',
+                        overflow: 'hidden',
+                        flexShrink: 0,
+                        boxShadow: isFocused ? '0 0 0 3px #ffffff' : 'none',
+                        transform: isFocused ? 'scale(1.04)' : 'scale(1)',
+                        opacity: isFocused ? 1 : 0.5,
+                        transition: 'all 0.2s ease',
+                        border: 'none',
+                        background: '#141414',
+                        position: 'relative'
+                      }}>
+                        <img 
+                          src={profile.avatar} 
+                          alt="" 
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          onError={(e) => {
+                            const target = e.currentTarget as HTMLImageElement;
+                            target.src = `/avatars/avatar-${(idx % 6) + 1}.jpg`;
+                          }}
+                        />
+
+                        {/* TV Deletion Overlay when in Manage mode */}
+                        {isManaging && (
+                          <div style={{
+                            position: 'absolute',
+                            inset: 0,
+                            background: 'rgba(225, 29, 72, 0.8)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            zIndex: 10
+                          }}>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5">
+                              <line x1="18" y1="6" x2="6" y2="18"></line>
+                              <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Profile Name Displayed below the avatar only if 3 or fewer profiles */}
+                      {!hideName && (
+                        <span style={{
+                          fontSize: '0.9rem',
+                          fontWeight: 800,
+                          color: isFocused ? '#ffffff' : 'rgba(255, 255, 255, 0.6)',
+                          textShadow: '0 2px 4px rgba(0,0,0,0.6)',
+                          transition: 'color 0.2s ease',
+                          textAlign: 'center',
+                          maxWidth: '80px',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          {profile.name}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Action Row: Manage Profiles & Add Profile side-by-side */}
+              <div style={{ display: 'flex', gap: '12px', width: '100%', marginTop: '36px', boxSizing: 'border-box' }}>
+                {/* Manage Profiles Trigger Button */}
+                {profiles.length > 0 && localStorage.getItem('cinemovie_is_guest') !== 'true' && (() => {
+                  const isFocused = activeProfileIdx === profiles.length;
+                  return (
+                    <button
+                      onFocus={() => setActiveProfileIdx(profiles.length)}
+                      onClick={() => { triggerHaptic('medium'); setIsManaging(!isManaging); }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          triggerHaptic('medium');
+                          setIsManaging(!isManaging);
+                        }
+                      }}
+                      tabIndex={0}
+                      className="tv-focusable"
+                      style={{
+                        flex: 1,
+                        padding: '10px 16px',
+                        background: isManaging ? '#ffffff' : 'rgba(255,255,255,0.06)',
+                        color: isManaging ? '#000000' : 'rgba(255,255,255,0.6)',
+                        border: isFocused ? '1.5px solid #ffffff' : '1.5px solid rgba(255,255,255,0.1)',
+                        borderRadius: '12px',
+                        fontSize: '0.85rem',
+                        fontWeight: 900,
+                        cursor: 'pointer',
+                        letterSpacing: '0.04em',
+                        textTransform: 'uppercase',
+                        transition: 'all 0.2s ease',
+                        outline: 'none'
+                      }}
+                    >
+                      {isManaging ? 'Finish' : 'Manage'}
+                    </button>
+                  );
+                })()}
+
+                {/* Small Plus/Add Button next to Manage */}
+                {!(localStorage.getItem('cinemovie_is_guest') === 'true' && profiles.length >= 1) && (() => {
+                  const isFocused = activeProfileIdx === (profiles.length + 1);
+                  return (
+                    <button
+                      onFocus={() => setActiveProfileIdx(profiles.length + 1)}
+                      onClick={() => { triggerHaptic('light'); setIsAdding(true); }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          triggerHaptic('light');
+                          setIsAdding(true);
+                        }
+                      }}
+                      tabIndex={0}
+                      className="tv-focusable"
+                      style={{
+                        width: '42px',
+                        height: '42px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'rgba(255,255,255,0.06)',
+                        border: isFocused ? '1.5px solid #ffffff' : '1.5px solid rgba(255,255,255,0.1)',
+                        borderRadius: '12px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        outline: 'none',
+                        flexShrink: 0
+                      }}
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                      </svg>
+                    </button>
+                  );
+                })()}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Right Side: Rotating Media Poster & Details */}
+        <div style={{
+          flex: 1,
+          height: '100%',
+          position: 'relative',
+          background: '#000000',
+          zIndex: 10
+        }}>
+          {activeMedia ? (
+            <div key={activeMedia.id} style={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }}>
+              <img
+                src={`https://image.tmdb.org/t/p/w1280${activeMedia.backdrop_path}`}
+                alt=""
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  opacity: isFading ? 0 : 0.75,
+                  transition: 'opacity 0.8s ease-in-out'
+                }}
+              />
+              {/* Overlay Gradients to bind it with profiles and screen edges */}
+              <div style={{
+                position: 'absolute',
+                inset: 0,
+                background: 'linear-gradient(to right, #000000 5%, rgba(0,0,0,0.15) 35%, transparent 100%)'
+              }} />
+              <div style={{
+                position: 'absolute',
+                inset: 0,
+                background: 'linear-gradient(to bottom, transparent 55%, rgba(0,0,0,0.95) 100%)'
+              }} />
+
+              {/* Title & Metadata Details Overlay (Bottom Right) */}
+              <div style={{
+                position: 'absolute',
+                bottom: '10%',
+                right: '8%',
+                maxWidth: '600px',
+                textAlign: 'right',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-end',
+                gap: '10px',
+                zIndex: 12,
+                opacity: isFading ? 0 : 1,
+                transition: 'opacity 0.8s ease-in-out'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontSize: '0.8rem',
+                  fontWeight: 900,
+                  color: 'rgba(255,255,255,0.7)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.12em'
+                }}>
+                  <span>{activeMedia.media_type === 'tv' ? 'Series' : 'Film'}</span>
+                </div>
+
+                {/* Show Movie Graphic Logo if available, fallback to styled small text title */}
+                {activeMediaLogo ? (
+                  <img
+                    src={activeMediaLogo}
+                    alt={activeMedia.title || activeMedia.name}
+                    style={{
+                      maxHeight: '120px',
+                      maxWidth: '85%',
+                      objectFit: 'contain',
+                      margin: '12px 0',
+                      filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.8))'
+                    }}
+                  />
+                ) : (
+                  <h2 style={{
+                    margin: '4px 0 8px 0',
+                    fontSize: '2.4rem',
+                    fontWeight: 950,
+                    color: '#ffffff',
+                    lineHeight: 1.05,
+                    letterSpacing: '-1px',
+                    textShadow: '0 4px 20px rgba(0,0,0,0.95)'
+                  }}>
+                    {activeMedia.title || activeMedia.name}
+                  </h2>
+                )}
+                
+                {/* Custom formatted genre bullet points matching photo */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '0.9rem',
+                  fontWeight: 700,
+                  color: 'rgba(255,255,255,0.85)',
+                  textShadow: '0 2px 4px rgba(0,0,0,0.7)',
+                  marginBottom: '6px'
+                }}>
+                  {activeMedia.genre_ids?.slice(0, 3).map((id: number, gIdx: number) => {
+                    const gMap: Record<number, string> = {
+                      28: 'Action', 12: 'Adventure', 16: 'Animation', 35: 'Comedy', 80: 'Crime',
+                      99: 'Doc', 18: 'Drama', 10751: 'Family', 14: 'Fantasy', 36: 'History',
+                      27: 'Horror', 10402: 'Music', 9648: 'Sci-Fi Mystery', 10749: 'Romance', 878: 'Sci-Fi',
+                      10770: 'Thriller', 53: 'Thriller', 10752: 'War', 37: 'Western',
+                      10759: 'Action', 10762: 'Kids', 10765: 'Sci-Fi Mystery'
+                    };
+                    const name = gMap[id] || 'Cerebral';
+                    return (
+                      <React.Fragment key={id}>
+                        {gIdx > 0 && <span style={{ color: 'rgba(255,255,255,0.4)' }}>•</span>}
+                        <span>{name}</span>
+                      </React.Fragment>
+                    );
+                  }) || (
+                    <>
+                      <span>Mind-Bending</span>
+                      <span style={{ color: 'rgba(255,255,255,0.4)' }}>•</span>
+                      <span>Cerebral</span>
+                      <span style={{ color: 'rgba(255,255,255,0.4)' }}>•</span>
+                      <span>Sci-Fi Mystery</span>
+                    </>
+                  )}
+                </div>
+
+                <p style={{
+                  margin: 0,
+                  fontSize: '0.88rem',
+                  fontWeight: 500,
+                  color: 'rgba(255,255,255,0.65)',
+                  lineHeight: 1.5,
+                  textAlign: 'right',
+                  textShadow: '0 2px 8px rgba(0,0,0,0.95)',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 3,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  maxWidth: '480px'
+                }}>
+                  {activeMedia.overview}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div style={{
+              width: '100%',
+              height: '100%',
+              background: 'radial-gradient(circle at 75% 50%, rgba(255, 255, 255, 0.03) 0%, transparent 60%)'
+            }} />
+          )}
+        </div>
+
+        {/* Custom Profile Deletion Confirmation Drawer inside TV Mode */}
+        {deleteProfileId && (
+          <div style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.6)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100000,
+            padding: '20px',
+            animation: 'fadeInGlass 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+          }}>
+            <div style={{
+              maxWidth: '380px',
+              width: '100%',
+              background: 'rgba(20, 20, 20, 0.95)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: '24px',
+              padding: '24px',
+              boxShadow: '0 24px 80px rgba(0,0,0,0.8)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '20px',
+              textAlign: 'center'
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                <div style={{
+                  width: '64px',
+                  height: '64px',
+                  borderRadius: '16px',
+                  overflow: 'hidden',
+                  border: '2px solid rgba(255,255,255,0.1)'
+                }}>
+                  <img 
+                    src={profiles.find(p => p.id === deleteProfileId)?.avatar || ''} 
+                    alt="" 
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                  />
+                </div>
+                <div>
+                  <h3 style={{ margin: '0 0 6px', fontSize: '1.2rem', fontWeight: 900, color: '#fff', letterSpacing: '-0.02em' }}>{t('delete_profile_title')}</h3>
+                  <p style={{ margin: 0, fontSize: '0.85rem', color: 'rgba(255,255,255,0.5)', lineHeight: 1.4 }}>
+                    {t('delete_profile_confirm').replace('{name}', profiles.find(p => p.id === deleteProfileId)?.name || '')}
+                  </p>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  autoFocus
+                  onClick={() => { triggerHaptic('light'); setDeleteProfileId(null); }}
+                  className="tv-focusable"
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    borderRadius: '14px',
+                    color: '#fff',
+                    fontSize: '0.9rem',
+                    fontWeight: 800,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {t('cancel')}
+                </button>
+                <button
+                  onClick={executeDeleteProfile}
+                  className="tv-focusable"
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    background: '#e11d48',
+                    border: 'none',
+                    borderRadius: '14px',
+                    color: '#fff',
+                    fontSize: '0.9rem',
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 16px rgba(225, 29, 72, 0.3)'
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div 
@@ -513,7 +1255,7 @@ create policy "Users can delete request" on friend_requests for delete using (au
                         }}
                         className="manage-btn profile-manage-btn tv-focusable"
                     >
-                        {isManaging ? t('finish') : t('manage_profiles')}
+                      {isManaging ? t('finish') : t('manage_profiles')}
                     </button>
                 )}
               </>
@@ -526,6 +1268,9 @@ create policy "Users can delete request" on friend_requests for delete using (au
                 flexDirection: 'column',
                 alignItems: 'center',
                 gap: '2.5rem',
+                background: isTVMode ? '#000000' : 'transparent',
+                padding: isTVMode ? '40px' : '0',
+                borderRadius: '24px'
               }}>
                 <h2 className="add-profile-title" style={{
                     color: '#fff',
@@ -552,7 +1297,7 @@ create policy "Users can delete request" on friend_requests for delete using (au
                     flexDirection: 'column',
                     alignItems: 'center',
                     gap: '2rem',
-                    background: 'rgba(255, 255, 255, 0.02)',
+                    background: isTVMode ? '#09090b' : 'rgba(255, 255, 255, 0.02)',
                     border: '1px solid rgba(255, 255, 255, 0.06)',
                     borderRadius: '24px',
                     padding: '2.5rem 2rem',
@@ -566,7 +1311,18 @@ create policy "Users can delete request" on friend_requests for delete using (au
                       border: '4px solid rgba(255, 255, 255, 0.12)',
                       boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
                     }}>
-                      <img src={selectedAvatar} alt="Selected" loading="eager" decoding="sync" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                      <img 
+                        src={selectedAvatar} 
+                        alt="Selected" 
+                        loading="eager" 
+                        decoding="sync" 
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} 
+                        onError={(e) => {
+                          const target = e.currentTarget as HTMLImageElement;
+                          const fallbackId = Math.floor(Math.random() * 67) + 1;
+                          target.src = `/avatars/avatar-${fallbackId}.jpg`;
+                        }}
+                      />
                     </div>
 
                     {/* Name Input Box */}
@@ -579,6 +1335,18 @@ create policy "Users can delete request" on friend_requests for delete using (au
                         placeholder={t('profile_name')}
                         className="profile-input-tv tv-focusable"
                         tabIndex={0}
+                        style={{
+                          width: '100%',
+                          padding: '16px 20px',
+                          borderRadius: '16px',
+                          background: isTVMode ? '#141414' : 'rgba(0,0,0,0.55)',
+                          border: '1.5px solid rgba(255,255,255,0.08)',
+                          color: '#fff',
+                          fontSize: '1.15rem',
+                          fontWeight: 700,
+                          outline: 'none',
+                          boxSizing: 'border-box'
+                        }}
                       />
                     </div>
                   </div>
@@ -809,7 +1577,7 @@ const StaticStyles = React.memo(() => (
       .add-profile-btn:focus .profile-avatar-img-container {
         transform: scale(1.1) translateY(-8px) !important;
         border-color: transparent !important;
-        box-shadow: 0 25px 55px rgba(0, 0, 0, 0.95), 0 0 35px rgba(255, 255, 255, 0.18) !important;
+        box-shadow: 0 25px 55px rgba(0, 0, 0, 0.95) !important;
       }
       .profile-item:hover .profile-name,
       .profile-item:focus .profile-name {
@@ -853,6 +1621,23 @@ const StaticStyles = React.memo(() => (
       color: #000000 !important;
       transform: translateY(-3px) !important;
       box-shadow: 0 12px 30px rgba(255, 255, 255, 0.2) !important;
+    }
+
+    /* Disable global tv-focusable shadow outlines on profile items at all times */
+    body.tv-mode .profile-item.tv-focusable,
+    body.tv-mode .profile-item.tv-focusable:focus,
+    body.tv-mode .profile-item.tv-focusable:focus-within,
+    body.tv-mode .add-profile-btn.tv-focusable,
+    body.tv-mode .add-profile-btn.tv-focusable:focus,
+    body.tv-mode .add-profile-btn.tv-focusable:focus-within,
+    body.tv-mode .avatar-choice-item.tv-focusable,
+    body.tv-mode .avatar-choice-item.tv-focusable:focus,
+    body.tv-mode .avatar-choice-item.tv-focusable:focus-within {
+      box-shadow: none !important;
+      border-color: transparent !important;
+      outline: none !important;
+      border: none !important;
+      background: transparent !important;
     }
 
     /* Create Profile TV Input & Buttons */
@@ -979,6 +1764,21 @@ const StaticStyles = React.memo(() => (
         font-size: 0.9rem !important;
       }
     }
+    
+    @keyframes zoomToCenterFadeOut {
+      0% {
+        transform: scale(1);
+        opacity: 1;
+      }
+      35% {
+        transform: scale(1.1);
+        opacity: 1;
+      }
+      100% {
+        transform: scale(2.2);
+        opacity: 0;
+      }
+    }
   `}</style>
 ));
 StaticStyles.displayName = 'StaticStyles';
@@ -1037,6 +1837,11 @@ const ProfilesGrid = React.memo(({ profiles, isManaging, handleSelect, handleDel
                         src={profile.avatar} 
                         alt={profile.name}
                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        onError={(e) => {
+                          const target = e.currentTarget as HTMLImageElement;
+                          const fallbackId = Math.floor(Math.random() * 67) + 1;
+                          target.src = `/avatars/avatar-${fallbackId}.jpg`;
+                        }}
                     />
                     
                     {/* Delete Overlay */}
@@ -1177,7 +1982,18 @@ const AvatarGrid = React.memo(({ avatarOptions, selectedAvatar, setSelectedAvata
             background: '#141414',
           }}
         >
-          <img src={url} alt={`Option ${index}`} loading="eager" decoding="sync" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          <img 
+            src={url} 
+            alt={`Option ${index}`} 
+            loading="eager" 
+            decoding="sync" 
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} 
+            onError={(e) => {
+              const target = e.currentTarget as HTMLImageElement;
+              const fallbackId = Math.floor(Math.random() * 67) + 1;
+              target.src = `/avatars/avatar-${fallbackId}.jpg`;
+            }}
+          />
         </div>
       ))}
     </div>

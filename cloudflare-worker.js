@@ -81,6 +81,15 @@ async function handleProxy(request, respond, corsHeaders) {
             t = t.split('\n').map(l => (l.startsWith('#') || !l.trim()) ? l : `${origin}/proxy?url=${encodeURIComponent(l.startsWith('http') ? l : `${base}/${l}`)}&referer=${encodeURIComponent(ref || '')}`).join('\n');
             return respond(t, 200, type);
         }
-        return new Response(res.body, { status: res.status, headers: { ...corsHeaders, 'Content-Type': type } });
+        const resHeaders = {
+            ...corsHeaders,
+            'Content-Type': type,
+            'Access-Control-Expose-Headers': '*, Content-Length, Content-Range, X-Content-Length'
+        };
+        const contentLength = res.headers.get('Content-Length');
+        if (contentLength) {
+            resHeaders['X-Content-Length'] = contentLength;
+        }
+        return new Response(res.body, { status: res.status, headers: resHeaders });
     } catch (e) { return respond({ error: e.message }, 500); }
 }

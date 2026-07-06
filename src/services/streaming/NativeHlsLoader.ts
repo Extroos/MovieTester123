@@ -192,6 +192,41 @@ export function buildNativeHlsLoader(defaultLoader: any) {
 
       const { url } = context;
       let requestUrl = url;
+      const isBinary = context.responseType === 'arraybuffer';
+
+      // Bypass CapacitorHttp for local assets
+      const isLocal = url.startsWith('capacitor://') || 
+                      url.startsWith('http://localhost/') || 
+                      url.startsWith('https://localhost/') || 
+                      url.includes('_app_file_') ||
+                      url.includes('_capacitor_file_');
+      if (isLocal) {
+        this.stats.loading.start = performance.now();
+        try {
+          const res = await fetch(url);
+          if (this.aborted) return;
+          this.stats.loading.end = performance.now();
+          this.stats.loading.first = this.stats.loading.end;
+          const statusCode = res.status;
+          if (statusCode < 200 || statusCode >= 300) {
+            callbacks.onError({ code: statusCode, text: `HTTP ${statusCode}` }, context, null, this.stats);
+            return;
+          }
+          let data: string | ArrayBuffer;
+          if (isBinary) {
+            data = await res.arrayBuffer();
+          } else {
+            data = await res.text();
+          }
+          this.stats.loaded = typeof data === 'string' ? data.length : (data as ArrayBuffer).byteLength;
+          this.stats.total = this.stats.loaded;
+          callbacks.onSuccess({ data, url }, this.stats, context, null);
+        } catch (e: any) {
+          if (this.aborted) return;
+          callbacks.onError({ code: 0, text: e.message || 'Local fetch error' }, context, null, this.stats);
+        }
+        return;
+      }
       
       if (url.includes('vodvidl.site') || url.includes('vidlink')) {
         const cloudProxy = 'https://cinemovie-proxy.abderrahmanchakkouri.workers.dev';
@@ -201,7 +236,6 @@ export function buildNativeHlsLoader(defaultLoader: any) {
       }
 
       const headers = getHeadersForUrl(url);
-      const isBinary = context.responseType === 'arraybuffer';
 
       this.stats.loading.start = performance.now();
 

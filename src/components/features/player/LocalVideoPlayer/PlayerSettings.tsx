@@ -22,7 +22,8 @@ export const ALL_SERVERS: ServerOption[] = [
   { id: 'vidsrc-top', name: 'VidSrc Top', description: 'Third-party mirror — supports IMDB/TMDB inputs', badge: 'ADS', isAdFree: false }
 ];
 
-const NativeStreamingEngine = registerPlugin<any>('NativeStreamingEngine');
+import { NativeStreamingEngine } from '../../../../services/native/NativeStreamingEngine';
+import { OfflineStorageService } from '../../../../services/offline/OfflineStorageService';
 
 const IS_MOBILE_DEVICE = typeof window !== 'undefined' && /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
@@ -101,6 +102,7 @@ interface PlayerSettingsProps {
   vidlinkDiagnostics?: string | null;
   vidsrcPmDiagnostics?: string | null;
   testServerDiagnostics?: string | null;
+  currentSrc?: string;
 }
 
 const LANGUAGES = [
@@ -176,17 +178,18 @@ export const PlayerSettings = React.memo(function PlayerSettings({
   isDownloading,
   downloadProgress,
   downloadStatus,
-  handleDownloadOffline,
-  handleCancelDownload,
   setOnlineSearchError,
   setOnlineSubs,
   vidlinkDiagnostics,
-  testServerDiagnostics
+  vidsrcPmDiagnostics,
+  testServerDiagnostics,
+  currentSrc
 }: PlayerSettingsProps) {
   const [logs, setLogs] = React.useState<string[]>([]);
   const consoleContainerRef = React.useRef<HTMLDivElement>(null);
   const [clickCount, setClickCount] = React.useState(0);
   const [showConsole, setShowConsole] = React.useState(false);
+  const [subtitleDiagnostics, setSubtitleDiagnostics] = React.useState<string[]>([]);
   const [isTransitioning, setIsTransitioning] = React.useState(false);
   // OTA-controlled server list and visibility
   const [serversList, setServersList] = React.useState<ServerOption[]>(ALL_SERVERS);
@@ -283,12 +286,211 @@ export const PlayerSettings = React.memo(function PlayerSettings({
 
   if (!showSettings) return null;
 
+  if (showConsole) {
+    const FileExistenceDiagnostic = ({ itemId, isTv, s, e }: { itemId?: any, isTv: boolean, s?: number, e?: number }) => {
+      const [diskStatus, setDiskStatus] = React.useState<string>('Checking storage...');
+      const [dbStatus, setDbStatus] = React.useState<string>('Checking database...');
+      const [subtitlesCheck, setSubtitlesCheck] = React.useState<string[]>([]);
+
+      React.useEffect(() => {
+        if (!itemId) {
+          setDiskStatus('No item ID');
+          setDbStatus('No item ID');
+          return;
+        }
+        const downloadId = isTv ? `tv_${itemId}_${s}_${e}` : `movie_${itemId}`;
+        
+        try {
+          const raw = localStorage.getItem('cinemovie_downloads');
+          if (raw) {
+            const list = JSON.parse(raw);
+            const record = list.find((i: any) => i.id === downloadId);
+            if (record) {
+              setDbStatus(`Found: status=${record.status}, progress=${record.progress}%, localUrl=${record.localUrl ? record.localUrl.substring(0, 50) + '...' : 'none'}`);
+            } else {
+              setDbStatus('Not found in localStorage list');
+            }
+          } else {
+            setDbStatus('localStorage downloads list empty');
+          }
+        } catch(err: any) {
+          setDbStatus(`Error: ${err.message}`);
+        }
+
+        OfflineStorageService.exists(downloadId).then(exists => {
+          if (exists) {
+            setDiskStatus('✅ Success! Files are physically present on local storage.');
+          } else {
+            setDiskStatus('❌ Warning! Stored files could not be found in local directory.');
+          }
+        }).catch(err => {
+          setDiskStatus(`Error querying disk: ${err.message}`);
+        });
+
+        // Check subtitle files existence on disk
+        const checkSubtitles = async () => {
+          const subLines: string[] = [];
+          try {
+            const raw = localStorage.getItem('cinemovie_downloads');
+            if (raw) {
+              const list = JSON.parse(raw);
+              const record = list.find((i: any) => i.id === downloadId);
+              if (record) {
+                if (record.subtitles && Array.isArray(record.subtitles)) {
+                  if (record.subtitles.length === 0) {
+                    subLines.push('Warning: Subtitles list in download record is empty.');
+                  } else {
+                    const { Filesystem } = await import('@capacitor/filesystem');
+                    for (const sub of record.subtitles) {
+                      try {
+                        let fileAtPath = sub.file;
+                        if (fileAtPath.includes('_capacitor_file_')) {
+                          fileAtPath = fileAtPath.substring(fileAtPath.indexOf('_capacitor_file_') + 16);
+                        } else if (fileAtPath.includes('_app_file_')) {
+                          fileAtPath = fileAtPath.substring(fileAtPath.indexOf('_app_file_') + 10);
+                        }
+                        fileAtPath = decodeURIComponent(fileAtPath);
+
+                        const stat = await Filesystem.stat({ path: fileAtPath });
+                        subLines.push(`✅ Subtitle: ${sub.label} -> EXISTS (${(stat.size / 1024).toFixed(1)} KB)`);
+                      } catch (statErr: any) {
+                        subLines.push(`❌ Subtitle: ${sub.label} -> NOT FOUND ON DISK: ${statErr.message}`);
+                      }
+                    }
+                  }
+                } else {
+                  subLines.push('Warning: No subtitles field in download record.');
+                }
+              } else {
+                subLines.push('No download record found to check subtitles.');
+              }
+            }
+          } catch (e: any) {
+            subLines.push(`Error checking subtitles: ${e.message}`);
+          }
+          setSubtitlesCheck(subLines);
+        };
+        checkSubtitles();
+      }, [itemId, isTv, s, e]);
+
+      return (
+        <>
+          <div>• <strong>Storage Status:</strong> <span style={{ color: diskStatus.includes('✅') ? '#34d399' : '#f87171' }}>{diskStatus}</span></div>
+          <div style={{ wordBreak: 'break-all' }}>• <strong>DB Record:</strong> {dbStatus}</div>
+          {subtitlesCheck.length > 0 && (
+            <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '6px' }}>
+              <div style={{ color: '#60a5fa', fontWeight: 800, marginBottom: '4px' }}>Subtitle Files Diagnostics:</div>
+              {subtitlesCheck.map((line, idx) => (
+                <div key={idx} style={{ paddingLeft: '8px', color: line.startsWith('✅') ? '#34d399' : line.startsWith('❌') ? '#f87171' : 'rgba(255,255,255,0.6)' }}>
+                  {line}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      );
+    };
+
+    return (
+      <div 
+        id="player-settings-overlay"
+        className="player-settings-overlay"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          zIndex: 100010,
+          background: 'rgba(5, 5, 8, 0.96)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          display: 'flex',
+          flexDirection: 'column',
+          padding: '24px 20px calc(24px + env(safe-area-inset-bottom, 20px))',
+          color: '#fff',
+          fontFamily: 'monospace',
+          overflowY: 'auto'
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '12px', marginBottom: '16px' }}>
+          <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 900, color: '#38bdf8' }}>🔍 CineMovie Offline Diagnostics</h2>
+          <button 
+            onClick={(e) => { e.stopPropagation(); setShowConsole(false); }}
+            style={{ background: '#ef4444', border: 'none', color: '#fff', padding: '8px 16px', borderRadius: '10px', cursor: 'pointer', fontWeight: 800, fontSize: '0.8rem' }}
+          >
+            Close
+          </button>
+        </div>
+
+        {/* Offline info */}
+        <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px', fontSize: '0.78rem' }}>
+          <div style={{ color: '#38bdf8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: '0.82rem', marginBottom: '4px' }}>📁 Stored Media Information</div>
+          <div>• <strong>Offline Mode Active:</strong> {isOfflineMode ? "YES" : "NO"}</div>
+          <div>• <strong>Current Src:</strong> <span style={{ wordBreak: 'break-all', color: '#e2e8f0' }}>{currentSrc || 'None'}</span></div>
+          {item && (
+            <>
+              <div>• <strong>Item ID:</strong> {item.id}</div>
+              <div>• <strong>Title:</strong> {item.title || (item as any).name || 'Unknown'}</div>
+              {season !== undefined && episode !== undefined && (
+                <div>• <strong>Season / Episode:</strong> S{season}E{episode}</div>
+              )}
+            </>
+          )}
+          <FileExistenceDiagnostic itemId={item?.id} isTv={!!season} s={season} e={episode} />
+        </div>
+
+        {/* Player Errors / Diagnostics */}
+        <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px', fontSize: '0.78rem' }}>
+          <div style={{ color: '#fbbf24', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: '0.82rem', marginBottom: '4px' }}>⚠️ Playback Decryption & Failures</div>
+          <div>• <strong>Vidlink Diagnostics:</strong> <pre style={{ margin: '4px 0 0', whiteSpace: 'pre-wrap', color: 'rgba(255,255,255,0.7)', fontSize: '0.74rem', fontFamily: 'monospace' }}>{vidlinkDiagnostics || 'No errors registered.'}</pre></div>
+          <div>• <strong>VidSrc PM Diagnostics:</strong> <pre style={{ margin: '4px 0 0', whiteSpace: 'pre-wrap', color: 'rgba(255,255,255,0.7)', fontSize: '0.74rem', fontFamily: 'monospace' }}>{vidsrcPmDiagnostics || 'No errors registered.'}</pre></div>
+        </div>
+
+        {/* Console Logs */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '200px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ color: '#10b981', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: '0.82rem' }}>📜 Native Plugin Console Logs</span>
+            <button 
+              onClick={async (e) => {
+                e.stopPropagation();
+                try {
+                  await NativeStreamingEngine.clearNativeLogs();
+                  setLogs([]);
+                } catch(err){}
+              }}
+              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 700 }}
+            >
+              Clear Logs
+            </button>
+          </div>
+          <div 
+            ref={consoleContainerRef}
+            style={{
+              flex: 1,
+              background: '#020204',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '12px',
+              padding: '12px',
+              overflowY: 'auto',
+              fontSize: '0.72rem',
+              lineHeight: 1.4,
+              color: '#34d399',
+              whiteSpace: 'pre-wrap'
+            }}
+          >
+            {logs.length === 0 ? "No logs captured yet..." : logs.join('\n')}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div 
+      id="player-settings-overlay"
+      className="player-settings-overlay"
       style={{ 
         position: 'absolute', 
         inset: 0, 
-        zIndex: 10020, 
+        zIndex: 100005, 
         background: IS_MOBILE_DEVICE ? 'rgba(0, 0, 0, 0.75)' : 'rgba(0, 0, 0, 0.6)', 
         backdropFilter: IS_MOBILE_DEVICE ? 'none' : 'blur(8px)',
         WebkitBackdropFilter: IS_MOBILE_DEVICE ? 'none' : 'blur(8px)',
@@ -381,7 +583,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
 
         <div className="settings-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h3 onClick={handleTitleClick} onTouchStart={handleTitleClick} style={{ margin: 0, color: '#fff', fontSize: '1.1rem', fontWeight: 800, letterSpacing: '-0.02em', cursor: 'pointer', userSelect: 'none', padding: '6px 12px', border: '1.5px dashed rgba(255,255,255,0.25)', borderRadius: '8px', background: 'rgba(255,255,255,0.02)', display: 'inline-block' }}>Player Options</h3>
-          <button onClick={() => setShowSettings(false)} style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '5px 12px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>Done</button>
+          <button className="tv-focusable" tabIndex={0} onClick={() => setShowSettings(false)} style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '5px 12px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>Done</button>
         </div>
 
         {/* Horizontally scrollable and non-wrapping Tab bar optimized for 360px screen */}
@@ -406,7 +608,8 @@ export const PlayerSettings = React.memo(function PlayerSettings({
           ].filter(t => t.show).map(tab => (
             <button
               key={tab.id}
-              className="settings-tab-btn"
+              className="settings-tab-btn tv-focusable"
+              tabIndex={0}
               onClick={() => handleTabClick(tab.id)}
               style={{
                 flexShrink: 0,
@@ -475,7 +678,8 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                     {visibleServers.filter(s => s.isAdFree).map((srv) => (
                       <div key={srv.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <button
-                          className="server-card"
+                          className="server-card tv-focusable"
+                          tabIndex={0}
                           onClick={() => handleServerChange(srv.id as any)}
                           style={{
                             display: 'flex',
@@ -534,7 +738,8 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                     {visibleServers.filter(s => !s.isAdFree).map((srv) => (
                       <button
                         key={srv.id}
-                        className="server-card"
+                        className="server-card tv-focusable"
+                        tabIndex={0}
                         onClick={() => handleServerChange(srv.id as any)}
                         style={{
                           display: 'flex',
@@ -575,118 +780,6 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                       </button>
                     ))}
                   </div>
-
-
-
-                  {showConsole && (
-                    <div style={{
-                      marginTop: '16px',
-                      background: '#0d0d0d',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: '12px',
-                      padding: '12px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '8px'
-                    }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '0.74rem', fontWeight: 800, color: '#fb7185', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          Native Engine Logs (Real-time Console)
-                        </span>
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                          <button
-                            onClick={async () => {
-                              try {
-                                if (navigator.clipboard) {
-                                  await navigator.clipboard.writeText(logs.join('\n'));
-                                } else {
-                                  throw new Error('Clipboard API unavailable');
-                                }
-                                alert('Logs copied to clipboard!');
-                              } catch (e) {
-                                const textArea = document.createElement("textarea");
-                                textArea.value = logs.join('\n');
-                                document.body.appendChild(textArea);
-                                textArea.select();
-                                document.execCommand("copy");
-                                document.body.removeChild(textArea);
-                                alert('Logs copied to clipboard!');
-                              }
-                            }}
-                            style={{
-                              background: 'rgba(255,255,255,0.06)',
-                              border: 'none',
-                              color: 'rgba(255,255,255,0.6)',
-                              fontSize: '0.66rem',
-                              fontWeight: 700,
-                              padding: '4px 8px',
-                              borderRadius: '6px',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            Copy Logs
-                          </button>
-                          <button
-                            onClick={async () => {
-                              try {
-                                await NativeStreamingEngine.clearNativeLogs();
-                                setLogs([]);
-                              } catch (e) {}
-                            }}
-                            style={{
-                              background: 'rgba(255,255,255,0.06)',
-                              border: 'none',
-                              color: 'rgba(255,255,255,0.6)',
-                              fontSize: '0.66rem',
-                              fontWeight: 700,
-                              padding: '4px 8px',
-                              borderRadius: '6px',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            Clear Console
-                          </button>
-                        </div>
-                      </div>
-                      <div 
-                        ref={consoleContainerRef}
-                        style={{
-                          height: '140px',
-                          overflowY: 'auto',
-                          background: '#050505',
-                          borderRadius: '8px',
-                          padding: '8px',
-                          fontFamily: 'monospace',
-                          fontSize: '0.68rem',
-                          color: '#34d399',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '4px',
-                          boxShadow: 'inset 0 0 10px rgba(0,0,0,0.8)'
-                        }}
-                      >
-                        {logs.length === 0 ? (
-                          <div style={{ color: 'rgba(255,255,255,0.3)', fontStyle: 'italic', textAlign: 'center', marginTop: '40px' }}>
-                            No logs generated yet. Select a native scraper to begin.
-                          </div>
-                        ) : (
-                          logs.map((log, index) => {
-                            let color = '#34d399'; // green for default
-                            if (log.includes('Failed') || log.includes('error') || log.includes('crash') || log.includes('HTTP 4') || log.includes('HTTP 5')) {
-                              color = '#f87171'; // red for errors
-                            } else if (log.includes('Fetch') || log.includes('request') || log.includes('proxyFetch')) {
-                              color = '#60a5fa'; // blue for requests
-                            }
-                            return (
-                              <div key={index} style={{ color, wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>
-                                {log}
-                              </div>
-                            );
-                          })
-                        )}
-                      </div>
-                    </div>
-                  )}
 
                   <div style={{
                     marginTop: '20px',

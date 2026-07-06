@@ -133,8 +133,10 @@ html, body, #root, .no-scrollbar, .hide-scrollbar {
   touch-action: pan-x pan-y;
   overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
+  /* Removed permanent will-change: transform — this was allocating a dedicated GPU
+     compositor layer for every content row (10+ rows = 10+ wasted layers in VRAM).
+     The browser auto-promotes during active scroll/transition already. */
   transform: translate3d(0, 0, 0);
-  will-change: transform;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
 }
@@ -226,8 +228,11 @@ html, body, #root, .no-scrollbar, .hide-scrollbar {
 }
 
 @keyframes backdropFadeBlur {
-  from { opacity: 0; backdrop-filter: blur(0) saturate(100%); }
-  to { opacity: 1; backdrop-filter: blur(25px) saturate(200%); }
+  /* Only animate opacity — backdrop-filter cannot be GPU-composited and animating it
+     causes janky non-composited paint on every frame. The blur stays constant at its
+     final value and only the visibility fades in. */
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes inputSlideIn {
@@ -373,6 +378,10 @@ html, body, #root, .no-scrollbar, .hide-scrollbar {
     min-width: 140px;
     width: 140px;
   }
+}
+body.tv-mode .responsive-movie-card {
+  min-width: 175px !important;
+  width: 175px !important;
 }
 
 /* Pure CSS hover for content cards — zero JS state changes */
@@ -889,7 +898,7 @@ video::cue {
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
               border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1),
               box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  will-change: transform;
+  /* Removed will-change: transform — hover-only effect, browser auto-promotes during active transition */
   transform: translate3d(0,0,0);
 }
 @media (hover: hover) and (pointer: fine) {
@@ -908,7 +917,6 @@ video::cue {
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
               border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1),
               box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  will-change: transform;
   transform: translate3d(0,0,0);
 }
 @media (hover: hover) and (pointer: fine) {
@@ -927,7 +935,6 @@ video::cue {
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
               border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1),
               box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  will-change: transform;
   transform: translate3d(0,0,0);
 }
 @media (hover: hover) and (pointer: fine) {
@@ -944,7 +951,6 @@ video::cue {
 /* See All Button Hover */
 .see-all-btn {
   transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), background 0.25s ease;
-  will-change: transform;
 }
 @media (hover: hover) and (pointer: fine) {
   .see-all-btn:hover {
@@ -955,7 +961,7 @@ video::cue {
 
 /* Server selector option buttons inside dialog popovers */
 .stream-selector-btn {
-  transition: all 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease;
 }
 @media (hover: hover) and (pointer: fine) {
   .stream-selector-btn:not(:disabled):hover {
@@ -966,7 +972,7 @@ video::cue {
 
 /* Hero primary CTA button */
 .hero-action-btn-primary {
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 @media (hover: hover) and (pointer: fine) {
   .hero-action-btn-primary:hover {
@@ -977,7 +983,7 @@ video::cue {
 
 /* Hero secondary CTA button */
 .hero-action-btn-secondary {
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: background 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 @media (hover: hover) and (pointer: fine) {
   .hero-action-btn-secondary:hover {
@@ -988,7 +994,7 @@ video::cue {
 
 /* Hero circular button (Info) */
 .hero-action-btn-circle {
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: background 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 @media (hover: hover) and (pointer: fine) {
   .hero-action-btn-circle:hover {
@@ -1059,7 +1065,6 @@ video::cue {
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
               border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1),
               box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  will-change: transform;
   transform: translate3d(0, 0, 0);
 }
 @media (hover: hover) and (pointer: fine) {
@@ -1746,4 +1751,112 @@ video::cue {
 .settings-profile-login-btn:active {
   transform: scale(0.97) translate3d(0,0,0) !important;
 }
+
+.tv-focusable {
+  outline: none !important;
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.15s ease, box-shadow 0.15s ease !important;
+  /* Removed permanent will-change: transform — applied to hundreds of elements simultaneously,
+     this was creating a GPU compositor layer per card (200+ layers = massive VRAM pressure).
+     The browser promotes automatically during active focus transitions. */
+}
+
+body.tv-mode .tv-focusable:focus,
+body.tv-mode .tv-focusable:focus-within,
+body.tv-mode .tv-focusable:focus-visible {
+  outline: none !important;
+  border-color: #ffffff !important;
+  box-shadow: 0 0 16px rgba(255, 255, 255, 0.35) !important;
+  transform: scale(1.04) translate3d(0, 0, 0) !important;
+  z-index: 10 !important;
+}
+
+/* Specific button focus states to keep solid colors intact (prevents white buttons from turning transparent) */
+button.tv-focusable:focus,
+button.tv-focusable:focus-visible {
+  background-color: inherit;
+}
+
+.cinemovie-header-nav-btn {
+  border-radius: 20px !important;
+  transition: none !important;
+}
+
+.cinemovie-header-nav-btn.tv-focusable:focus,
+.cinemovie-header-profile-btn.tv-focusable:focus,
+.cinemovie-header-search-btn.tv-focusable:focus,
+.cinemovie-header-nav-btn.tv-focusable:focus-visible,
+.cinemovie-header-profile-btn.tv-focusable:focus-visible,
+.cinemovie-header-search-btn.tv-focusable:focus-visible {
+  border-color: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  transition: none !important;
+}
+
+.cinemovie-header-profile-btn.tv-focusable:focus,
+.cinemovie-header-profile-btn.tv-focusable:focus-visible {
+  transform: none !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+.cinemovie-header-search-btn.tv-focusable:focus,
+.cinemovie-header-search-btn.tv-focusable:focus-visible {
+  transform: none !important;
+  box-shadow: none !important;
+  border: none !important;
+  color: #ffffff !important;
+}
+
+.cinemovie-header-nav-btn.tv-focusable:focus {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  border-radius: 20px !important;
+  padding: 6px 16px !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* Disable focus scale, borders, and box shadow on TV search input */
+body.tv-mode input.tv-focusable:focus,
+body.tv-mode input.tv-focusable:focus-within,
+body.tv-mode input.tv-focusable:focus-visible {
+  transform: none !important;
+  box-shadow: none !important;
+  border-color: transparent !important;
+  border: none !important;
+  outline: none !important;
+}
+
+/* Poster and Card Specific Focus States */
+body.tv-mode .movie-card.tv-focusable:focus,
+body.tv-mode .movie-card.tv-focusable:focus-visible {
+  border: 3px solid #ffffff !important;
+  box-shadow: 0 0 24px rgba(255, 255, 255, 0.5) !important;
+  transform: scale(1.08) translate3d(0, 0, 0) !important;
+  border-radius: inherit !important;
+}
+
+body.tv-mode .search-grid-card.tv-focusable:focus,
+body.tv-mode .search-result-row.tv-focusable:focus {
+  border: 3.5px solid #ffffff !important;
+  box-shadow: 0 0 24px rgba(255, 255, 255, 0.5) !important;
+  transform: scale(1.05) translate3d(0, 0, 0) !important;
+  z-index: 15 !important;
+  border-radius: inherit !important;
+}
+
+/* Disable blurry round shadow lighting for profile selector items specifically */
+body.tv-mode .profile-item.tv-focusable:focus,
+body.tv-mode .profile-item.tv-focusable:focus-within,
+body.tv-mode .profile-item.tv-focusable:focus-visible,
+body.tv-mode .add-profile-btn.tv-focusable:focus,
+body.tv-mode .add-profile-btn.tv-focusable:focus-within,
+body.tv-mode .add-profile-btn.tv-focusable:focus-visible {
+  box-shadow: none !important;
+  border-color: transparent !important;
+  outline: none !important;
+}
+
 
