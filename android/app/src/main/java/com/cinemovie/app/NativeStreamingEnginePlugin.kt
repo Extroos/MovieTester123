@@ -1329,6 +1329,38 @@ class NativeStreamingEnginePlugin : Plugin() {
         call.resolve()
     }
 
+    @PluginMethod
+    fun lockToSensorLandscape(call: PluginCall) {
+        activity.runOnUiThread {
+            try {
+                activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                call.resolve()
+            } catch (e: Exception) {
+                addLog("[Engine] lockToSensorLandscape error: ${e.message}")
+                call.reject(e.message)
+            }
+        }
+    }
+
+    @PluginMethod
+    fun restoreOrientation(call: PluginCall) {
+        activity.runOnUiThread {
+            try {
+                val uiModeManager = context.getSystemService(android.content.Context.UI_MODE_SERVICE) as? android.app.UiModeManager
+                val isTv = uiModeManager?.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+                activity.requestedOrientation = if (isTv) {
+                    android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                } else {
+                    android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                }
+                call.resolve()
+            } catch (e: Exception) {
+                addLog("[Engine] restoreOrientation error: ${e.message}")
+                call.reject(e.message)
+            }
+        }
+    }
+
     private fun proxyFetch(targetUrl: String, referer: String = "", origin: String = ""): String {
         addLog("proxyFetch request: url = $targetUrl")
         val reqBuilder = okhttp3.Request.Builder().url(targetUrl)

@@ -539,19 +539,22 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
                     await StatusBar.setOverlaysWebView({ overlay: true }).catch(() => {});
                 }
             }
-            
-            // 2. Lock Orientation
+                    // 2. Lock Orientation to Landscape with Sensor Auto-Rotation
             if (!isTVMode() && (isMobile || isNative) && isMountedRef.current) {
                 if (isNative) {
                     try {
-                        const { ScreenOrientation } = await import('@capacitor/screen-orientation');
-                        if (isMountedRef.current) {
-                            await (ScreenOrientation as any).lock({ orientation: 'landscape' }).catch(() => {});
-                        }
+                        await NativeStreamingEngine.lockToSensorLandscape().catch(() => {});
                     } catch (e) {
-                         if (isMountedRef.current && (screen.orientation as any)?.lock) {
-                             await (screen.orientation as any).lock('landscape').catch(() => {});
-                         }
+                        try {
+                            const { ScreenOrientation } = await import('@capacitor/screen-orientation');
+                            if (isMountedRef.current) {
+                                await (ScreenOrientation as any).lock({ orientation: 'landscape' }).catch(() => {});
+                            }
+                        } catch (err) {
+                             if (isMountedRef.current && (screen.orientation as any)?.lock) {
+                                 await (screen.orientation as any).lock('landscape').catch(() => {});
+                             }
+                        }
                     }
                 } else if (isMountedRef.current && (screen.orientation as any)?.lock) {
                     await (screen.orientation as any).lock('landscape').catch(() => {});
@@ -622,14 +625,18 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
             } else if (isNative) {
                 const lockToPortrait = async () => {
                     try {
-                        const { ScreenOrientation } = await import('@capacitor/screen-orientation');
-                        await (ScreenOrientation as any).lock({ orientation: 'portrait' }).catch(() => {});
+                        await NativeStreamingEngine.restoreOrientation().catch(() => {});
                     } catch (e) {
                         try {
-                            if (screen.orientation && (screen.orientation as any).lock) {
-                                await (screen.orientation as any).lock('portrait').catch(() => {});
-                            }
-                        } catch (webErr) {}
+                            const { ScreenOrientation } = await import('@capacitor/screen-orientation');
+                            await (ScreenOrientation as any).lock({ orientation: 'portrait' }).catch(() => {});
+                        } catch (err) {
+                            try {
+                                if (screen.orientation && (screen.orientation as any).lock) {
+                                    await (screen.orientation as any).lock('portrait').catch(() => {});
+                                }
+                            } catch (webErr) {}
+                        }
                     }
                 };
                 lockToPortrait();
