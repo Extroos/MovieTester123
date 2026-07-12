@@ -727,8 +727,8 @@ class NativeStreamingEnginePlugin : Plugin() {
                 val embedConfig = remoteConfig.optJSONObject("embed_urls") ?: org.json.JSONObject()
                 val headersConfig = remoteConfig.optJSONObject("headers") ?: org.json.JSONObject()
 
-                val referer = headersConfig.optString("vidsrc_pm_referer", "https://brightpathsignals.com/")
-                val origin  = headersConfig.optString("vidsrc_pm_origin",  "https://brightpathsignals.com")
+                val referer = headersConfig.optString("vidsrc_pm_referer", "https://nextgencloudfabric.com/")
+                val origin  = headersConfig.optString("vidsrc_pm_origin",  "https://nextgencloudfabric.com")
 
                 // Build ordered gateway list from OTA config; fall back to hardcoded defaults
                 val gateways = mutableListOf<String>()
@@ -1157,10 +1157,19 @@ class NativeStreamingEnginePlugin : Plugin() {
             targetUrl.contains("/WnVM9YFN1/")
         )
 
-        if (!isVidsrcPmCdn) {
+        val isApiOrGateway = (
+            targetUrl.contains("api.themoviedb.org") ||
+            targetUrl.contains("vaplayer.ru") ||
+            targetUrl.contains("api.vaplayer.ru") ||
+            targetUrl.contains("data.vaplayer.ru") ||
+            targetUrl.contains("streamdata.vaplayer.ru")
+        )
+
+        if (!isVidsrcPmCdn && !isApiOrGateway) {
             if (refToUse.isNotEmpty()) reqBuilder.addHeader("Referer", refToUse)
             if (origToUse.isNotEmpty()) reqBuilder.addHeader("Origin", origToUse)
         }
+        
         
         reqBuilder.addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 13; SM-S901B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36")
         reqBuilder.addHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
