@@ -1213,7 +1213,7 @@ class NativeStreamingEnginePlugin : Plugin() {
         try {
             val type = if (isTv) "tv" else "movie"
             val url = "https://api.themoviedb.org/3/$type/$tmdbId/external_ids?api_key=8265bd1679663a7ea12ac168da84d2e8"
-            val jsonStr = proxyFetch(url, "https://google.com/")
+            val jsonStr = proxyFetch(url, "https://nextgencloudfabric.com/", "https://nextgencloudfabric.com")
             val jsonObj = org.json.JSONObject(jsonStr)
             val imdbId = jsonObj.optString("imdb_id")
             if (imdbId != null && imdbId.startsWith("tt")) {
