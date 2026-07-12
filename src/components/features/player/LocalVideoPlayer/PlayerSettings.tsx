@@ -564,15 +564,15 @@ export const PlayerSettings = React.memo(function PlayerSettings({
           borderTopRightRadius: '20px', 
           border: '1px solid rgba(255,255,255,0.09)',
           borderBottom: 'none',
-          padding: '14px 14px calc(14px + env(safe-area-inset-bottom, 0px))', 
+          padding: '10px 12px calc(10px + env(safe-area-inset-bottom, 0px))', 
           width: '100%', 
           maxWidth: '520px', 
-          maxHeight: '82vh', 
+          maxHeight: '78vh', 
           overflowY: 'auto',
           animation: 'slideUpGlass 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
           display: 'flex',
           flexDirection: 'column',
-          gap: '10px',
+          gap: '8px',
           scrollbarWidth: 'none',
           msOverflowStyle: 'none'
         }} 
@@ -581,7 +581,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
         <div style={{ width: '36px', height: '4px', background: 'rgba(255,255,255,0.18)', borderRadius: '2px', alignSelf: 'center', marginBottom: '-4px' }} />
 
         <div className="settings-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 onClick={handleTitleClick} onTouchStart={handleTitleClick} style={{ margin: 0, color: '#fff', fontSize: '1.1rem', fontWeight: 800, letterSpacing: '-0.02em', cursor: 'pointer', userSelect: 'none', padding: '6px 12px', border: '1.5px dashed rgba(255,255,255,0.25)', borderRadius: '8px', background: 'rgba(255,255,255,0.02)', display: 'inline-block' }}>Player Options</h3>
+          <h3 onClick={handleTitleClick} onTouchStart={handleTitleClick} style={{ margin: 0, color: '#fff', fontSize: '0.95rem', fontWeight: 800, letterSpacing: '-0.02em', cursor: 'pointer', userSelect: 'none', padding: '4px 10px', border: '1.5px dashed rgba(255,255,255,0.25)', borderRadius: '8px', background: 'rgba(255,255,255,0.02)', display: 'inline-block' }}>Player Options</h3>
           <button className="tv-focusable" tabIndex={0} onClick={() => setShowSettings(false)} style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '5px 12px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>Done</button>
         </div>
 
@@ -628,11 +628,11 @@ export const PlayerSettings = React.memo(function PlayerSettings({
           ))}
         </div>
 
-        <div className="player-settings-content" style={{ flex: 1, overflowY: 'auto', maxHeight: '68vh', paddingBottom: '16px', scrollbarWidth: 'none', pointerEvents: isTransitioning ? 'none' : 'auto' }}>
+        <div className="player-settings-content" style={{ flex: 1, overflowY: 'auto', maxHeight: '72vh', paddingBottom: '8px', scrollbarWidth: 'none', pointerEvents: isTransitioning ? 'none' : 'auto' }}>
           {settingsTab === 'servers' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {isSwitchingServer && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
                   <div style={{ 
                     width: '18px', height: '18px', 
                     border: '2px solid rgba(255,255,255,0.2)', borderTopColor: '#ffffff', 
@@ -1623,7 +1623,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                 </div>
               )}
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', maxHeight: '25vh' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', overflowY: 'auto', maxHeight: '38vh' }}>
                 {onlineSubs.map((sub, i) => (
                   <button
                     key={i}
@@ -1633,22 +1633,22 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                       width: '100%',
                       display: 'flex',
                       flexDirection: 'column',
-                      gap: '4px',
-                      padding: '12px 16px',
+                      gap: '2px',
+                      padding: '8px 12px',
                       background: 'rgba(255,255,255,0.03)',
                       border: '1px solid rgba(255,255,255,0.06)',
-                      borderRadius: '12px',
+                      borderRadius: '8px',
                       color: '#fff',
                       textAlign: 'left',
                       cursor: 'pointer',
                       transition: 'all 0.15s',
                     }}
                   >
-                    <span style={{ fontWeight: 700, fontSize: '0.85rem', wordBreak: 'break-all' }}>{sub.name || sub.fileName}</span>
-                    <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span>Language: {sub.language || (LANGUAGES.find(l => l.code === searchLang)?.name)}</span>
+                    <span style={{ fontWeight: 600, fontSize: '0.75rem', wordBreak: 'break-all', lineHeight: 1.3 }}>{sub.name || sub.fileName}</span>
+                    <span style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.5)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span>Lang: {sub.language || (LANGUAGES.find(l => l.code === searchLang)?.name)}</span>
                       {sub.rating !== undefined && sub.rating > 0 && (
-                        <span>Rating: {sub.rating} ★</span>
+                        <span>{sub.rating} ★</span>
                       )}
                     </span>
                   </button>

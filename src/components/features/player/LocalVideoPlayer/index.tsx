@@ -1752,14 +1752,20 @@ export default function LocalVideoPlayer({
     setSearchingSubs(true);
     setOnlineSearchError(null);
     try {
-      const localServer = getLocalServerUrl();
+      const localServer = await getNativeProxyBaseUrl();
       let downloadUrl = '';
       let headers: Record<string, string> = {};
       const provider = providerOverride || onlineProvider;
       const targetLang = langOverride || searchLang;
       
       if (provider === 'yify') {
-        downloadUrl = `${localServer}/movies/yts-subtitles/download?link=${encodeURIComponent(sub.link)}`;
+        // On Android, sub.link is already a full native proxy URL (e.g. http://localhost:8000/unzip-to-vtt?...)
+        // Fetch it directly; on PC build the server URL
+        if (sub.link && (sub.link.startsWith('http://localhost') || sub.link.startsWith('http://127.0.0.1'))) {
+          downloadUrl = sub.link;
+        } else {
+          downloadUrl = `${localServer}/movies/yts-subtitles/download?link=${encodeURIComponent(sub.link)}`;
+        }
       } else if (provider === 'subdl') {
         if (!subdlKey.trim()) throw new Error('SubDL API Key is required.');
         downloadUrl = `${localServer}/subtitles/subdl/download?link=${encodeURIComponent(sub.link)}`;
@@ -1782,7 +1788,12 @@ export default function LocalVideoPlayer({
           }
         }
         if (!token) throw new Error('Credentials required to download.');
-        downloadUrl = `${localServer}/subtitles/opensubtitles/download?fileId=${sub.id}`;
+        // If sub.link is already a full native localhost URL (Android), use it directly
+        if (sub.link && (sub.link.startsWith('http://localhost') || sub.link.startsWith('http://127.0.0.1'))) {
+          downloadUrl = sub.link;
+        } else {
+          downloadUrl = `${localServer}/subtitles/opensubtitles/download?fileId=${sub.id}`;
+        }
         headers = { 'x-api-key': apiKey.trim(), 'x-auth-token': token };
       }
       
