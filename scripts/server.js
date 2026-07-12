@@ -493,9 +493,9 @@ app.get('/movies/yts-subtitles/:imdbId', async (req, res) => {
   const { imdbId } = req.params;
   console.log(`[Server] YTS Subtitles Search: ${imdbId}`);
   try {
-    const response = await fetch(`https://yts-subs.com/movie-imdb/${imdbId}`, {
+    const response = await fetch(`https://yifysubtitles.ch/movie-imdb/${imdbId}`, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
       }
     });
     if (!response.ok) {
