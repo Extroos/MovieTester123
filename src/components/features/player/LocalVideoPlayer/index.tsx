@@ -661,9 +661,9 @@ export default function LocalVideoPlayer({
               isM3U8: s.isM3U8
             })),
             subtitles: (nativeRes.subtitles || []).map((s: any) => ({
-              url: s.url,
-              label: s.lang || 'Unknown',
-              lang: s.lang || 'Unknown',
+              url: s.url || s.file || '',
+              label: s.lang || s.label || 'Unknown',
+              lang: s.lang || s.label || 'Unknown',
               isBackup: !!s.isBackup
             }))
           };
@@ -713,9 +713,9 @@ export default function LocalVideoPlayer({
               isM3U8: s.isM3U8
             })),
             subtitles: (nativeRes.subtitles || []).map((s: any) => ({
-              url: s.url,
-              label: s.lang || 'Unknown',
-              lang: s.lang || 'Unknown',
+              url: s.url || s.file || '',
+              label: s.lang || s.label || 'Unknown',
+              lang: s.lang || s.label || 'Unknown',
               isBackup: !!s.isBackup
             }))
           };
@@ -2215,10 +2215,9 @@ export default function LocalVideoPlayer({
               setServerCurrentQuality(prev => ({ ...prev, [selectedServer]: -1 }));
             }
 
-            // Populate subtitles
             if (nativeRes.subtitles && Array.isArray(nativeRes.subtitles) && nativeRes.subtitles.length > 0) {
               const newTracks = nativeRes.subtitles.map((sub: any) => ({
-                file: sub.url,
+                file: sub.url || sub.file || '',
                 label: sub.label || sub.lang || 'Unknown',
                 kind: 'subtitles',
                 default: (sub.lang || '').toLowerCase().includes('english') && !sub.isBackup,
