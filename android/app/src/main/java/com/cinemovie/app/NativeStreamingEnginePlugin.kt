@@ -1113,6 +1113,20 @@ class NativeStreamingEnginePlugin : Plugin() {
         val pkHost = try { java.net.URI(pkUrl).host ?: "embed.vidsrc.pk" } catch(e: Exception) { "embed.vidsrc.pk" }
         val fyiHost = try { java.net.URI(fyiUrl).host ?: "vidsrc.fyi" } catch(e: Exception) { "vidsrc.fyi" }
 
+        // Explicitly set nextgencloudfabric headers for TMDB or VidSrc PM gateway requests to ensure they pass
+        val isApiOrGateway = (
+            targetUrl.contains("api.themoviedb.org") ||
+            targetUrl.contains("vaplayer.ru") ||
+            targetUrl.contains("api.vaplayer.ru") ||
+            targetUrl.contains("data.vaplayer.ru") ||
+            targetUrl.contains("streamdata.vaplayer.ru")
+        )
+
+        if (isApiOrGateway) {
+            refToUse = "https://nextgencloudfabric.com/"
+            origToUse = "https://nextgencloudfabric.com"
+        }
+
         if (refToUse.isEmpty()) {
             if (targetUrl.contains(wtfHost)) {
                 refToUse = if (wtfUrl.endsWith("/")) wtfUrl else "$wtfUrl/"
@@ -1160,15 +1174,8 @@ class NativeStreamingEnginePlugin : Plugin() {
             targetUrl.contains("/WnVM9YFN1/")
         )
 
-        val isApiOrGateway = (
-            targetUrl.contains("api.themoviedb.org") ||
-            targetUrl.contains("vaplayer.ru") ||
-            targetUrl.contains("api.vaplayer.ru") ||
-            targetUrl.contains("data.vaplayer.ru") ||
-            targetUrl.contains("streamdata.vaplayer.ru")
-        )
-
-        if (!isVidsrcPmCdn && !isApiOrGateway) {
+        // Only inject headers if it's not a token-authed CDN segment (CDNs reject custom referer headers)
+        if (!isVidsrcPmCdn) {
             if (refToUse.isNotEmpty()) reqBuilder.addHeader("Referer", refToUse)
             if (origToUse.isNotEmpty()) reqBuilder.addHeader("Origin", origToUse)
         }
