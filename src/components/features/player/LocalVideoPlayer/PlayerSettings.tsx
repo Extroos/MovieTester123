@@ -961,13 +961,40 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                       Official Server Subtitles
                     </div>
                     {officialTracks.length === 0 ? (
-                      <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.8rem', padding: '8px', textAlign: 'left' }}>
-                        No official subtitles returned by this server.
+                      <div style={{ padding: '8px 0' }}>
+                        <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.8rem', marginBottom: '8px', textAlign: 'left' }}>
+                          No official subtitles returned by this server.
+                        </div>
+                        <button
+                          onClick={() => {
+                            // Switches tab state to online search inside parent component
+                            setIsSearchingOnline(true);
+                          }}
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.08)',
+                            color: '#ffffff',
+                            border: '1px solid rgba(255, 255, 255, 0.15)',
+                            borderRadius: '8px',
+                            padding: '8px 14px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            fontSize: '0.8rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                          </svg>
+                          Search Subtitles Online
+                        </button>
                       </div>
                     ) : (
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '8px' }}>
                         {localTracks.map((track, i) => {
-                          if (track.isBackup) return null;
+                          if (isTrackBackup(track)) return null;
                           const isLoading = loadingSubtitleIndex === i;
                           const isActive = activeTrackIndex === i;
                           return (
@@ -1000,7 +1027,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                                 }} />
                               )}
                               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '120px' }}>
-                                {track.label || `Track ${i+1}`}
+                                  {track.label || `Track ${i+1}`}
                               </span>
                             </button>
                           );
@@ -1019,7 +1046,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                     ) : (
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '8px' }}>
                         {localTracks.map((track, i) => {
-                          if (!track.isBackup) return null;
+                          if (!isTrackBackup(track)) return null;
                           const isLoading = loadingSubtitleIndex === i;
                           const isActive = activeTrackIndex === i;
                           return (
