@@ -1113,13 +1113,14 @@ class NativeStreamingEnginePlugin : Plugin() {
         val pkHost = try { java.net.URI(pkUrl).host ?: "embed.vidsrc.pk" } catch(e: Exception) { "embed.vidsrc.pk" }
         val fyiHost = try { java.net.URI(fyiUrl).host ?: "vidsrc.fyi" } catch(e: Exception) { "vidsrc.fyi" }
 
-        // Explicitly set nextgencloudfabric headers for TMDB or VidSrc PM gateway requests to ensure they pass
+        // Explicitly set nextgencloudfabric headers for TMDB, VidSrc PM gateways, or subtitle CDN domains to ensure they pass
         val isApiOrGateway = (
             targetUrl.contains("api.themoviedb.org") ||
             targetUrl.contains("vaplayer.ru") ||
             targetUrl.contains("api.vaplayer.ru") ||
             targetUrl.contains("data.vaplayer.ru") ||
-            targetUrl.contains("streamdata.vaplayer.ru")
+            targetUrl.contains("streamdata.vaplayer.ru") ||
+            targetUrl.contains("vidapi.cloud")
         )
 
         if (isApiOrGateway) {
@@ -1389,22 +1390,9 @@ class NativeStreamingEnginePlugin : Plugin() {
             }
             if (targetUrl.isEmpty()) throw Exception("Missing url param")
 
-            addLog("[Proxy] Converting subtitle to VTT: $targetUrl")
-
-            val req = Request.Builder()
-                .url(targetUrl)
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36")
-                .build()
-
-            val response = client.newCall(req).execute()
-            if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
-
-            val bytes = response.body?.bytes() ?: throw Exception("Empty response body")
-            val subtitleText = try {
-                String(bytes, Charsets.UTF_8)
-            } catch (_: Exception) {
-                String(bytes, Charsets.ISO_8859_1)
-            }
+            val responseStr = proxyFetch(targetUrl)
+            val bytes = responseStr.toByteArray(Charsets.UTF_8)
+            val subtitleText = String(bytes, Charsets.UTF_8)
 
             var vttContent = subtitleText
             if (!vttContent.trim().startsWith("WEBVTT")) {
