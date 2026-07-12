@@ -1688,7 +1688,12 @@ export default function LocalVideoPlayer({
       }
     } catch (e: any) {
       console.error('[LocalVideoPlayer] Online subtitle search error:', e);
-      setOnlineSearchError(e.message || 'An error occurred while searching.');
+      let errMsg = e.message || String(e);
+      if (errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError') || errMsg.includes('TypeError: Load failed')) {
+        const localServer = getLocalServerUrl();
+        errMsg = `Connection Error: Failed to contact local server at "${localServer}". Ensure the server application is running on this device. Details: ${errMsg}`;
+      }
+      setOnlineSearchError(errMsg);
       return [];
     } finally {
       setSearchingSubs(false);
