@@ -121,8 +121,7 @@ class NativeStreamingEnginePlugin : Plugin() {
     }
 
     private fun getCachedConfig(): String? {
-        val prefs = context.getSharedPreferences("CineMovieOTA", android.content.Context.MODE_PRIVATE)
-        return prefs.getString("cached_config", null)
+        return null
     }
 
     private fun setCachedConfig(json: String) {
@@ -162,7 +161,11 @@ class NativeStreamingEnginePlugin : Plugin() {
             val url = getOtaConfigUrl()
             addLog("[OTA] Fetching remote config from: $url")
             try {
-                val req = Request.Builder().url(url).build()
+                val req = Request.Builder()
+                    .url(url)
+                    .header("Cache-Control", "no-cache")
+                    .header("Pragma", "no-cache")
+                    .build()
                 val response = client.newCall(req).execute()
                 if (response.isSuccessful) {
                     val body = response.body?.string()
