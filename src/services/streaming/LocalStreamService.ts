@@ -1,5 +1,5 @@
 import { Capacitor } from '@capacitor/core';
-import { scrapeVidlinkStream, scrapeVidsrcPmStream, scrapeVidzeeStream } from './ClientScraperService';
+import { scrapeVidsrcPmStream, scrapeVidzeeStream } from './ClientScraperService';
 import { NativeStreamingEngine } from '../native/NativeStreamingEngine';
 
 
@@ -138,7 +138,7 @@ export async function resolveMovieStream(
   imdbId?: string,
   server?: string
 ): Promise<LocalStreamResult | null> {
-  const selectedServer = server || (typeof localStorage !== 'undefined' ? localStorage.getItem('selected_server') : 'vidlink-pro') || 'vidlink-pro';
+  const selectedServer = server || (typeof localStorage !== 'undefined' ? localStorage.getItem('selected_server') : 'vidsrc-pm') || 'vidsrc-pm';
   const localServer = getLocalServerUrl();
   const isLocalHost = !localServer || localServer.includes('localhost') || localServer.includes('127.0.0.1');
   const runClientScrapers = Capacitor.isNativePlatform() && isLocalHost;
@@ -212,56 +212,7 @@ export async function resolveMovieStream(
         }
       } catch (e: any) {
         console.warn(`[LocalStream] Client-side Vidzee movie resolution failed: ${e.message}`);
-      }
-    }
-
-    // Attempt 1: Vidlink
-    try {
-      const vidlinkId = String(tmdbId).startsWith('tt') ? '' : String(tmdbId);
-      if (vidlinkId) {
-        let result;
-        if (Capacitor.isNativePlatform()) {
-          console.log(`[LocalStream] Resolving Vidlink movie natively on Android...`);
-          const nativeRes = await NativeStreamingEngine.resolveVidlink({
-            tmdbId: vidlinkId,
-            type: 'movie',
-            season: 1,
-            episode: 1
-          });
-          result = {
-            sources: (nativeRes.sources || []).map((s: any) => ({
-              url: s.url,
-              quality: s.quality || 'auto',
-              isM3U8: s.isM3U8
-            })),
-            subtitles: (nativeRes.subtitles || []).map((s: any) => ({
-              url: s.url,
-              lang: s.lang || 'Unknown'
-            }))
-          };
-        } else {
-          result = await scrapeVidlinkStream(vidlinkId, 'movie');
-        }
-
-        if (result && result.sources && result.sources.length > 0) {
-          const bestSource = result.sources[0];
-          const subs = (result.subtitles || []).map((s: any) => ({
-            file: s.url,
-            label: s.lang || 'Unknown',
-            kind: 'subtitles',
-            default: (s.lang || '').toLowerCase().includes('english')
-          }));
-          return {
-            streamUrl: bestSource.url,
-            type: bestSource.isM3U8 ? 'm3u8' : 'mp4',
-            quality: bestSource.quality || 'auto',
-            subtitles: subs,
-            provider: 'client/vidlink'
-          };
-        }
-      }
-    } catch (e: any) {
-      console.warn(`[LocalStream] Client-side Vidlink movie resolution failed: ${e.message}`);
+      };
     }
 
     // Attempt 2: VidSrc PM Fallback
@@ -289,32 +240,6 @@ export async function resolveMovieStream(
     }
 
 
-    // Attempt 3: General Vidlink Fallback (uses NativeHlsLoader for Referer on segments)
-    try {
-      const vidlinkId = String(tmdbId).startsWith('tt') ? '' : String(tmdbId);
-      if (vidlinkId) {
-        console.log(`[LocalStream] Resolving via native general Vidlink fallback...`);
-        const result = await scrapeVidlinkStream(vidlinkId, 'movie', 1, 1);
-        if (result && result.sources && result.sources.length > 0) {
-          const bestSource = result.sources[0];
-          const subs = (result.subtitles || []).map((s: any) => ({
-            file: s.url,
-            label: s.lang || 'Unknown',
-            kind: 'subtitles',
-            default: (s.lang || '').toLowerCase().includes('english')
-          }));
-          return {
-            streamUrl: bestSource.url,
-            type: bestSource.isM3U8 ? 'm3u8' : 'mp4',
-            quality: bestSource.quality || 'auto',
-            subtitles: subs,
-            provider: 'client/vidlink-general'
-          };
-        }
-      }
-    } catch (e: any) {
-      console.warn(`[LocalStream] Client-side general Vidlink movie fallback failed: ${e.message}`);
-    }
   }
 
   const base = getLocalServerUrl();
@@ -361,7 +286,7 @@ export async function resolveTVStream(
   episode: number,
   server?: string
 ): Promise<LocalStreamResult | null> {
-  const selectedServer = server || (typeof localStorage !== 'undefined' ? localStorage.getItem('selected_server') : 'vidlink-pro') || 'vidlink-pro';
+  const selectedServer = server || (typeof localStorage !== 'undefined' ? localStorage.getItem('selected_server') : 'vidsrc-pm') || 'vidsrc-pm';
   const localServer = getLocalServerUrl();
   const isLocalHost = !localServer || localServer.includes('localhost') || localServer.includes('127.0.0.1');
   const runClientScrapers = Capacitor.isNativePlatform() && isLocalHost;
@@ -437,52 +362,6 @@ export async function resolveTVStream(
       }
     }
 
-    // Attempt 1: Vidlink
-    try {
-      let result;
-      if (Capacitor.isNativePlatform()) {
-        console.log(`[LocalStream] Resolving Vidlink TV S${season}E${episode} natively on Android...`);
-        const nativeRes = await NativeStreamingEngine.resolveVidlink({
-          tmdbId: String(tmdbId),
-          type: 'tv',
-          season: season,
-          episode: episode
-        });
-        result = {
-          sources: (nativeRes.sources || []).map((s: any) => ({
-            url: s.url,
-            quality: s.quality || 'auto',
-            isM3U8: s.isM3U8
-          })),
-          subtitles: (nativeRes.subtitles || []).map((s: any) => ({
-            url: s.url,
-            lang: s.lang || 'Unknown'
-          }))
-        };
-      } else {
-        result = await scrapeVidlinkStream(String(tmdbId), 'tv', season, episode);
-      }
-
-      if (result && result.sources && result.sources.length > 0) {
-        const bestSource = result.sources[0];
-        const subs = (result.subtitles || []).map((s: any) => ({
-          file: s.url,
-          label: s.lang || 'Unknown',
-          kind: 'subtitles',
-          default: (s.lang || '').toLowerCase().includes('english')
-        }));
-        return {
-          streamUrl: bestSource.url,
-          type: bestSource.isM3U8 ? 'm3u8' : 'mp4',
-          quality: bestSource.quality || 'auto',
-          subtitles: subs,
-          provider: 'client/vidlink'
-        };
-      }
-    } catch (e: any) {
-      console.warn(`[LocalStream] Client-side TV Vidlink resolution failed: ${e.message}`);
-    }
-
     // Attempt 2: VidSrc PM Fallback
     try {
       console.log(`[LocalStream] Resolving via native VidSrc PM fallback for TV S${season}E${episode}...`);
@@ -505,31 +384,6 @@ export async function resolveTVStream(
       }
     } catch (e: any) {
       console.warn(`[LocalStream] Client-side VidSrc PM TV fallback failed: ${e.message}`);
-    }
-
-
-    // Attempt 3: General Vidlink Fallback (uses NativeHlsLoader for Referer on segments)
-    try {
-      console.log(`[LocalStream] Resolving via native general Vidlink fallback for TV S${season}E${episode}...`);
-      const result = await scrapeVidlinkStream(String(tmdbId), 'tv', season, episode);
-      if (result && result.sources && result.sources.length > 0) {
-        const bestSource = result.sources[0];
-        const subs = (result.subtitles || []).map((s: any) => ({
-          file: s.url,
-          label: s.lang || 'Unknown',
-          kind: 'subtitles',
-          default: (s.lang || '').toLowerCase().includes('english')
-        }));
-        return {
-          streamUrl: bestSource.url,
-          type: bestSource.isM3U8 ? 'm3u8' : 'mp4',
-          quality: bestSource.quality || 'auto',
-          subtitles: subs,
-          provider: 'client/vidlink-general'
-        };
-      }
-    } catch (e: any) {
-      console.warn(`[LocalStream] Client-side general Vidlink TV fallback failed: ${e.message}`);
     }
   }
 

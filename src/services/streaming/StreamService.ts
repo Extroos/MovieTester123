@@ -18,76 +18,46 @@ export const StreamService = {
    */
   async resolve(tmdbId: number | string, type: 'movie' | 'tv', season?: number, episode?: number): Promise<StreamResult | null> {
     try {
-      console.log(`[StreamService] Resolving ${type} (ID: ${tmdbId}) for TV...`);
-
-      // Use local proxy to bypass CORS
-      // The Cloudflare worker at /proxy handles the actual fetching and CORS headers.
-      const proxy = (url: string) => `/proxy?url=${encodeURIComponent(url)}&referer=${encodeURIComponent('https://vidsrc.icu/')}`;
-
-      // Provider List (Optimized for 2025)
-      const providers = [
-        `https://vidsrc.icu/api/source`,
-        `https://vidsrc-embed.ru/api/source`,
-        `https://vidsrc.cc/api/source`,
-        `https://vidsrc.xyz/api/source`,
-        `https://vidsrc.stream/api/source`,
-        `https://consumet-api-smosh.vercel.app/meta/tmdb/watch`,
-      ];
-
-      for (const base of providers) {
-        let url = '';
-        if (base.includes('consumet')) {
-           url = type === 'movie' ? `${base}/${tmdbId}?type=movie` : `${base}/${tmdbId}?type=tv&s=${season}&e=${episode}`;
-        } else {
-           url = `${base}/${tmdbId}`;
-        }
-
-        const proxiedUrl = proxy(url);
-        console.log(`[StreamService] Resolving via: ${base}`);
-
-        try {
-          const res = await fetch(proxiedUrl, { signal: AbortSignal.timeout(8000) }).catch(() => null);
-          
-          if (res && res.ok) {
-            const text = await res.text();
-            
-            // Advanced Source Detection: Look for .m3u8 pattern in any format
-            // This handles different JSON structures and even some plain text responses
-            const m3u8Match = text.match(/"(https?:\/\/[^"]+\.m3u8[^"]*)"/);
-            
-            if (m3u8Match) {
-              const streamUrl = m3u8Match[1].replace(/\\/g, ''); // Clean escaped slashes
-              console.log('[StreamService] Success! Resolved via:', base);
-              
-              // Try to find subtitles if possible
-              let subs: any[] = [];
-              try {
-                const data = JSON.parse(text);
-                subs = (data.subtitles || data.result?.subtitles || data.data?.subtitles || []);
-              } catch (e) {}
-
-              return {
-                source: streamUrl,
-                subtitles: subs.map((sub: any) => ({
-                  file: sub.url || sub.file,
-                  label: sub.lang || sub.label || 'English',
-                  kind: 'subtitles',
-                  default: (sub.lang || sub.label)?.toLowerCase().includes('en')
-                }))
-              };
-            }
+      console.log(`[StreamService] Resolving ${type} (ID: ${tmdbId}) for TV dynamically...`);
+      const { getLocalServerUrl } = await import('./LocalStreamService');
+      const localServer = getLocalServerUrl();
+      
+      const selectedServer = (typeof localStorage !== 'undefined' ? localStorage.getItem('selected_server') : 'vidsrc-pm') || 'vidsrc-pm';
+      const isTv = type === 'tv';
+      
+      // Call local Express JIT watch route
+      const query = type === 'tv'
+        ? `?type=tv&s=${season || 1}&e=${episode || 1}&server=${selectedServer}`
+        : `?type=movie&server=${selectedServer}`;
+      
+      const watchUrl = `${localServer}/meta/tmdb/watch/${tmdbId}${query}`;
+      console.log(`[StreamService] Querying play-on-demand watch url: ${watchUrl}`);
+      
+      try {
+        const res = await fetch(watchUrl, { signal: AbortSignal.timeout(12000) });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.sources && data.sources.length > 0) {
+            console.log('[StreamService] Successfully resolved JIT play-on-demand stream URL');
+            return {
+              source: data.sources[0].url,
+              subtitles: (data.subtitles || []).map((sub: any) => ({
+                file: sub.url,
+                label: sub.lang || 'English',
+                kind: 'subtitles',
+                default: (sub.lang || '').toLowerCase().includes('en')
+              }))
+            };
           }
-        } catch (e) {
-          console.warn(`[StreamService] Mirror ${base} failed.`);
         }
+      } catch (err: any) {
+        console.warn(`[StreamService] Play-on-demand watch resolver failed: ${err.message}`);
       }
-
-      console.warn('[StreamService] All resolution attempts failed.');
+      
       return null;
     } catch (error) {
-      console.error('[StreamService] Critical error during resolution:', error);
+      console.error('[StreamService] Critical error during play-on-demand resolution:', error);
       return null;
     }
   }
 };
-

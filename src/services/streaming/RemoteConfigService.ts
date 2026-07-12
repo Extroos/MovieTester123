@@ -10,23 +10,24 @@ import localConfig from '../../../config.json';
 
 const CONFIG_URL_KEY = 'cinemovie_ota_config_url';
 const CONFIG_CACHE_KEY = 'cinemovie_ota_config_cache';
-const CONFIG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CONFIG_CACHE_TTL = 2 * 60 * 1000; // 2 minutes — fast propagation when CDN rotates
 const CONFIG_CACHE_TS_KEY = 'cinemovie_ota_config_cache_ts';
 
 const DEFAULT_CONFIG_URL = 'https://raw.githubusercontent.com/Extroos/MovieTester123/main/config.json';
 
 // Toggle to enable/disable remote OTA configuration fetching from GitHub.
-// Set to 'false' to use the local bundled config.json file for testing.
-export const ENABLE_REMOTE_OTA = false;
+// Enabled: gateways, headers and server lists can be hotfixed via a GitHub push
+// without needing to redeploy the app.
+export const ENABLE_REMOTE_OTA = true;
 
 interface GatewayConfig {
-  vidlink: string;
+  vidlink?: string;
   cloudnestra: string;
   vidsrc_wtf: string;
   vidsrc_sbs: string;
   vidsrc_pk: string;
   vidsrc_fyi: string;
-  [key: string]: string;
+  [key: string]: string | undefined;
 }
 
 interface RemoteConfig {
@@ -37,8 +38,8 @@ interface RemoteConfig {
 }
 
 const DEFAULT_GATEWAYS: GatewayConfig = {
-  vidlink: 'https://vidlink.pro',
   cloudnestra: 'https://cloudnestra.com',
+  vidsrc_pm: 'https://streamdata.vaplayer.ru',
   vidsrc_wtf: 'https://vidsrc.wtf',
   vidsrc_sbs: 'https://vidsrc.sbs',
   vidsrc_pk: 'https://embed.vidsrc.pk',

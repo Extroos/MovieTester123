@@ -38,14 +38,6 @@ export function getHeadersForUrl(url: string): Record<string, string> {
     }
   }
 
-  if (url.includes('vodvidl.site') || url.includes('vidlink')) {
-    return {
-      'User-Agent': ua,
-      'Referer': 'https://vidlink.pro/',
-      'Origin': 'https://vidlink.pro',
-      'Accept': '*/*',
-    };
-  }
   if (
     url.includes('cloudnestra') ||
     url.includes('yonderunyielding') ||

@@ -49,34 +49,32 @@ class NativeStreamingEnginePlugin : Plugin() {
     private var proxyServer: java.net.ServerSocket? = null
     private var proxyRunning = false
     private var proxyPort = 8000
-    private val ENABLE_REMOTE_OTA = false
+    private val ENABLE_REMOTE_OTA = true
     // Track which CDN domains have already had Cloudflare warmed up this session
     private val cfWarmedDomains = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
     private val defaultConfigJson = """
     {
       "gateways": {
-        "vidlink": "https://vidlink.pro",
         "cloudnestra": "https://cloudnestra.com",
         "vidsrc_pm": "https://streamdata.vaplayer.ru",
         "vidsrc_wtf": "https://vidsrc.wtf",
         "vidsrc_sbs": "https://vidsrc.sbs",
         "vidsrc_pk": "https://embed.vidsrc.pk",
-        "vidsrc_fyi": "https://vidsrc.fyi"
+        "vidsrc_fyi": "https://vidsrc.fyi",
+        "vidzee": "https://player.vidzee.wtf",
+        "vidzee_core": "https://core.vidzee.wtf",
+        "vidsrc_top": "https://vid-src.top"
       },
       "embed_urls": {
         "vidsrc_pm_gateways": [
-          "https://streamdata.vaplayer.ru"
+          "https://streamdata.vaplayer.ru",
+          "https://api.vaplayer.ru",
+          "https://data.vaplayer.ru"
         ],
         "vidsrc_pm_fallback": "https://streamdata.vaplayer.ru/api.php?tmdb={id}&type={type}{tv_params}",
         "vidsrc_pm_movie": "https://streamdata.vaplayer.ru/api.php?tmdb={id}&type=movie",
-        "vidsrc_pm_tv": "https://streamdata.vaplayer.ru/api.php?tmdb={id}&type=tv&season={season}&episode={episode}",
-        "vidlink_gateways": [
-          "https://vidlink.pro",
-          "https://vidlink.me",
-          "https://vidlink.org",
-          "https://vidlink.net"
-        ]
+        "vidsrc_pm_tv": "https://streamdata.vaplayer.ru/api.php?tmdb={id}&type=tv&season={season}&episode={episode}"
       },
       "stream_patterns": [
         ".m3u8",
@@ -92,10 +90,8 @@ class NativeStreamingEnginePlugin : Plugin() {
         "yts_subtitles_ch": "https://yifysubtitles.ch"
       },
       "headers": {
-        "vidlink_referer": "https://vidlink.pro/",
-        "vidlink_origin": "https://vidlink.pro",
-        "vidsrc_pm_referer": "https://brightpathsignals.com/",
-        "vidsrc_pm_origin": "https://brightpathsignals.com",
+        "vidsrc_pm_referer": "https://nextgencloudfabric.com/",
+        "vidsrc_pm_origin": "https://nextgencloudfabric.com",
         "cloudnestra_referer": "https://cloudnestra.com/",
         "cloudnestra_origin": "https://cloudnestra.com",
         "vidsrc_wtf_referer": "https://vidsrc.wtf/",
@@ -107,9 +103,7 @@ class NativeStreamingEnginePlugin : Plugin() {
         "vidsrc_fyi_referer": "https://vidsrc.fyi/",
         "vidsrc_fyi_origin": "https://vidsrc.fyi",
         "vidsrc_me_referer": "https://vidsrc.me/",
-        "vidsrc_me_origin": "https://vidsrc.me",
-        "brightpath_referer": "https://brightpathsignals.com/",
-        "brightpath_origin": "https://brightpathsignals.com"
+        "vidsrc_me_origin": "https://vidsrc.me"
       }
     }
     """.trimIndent()
@@ -432,9 +426,7 @@ class NativeStreamingEnginePlugin : Plugin() {
             var origToUse = origin
 
             if (refToUse.isEmpty()) {
-                refToUse = if (targetUrlStr.contains("vodvidl.site") || targetUrlStr.contains("vidlink")) {
-                    "https://vidlink.pro/"
-                } else if (targetUrlStr.contains("cloudnestra") || targetUrlStr.contains("yonderunyielding")) {
+                refToUse = if (targetUrlStr.contains("cloudnestra") || targetUrlStr.contains("yonderunyielding")) {
                     "https://cloudnestra.com/"
                 } else if (targetUrlStr.contains("vidsrc.wtf")) {
                     "https://vidsrc.wtf/"
@@ -447,14 +439,12 @@ class NativeStreamingEnginePlugin : Plugin() {
                 } else if (targetUrlStr.contains("vidsrc")) {
                     "https://vidsrc.me/"
                 } else {
-                    "https://vidlink.pro/"
+                    "https://brightpathsignals.com/"
                 }
             }
 
             if (origToUse.isEmpty()) {
-                origToUse = if (targetUrlStr.contains("vodvidl.site") || targetUrlStr.contains("vidlink")) {
-                    "https://vidlink.pro"
-                } else if (targetUrlStr.contains("cloudnestra") || targetUrlStr.contains("yonderunyielding")) {
+                origToUse = if (targetUrlStr.contains("cloudnestra") || targetUrlStr.contains("yonderunyielding")) {
                     "https://cloudnestra.com"
                 } else if (targetUrlStr.contains("vidsrc.wtf")) {
                     "https://vidsrc.wtf"
@@ -467,7 +457,7 @@ class NativeStreamingEnginePlugin : Plugin() {
                 } else if (targetUrlStr.contains("vidsrc")) {
                     "https://vidsrc.me"
                 } else {
-                    "https://vidlink.pro"
+                    "https://brightpathsignals.com"
                 }
             }
 
@@ -875,282 +865,7 @@ class NativeStreamingEnginePlugin : Plugin() {
         }
     }
 
-    @PluginMethod
-    fun resolveVidlink(call: PluginCall) {
-        val tmdbId = call.getString("tmdbId") ?: return call.reject("Missing tmdbId")
-        val imdbId = call.getString("imdbId") ?: ""
-        val type = call.getString("type") ?: "movie"
-        val season = call.getInt("season") ?: 1
-        val episode = call.getInt("episode") ?: 1
-        val isTv = type == "tv"
 
-        addLog("[Vidlink] Starting native API resolution for $tmdbId ($type)")
-        scope.launch {
-            try {
-                // 1. Get encrypted token using QuickJS
-                val token = jsEngine.runExtractor("vidlink_encrypt", tmdbId, "")
-                if (token.isEmpty() || token.contains("error")) {
-                    throw Exception("Failed to encrypt token: $token")
-                }
-                addLog("[Vidlink] Generated encrypted token: $token")
-
-                // 2. Fetch gateways from config
-                val config = remoteConfig.optJSONObject("embed_urls") ?: org.json.JSONObject()
-                val gateways = mutableListOf<String>()
-                val gatewaysArr = config.optJSONArray("vidlink_gateways")
-                if (gatewaysArr != null) {
-                    for (i in 0 until gatewaysArr.length()) {
-                        gateways.add(gatewaysArr.getString(i))
-                    }
-                }
-                if (gateways.isEmpty()) {
-                    gateways.add("https://vidlink.pro")
-                    gateways.add("https://vidlink.me")
-                    gateways.add("https://vidlink.org")
-                    gateways.add("https://vidlink.net")
-                }
-
-                val headersConfig = remoteConfig.optJSONObject("headers") ?: org.json.JSONObject()
-                val referer = headersConfig.optString("vidlink_referer", "https://vidlink.pro/")
-                val origin = headersConfig.optString("vidlink_origin", "https://vidlink.pro")
-
-                var successJson: org.json.JSONObject? = null
-                var successGateway = ""
-                var contentUnavailable = false
-
-                for (gw in gateways) {
-                    if (contentUnavailable) break
-                    val url = if (isTv) {
-                        "$gw/api/b/tv/$token/$season/$episode?multiLang=1"
-                    } else {
-                        "$gw/api/b/movie/$token?multiLang=1"
-                    }
-                    addLog("[Vidlink] Trying gateway: $url")
-                    try {
-                        val responseStr = proxyFetch(url, referer, origin)
-                        // Empty body means this content ID is not indexed by Vidlink at all - no point trying other gateways
-                        if (responseStr.isBlank()) {
-                            addLog("[Vidlink] Gateway $gw returned empty body - content not available on Vidlink, aborting gateway loop")
-                            contentUnavailable = true
-                            break
-                        }
-                        // HTML response means gateway is parked/broken - skip but still try others
-                        if (responseStr.trimStart().startsWith("<")) {
-                            addLog("[Vidlink] Gateway $gw returned HTML, skipping")
-                            continue
-                        }
-                        val resObj = org.json.JSONObject(responseStr)
-                        if (resObj.has("stream")) {
-                            successJson = resObj
-                            successGateway = gw
-                            break
-                        }
-                    } catch (e: Exception) {
-                        addLog("[Vidlink] Gateway $gw failed: ${e.message}")
-                    }
-                }
-
-                if (successJson == null) {
-                    // Fall back to VidSrc PM API (streamdata.vaplayer.ru) before giving up entirely
-                    addLog("[Vidlink] All gateways failed, falling back to VidSrc PM API...")
-                    try {
-                        val pmUrl = if (isTv) {
-                            "https://streamdata.vaplayer.ru/api.php?tmdb=$tmdbId&type=tv&season=$season&episode=$episode"
-                        } else {
-                            "https://streamdata.vaplayer.ru/api.php?tmdb=$tmdbId&type=movie"
-                        }
-                        val pmReferer = "https://brightpathsignals.com/"
-                        val pmOrigin = "https://brightpathsignals.com"
-                        val pmStr = proxyFetch(pmUrl, pmReferer, pmOrigin)
-                        val pmObj = org.json.JSONObject(pmStr)
-                        val pmData = pmObj.optJSONObject("data") ?: pmObj
-                        // The vaplayer API returns stream_urls as a plain array of identical adaptive
-                        // HLS master URLs (different CDN mirrors of the same stream). Use only the
-                        // first one — HLS.js ABR will handle quality selection internally.
-                        val pmStreamUrls = pmData.optJSONArray("stream_urls") ?: org.json.JSONArray()
-                        val pmSubsList = pmObj.optJSONArray("default_subs") ?: pmData.optJSONArray("default_subs") ?: org.json.JSONArray()
-
-                        val fbSourcesArr = JSArray()
-                        // Only add the first adaptive master URL — do NOT add all 4 mirrors with fake
-                        // quality labels; that causes wrong URL to play when user taps a quality button.
-                        val bestUrl = pmStreamUrls.optString(0, "")
-                        if (bestUrl.isNotEmpty()) {
-                            // Warm up Cloudflare for the CDN domain before returning the URL
-                            try { warmUpCdnDomain(bestUrl) } catch (e: Exception) {
-                                addLog("[Vidlink] CF warmup error (non-fatal): ${e.message}")
-                            }
-                            fbSourcesArr.put(JSObject().apply {
-                                put("url", "http://localhost:$proxyPort/local-proxy?url=${java.net.URLEncoder.encode(bestUrl, "UTF-8")}&referer=${java.net.URLEncoder.encode(pmReferer, "UTF-8")}&origin=${java.net.URLEncoder.encode(pmOrigin, "UTF-8")}")
-                                put("quality", "auto")
-                                put("isM3U8", bestUrl.contains(".m3u8"))
-                            })
-                        }
-                        val fbSubsArr = JSArray()
-                        for (j in 0 until pmSubsList.length()) {
-                            val sub = pmSubsList.optJSONObject(j) ?: continue
-                            val subUrl = sub.optString("url", sub.optString("file", ""))
-                            val subLang = sub.optString("lang", sub.optString("label", "English"))
-                            if (subUrl.isNotEmpty()) {
-                                val resolvedSubUrl = if (subUrl.endsWith(".zip") || subUrl.contains(".zip?")) {
-                                    "http://localhost:$proxyPort/unzip-to-vtt?url=${java.net.URLEncoder.encode(subUrl, "UTF-8")}"
-                                } else {
-                                    "http://localhost:$proxyPort/convert-to-vtt?url=${java.net.URLEncoder.encode(subUrl, "UTF-8")}"
-                                }
-                                fbSubsArr.put(JSObject().apply {
-                                    put("url", resolvedSubUrl)
-                                    put("lang", subLang)
-                                })
-                            }
-                        }
-
-                        if (fbSourcesArr.length() > 0) {
-                            addLog("[Vidlink] VidSrc PM fallback resolved: ${fbSourcesArr.length()} adaptive HLS source(s)")
-                            val fbResponse = JSObject().apply {
-                                put("sources", fbSourcesArr)
-                                put("subtitles", fbSubsArr)
-                                put("errors", JSArray())
-                            }
-                            call.resolve(fbResponse)
-                            return@launch
-                        }
-                    } catch (e2: Exception) {
-                        addLog("[Vidlink] VidSrc PM fallback also failed: ${e2.message}")
-                    }
-                    throw Exception("Failed to resolve from any Vidlink gateway or VidSrc PM fallback")
-                }
-
-                // 3. Format response
-                val streamObj = successJson.optJSONObject("stream") ?: org.json.JSONObject()
-                val playlist = streamObj.optString("playlist", "")
-                val sourcesArr = JSArray()
-
-                if (playlist.isNotEmpty()) {
-                    sourcesArr.put(JSObject().apply {
-                        put("url", "http://localhost:$proxyPort/local-proxy?url=${java.net.URLEncoder.encode(playlist, "UTF-8")}&referer=${java.net.URLEncoder.encode(referer, "UTF-8")}&origin=${java.net.URLEncoder.encode(origin, "UTF-8")}")
-                        put("quality", "auto")
-                        put("isM3U8", true)
-                    })
-                } else {
-                    val qualitiesObj = streamObj.optJSONObject("qualities")
-                    if (qualitiesObj != null) {
-                        val keysList = mutableListOf<String>()
-                        val keys = qualitiesObj.keys()
-                        while (keys.hasNext()) {
-                            keysList.add(keys.next())
-                        }
-                        // Sort keys by quality number descending (e.g. 1080, 720, 360)
-                        keysList.sortByDescending { key ->
-                            key.filter { it.isDigit() }.toIntOrNull() ?: 0
-                        }
-                        for (key in keysList) {
-                            val qObj = qualitiesObj.optJSONObject(key)
-                            if (qObj != null) {
-                                val qUrl = qObj.optString("url", "")
-                                val qType = qObj.optString("type", "")
-                                if (qUrl.isNotEmpty()) {
-                                    val cleanedUrl = qUrl.replace("\\/", "/")
-                                    sourcesArr.put(JSObject().apply {
-                                        put("url", "http://localhost:$proxyPort/local-proxy?url=${java.net.URLEncoder.encode(cleanedUrl, "UTF-8")}&referer=${java.net.URLEncoder.encode(referer, "UTF-8")}&origin=${java.net.URLEncoder.encode(origin, "UTF-8")}")
-                                        put("quality", key)
-                                        put("isM3U8", qType == "hls" || cleanedUrl.contains(".m3u8"))
-                                    })
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if (sourcesArr.length() == 0) {
-                    throw Exception("No stream sources found in Vidlink response")
-                }
-
-                val subsArr = JSArray()
-                val captionsList = successJson.optJSONArray("captions")
-                    ?: streamObj.optJSONArray("captions")
-                    ?: successJson.optJSONArray("subtitles")
-                    ?: streamObj.optJSONArray("subtitles")
-                    ?: org.json.JSONArray()
-                for (i in 0 until captionsList.length()) {
-                    val c = captionsList.optJSONObject(i) ?: continue
-                    var subUrl = c.optString("url", c.optString("file", ""))
-                    val subLang = c.optString("language", c.optString("lang", c.optString("label", "Unknown")))
-                    if (subUrl.isNotEmpty()) {
-                        if (!subUrl.startsWith("http://") && !subUrl.startsWith("https://")) {
-                            if (subUrl.startsWith("//")) {
-                                subUrl = "https:$subUrl"
-                            } else if (subUrl.startsWith("/")) {
-                                subUrl = "$successGateway$subUrl"
-                            } else {
-                                subUrl = "$successGateway/$subUrl"
-                            }
-                        }
-                        val subType = c.optString("type", "").lowercase()
-                        val isSrt = subType == "srt" || subUrl.contains(".srt") || subUrl.contains(".srt?")
-                        val resolvedSubUrl = if (isSrt) {
-                            "http://localhost:$proxyPort/convert-to-vtt?url=${java.net.URLEncoder.encode(subUrl, "UTF-8")}"
-                        } else {
-                            "http://localhost:$proxyPort/local-proxy?url=${java.net.URLEncoder.encode(subUrl, "UTF-8")}&referer=${java.net.URLEncoder.encode(referer, "UTF-8")}&origin=${java.net.URLEncoder.encode(origin, "UTF-8")}"
-                        }
-                        subsArr.put(JSObject().apply {
-                            put("url", resolvedSubUrl)
-                            put("lang", subLang)
-                        })
-                    }
-                }
-                
-                // Fetch backup subtitles: YTS for movies, Vidsrc PM for TV shows
-                try {
-                    if (isTv) {
-                        addLog("[Vidlink] Scraping Vidsrc PM backup subtitles for TV Show (TMDb: $tmdbId, S$season E$episode)...")
-                        val pmUrlResolved = "https://streamdata.vaplayer.ru/api.php?tmdb=$tmdbId&type=tv&season=$season&episode=$episode"
-                        val jsonStr = proxyFetch(pmUrlResolved, "https://brightpathsignals.com/", "https://brightpathsignals.com")
-                        val dataObj = org.json.JSONObject(jsonStr)
-                        val streamData = dataObj.optJSONObject("data") ?: org.json.JSONObject()
-                        val subsList = dataObj.optJSONArray("default_subs") ?: streamData.optJSONArray("default_subs") ?: org.json.JSONArray()
-                        for (j in 0 until subsList.length()) {
-                            val sub = subsList.optJSONObject(j) ?: continue
-                            val subUrl = sub.optString("url", sub.optString("file", ""))
-                            val subLang = sub.optString("lang", sub.optString("label", "English"))
-                            if (subUrl.isNotEmpty()) {
-                                val resolvedSubUrl = if (subUrl.endsWith(".zip") || subUrl.contains(".zip?")) {
-                                    "http://localhost:$proxyPort/unzip-to-vtt?url=${java.net.URLEncoder.encode(subUrl, "UTF-8")}"
-                                } else {
-                                    "http://localhost:$proxyPort/convert-to-vtt?url=${java.net.URLEncoder.encode(subUrl, "UTF-8")}"
-                                }
-                                subsArr.put(JSObject().apply {
-                                    put("url", resolvedSubUrl)
-                                    put("lang", "$subLang (Vidsrc)")
-                                    put("isBackup", true)
-                                })
-                            }
-                        }
-                    } else {
-                        val imdbIdResolved = if (imdbId.isNotEmpty()) imdbId else fetchImdbId(tmdbId, isTv)
-                        if (imdbIdResolved != null && imdbIdResolved.isNotEmpty()) {
-                            addLog("[Vidlink] Scraping YTS backup subtitles for IMDB: $imdbIdResolved...")
-                            val ytsSubs = scrapeYtsSubtitles(imdbIdResolved)
-                            for (j in 0 until ytsSubs.length()) {
-                                subsArr.put(ytsSubs.get(j))
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    addLog("[Vidlink] Backup subtitles failed: ${e.message}")
-                }
-
-                addLog("[Vidlink] Successfully resolved natively: ${sourcesArr.length()} sources, ${subsArr.length()} subtitles")
-                val response = JSObject().apply {
-                    put("sources", sourcesArr)
-                    put("subtitles", subsArr)
-                    put("errors", JSArray())
-                }
-                call.resolve(response)
-            } catch (e: Exception) {
-                addLog("[Vidlink] Native resolution failed: ${e.message}")
-                call.reject("Resolution failed: ${e.message}", e)
-            }
-        }
-    }
 
     @PluginMethod
     fun playNativeStream(call: PluginCall) {
@@ -1383,9 +1098,7 @@ class NativeStreamingEnginePlugin : Plugin() {
         val fyiHost = try { java.net.URI(fyiUrl).host ?: "vidsrc.fyi" } catch(e: Exception) { "vidsrc.fyi" }
 
         if (refToUse.isEmpty()) {
-            if (targetUrl.contains("vodvidl.site") || targetUrl.contains("vidlink")) {
-                refToUse = "https://vidlink.pro/"
-            } else if (targetUrl.contains(wtfHost)) {
+            if (targetUrl.contains(wtfHost)) {
                 refToUse = if (wtfUrl.endsWith("/")) wtfUrl else "$wtfUrl/"
             } else if (targetUrl.contains(sbsHost)) {
                 refToUse = if (sbsUrl.endsWith("/")) sbsUrl else "$sbsUrl/"
@@ -1403,9 +1116,7 @@ class NativeStreamingEnginePlugin : Plugin() {
         }
 
         if (origToUse.isEmpty()) {
-            if (targetUrl.contains("vodvidl.site") || targetUrl.contains("vidlink")) {
-                origToUse = "https://vidlink.pro"
-            } else if (targetUrl.contains(wtfHost)) {
+            if (targetUrl.contains(wtfHost)) {
                 origToUse = wtfUrl.removeSuffix("/")
             } else if (targetUrl.contains(sbsHost)) {
                 origToUse = sbsUrl.removeSuffix("/")

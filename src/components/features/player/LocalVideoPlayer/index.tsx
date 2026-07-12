@@ -13,7 +13,7 @@ import { PlayerSettings, ALL_SERVERS } from './PlayerSettings';
 import { PlayerControls } from './PlayerControls';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 const NativeStreamingEngine = registerPlugin<any>('NativeStreamingEngine');
-import { scrapeVidlinkStream, scrapeVidsrcFallback, scrapeVidifyStream, scrapeVidsrcPmStream, scrapeWtfStream } from '../../../../services/ClientScraperService';
+import { scrapeVidsrcFallback, scrapeVidifyStream, scrapeVidsrcPmStream, scrapeWtfStream } from '../../../../services/ClientScraperService';
 import { getGateway, getRemoteServers } from '../../../../services/streaming/RemoteConfigService';
 import { WatchTogetherService, type PartyParticipant, type PartySyncEvent } from '../../../../services/watchTogether';
 import { supabase } from '../../../../services/supabase';
@@ -145,6 +145,8 @@ export default function LocalVideoPlayer({
   const lastTimeUpdateStateRef = useRef<number>(0);
   const hlsNetworkRetryCountRef = useRef<number>(0);
   const initialLoadRef = useRef<string | null>(null);
+  // Ref that holds handleServerChange so the mount effect can call it before the function is declared
+  const handleServerChangeRef = useRef<((serverId: string) => Promise<void>) | null>(null);
 
   // Audio Booster Web Audio API Refs
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -208,7 +210,7 @@ export default function LocalVideoPlayer({
   // Dynamic stream / server selector states
   const [currentSrc, setCurrentSrc] = useState(src);
   const [selectedServer, setSelectedServer] = useState<string>(() => {
-    return 'vidlink-pro';
+    return 'vidsrc-pm';
   });
   const selectedServerRef = useRef(selectedServer);
   useEffect(() => {
@@ -252,11 +254,11 @@ export default function LocalVideoPlayer({
   const isRemoteSyncRef = useRef(false); // Prevents echo loops when receiving remote sync events
   const ignoreNextSeekedRef = useRef(false); // Prevents echo loops on received seeks/playback commands
 
-  // Reset selected server to vidlink-pro on mount to ensure it's always the default
+  // Reset selected server to vidsrc-pm on mount to ensure it's always the default
   useEffect(() => {
-    setSelectedServer('vidlink-pro');
+    setSelectedServer('vidsrc-pm');
     try {
-      localStorage.setItem('selected_server', 'vidlink-pro');
+      localStorage.setItem('selected_server', 'vidsrc-pm');
     } catch (e) {}
   }, []);
 
@@ -482,9 +484,31 @@ export default function LocalVideoPlayer({
     iframeFallback
   });
 
+  // On mount: immediately resolve a fresh stream (never reuse a cached/expired src URL).
+  // Offline mode (downloaded files) is exempt — local files never expire.
+  const freshResolveMountedRef = useRef(false);
   useEffect(() => {
-    setCurrentSrc(src);
-  }, [src]);
+    if (isOfflineMode) {
+      // Offline: use the provided local src directly, it never expires
+      setCurrentSrc(src);
+      freshResolveMountedRef.current = true;
+      return;
+    }
+    // Online: always fetch a fresh link. Don't play the stale src prop.
+    // handleServerChange will be ready by the time this runs (it's a ref call)
+    const doFreshResolve = async () => {
+      if (handleServerChangeRef.current) {
+        console.log('[LocalVideoPlayer] Mount: resolving fresh stream (ignoring potentially-expired src prop)...');
+        await handleServerChangeRef.current(selectedServerRef.current || 'vidsrc-pm');
+      } else {
+        // Fallback: if ref not yet set, use src
+        setCurrentSrc(src);
+      }
+      freshResolveMountedRef.current = true;
+    };
+    doFreshResolve();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     setUseNativeLoader(false);
@@ -911,34 +935,37 @@ export default function LocalVideoPlayer({
       } else {
         const imdbId = (item as any)?.imdbId || (item as any)?.imdb_id;
         if (type === 'movie' && imdbId) {
-          try {
-            console.log('[LocalVideoPlayer] Server returned empty subtitles. Fetching YTS subtitles automatically...');
-            const ytsUrl = `${localServer}/movies/yts-subtitles/${imdbId}`;
-            const ytsRes = await fetch(ytsUrl);
-            if (ytsRes.ok) {
-              const ytsSubs = await ytsRes.json();
-              if (Array.isArray(ytsSubs) && ytsSubs.length > 0) {
-                const newTracks = ytsSubs.map((sub: any) => ({
-                  file: `${localServer}/movies/yts-subtitles/download?link=${encodeURIComponent(sub.link)}`,
-                  label: `${sub.language} (Auto YTS)`,
-                  kind: 'subtitles',
-                  default: sub.language.toLowerCase().includes('english')
-                }));
-                const defaultIndex = newTracks.findIndex((t: any) => t.default);
-                setServerSubtitleTracks(prev => ({
-                  ...prev,
-                  [serverId]: newTracks
-                }));
-                setServerActiveTrackIndices(prev => ({
-                  ...prev,
-                  [serverId]: defaultIndex !== -1 ? defaultIndex : -1
-                }));
-                console.log(`[LocalVideoPlayer] Auto-loaded ${newTracks.length} fallback YTS subtitles`);
+          // Fetch YTS subtitles asynchronously in the background so it doesn't block player initialization
+          (async () => {
+            try {
+              console.log('[LocalVideoPlayer] Server returned empty subtitles. Fetching YTS subtitles automatically in background...');
+              const ytsUrl = `${localServer}/movies/yts-subtitles/${imdbId}`;
+              const ytsRes = await fetch(ytsUrl);
+              if (ytsRes.ok) {
+                const ytsSubs = await ytsRes.json();
+                if (Array.isArray(ytsSubs) && ytsSubs.length > 0) {
+                  const newTracks = ytsSubs.map((sub: any) => ({
+                    file: `${localServer}/movies/yts-subtitles/download?link=${encodeURIComponent(sub.link)}`,
+                    label: `${sub.language} (Auto YTS)`,
+                    kind: 'subtitles',
+                    default: sub.language.toLowerCase().includes('english')
+                  }));
+                  const defaultIndex = newTracks.findIndex((t: any) => t.default);
+                  setServerSubtitleTracks(prev => ({
+                    ...prev,
+                    [serverId]: newTracks
+                  }));
+                  setServerActiveTrackIndices(prev => ({
+                    ...prev,
+                    [serverId]: defaultIndex !== -1 ? defaultIndex : -1
+                  }));
+                  console.log(`[LocalVideoPlayer] Auto-loaded ${newTracks.length} fallback YTS subtitles in background`);
+                }
               }
+            } catch (e) {
+              console.warn('[LocalVideoPlayer] Failed to auto-fetch YTS subtitles in background:', e);
             }
-          } catch (e) {
-            console.warn('[LocalVideoPlayer] Failed to auto-fetch YTS subtitles:', e);
-          }
+          })();
         }
       }
       
@@ -965,6 +992,9 @@ export default function LocalVideoPlayer({
       setConnectingServerName(null);
     }
   };
+
+  // Wire ref so the mount effect (defined before this function) can call it
+  handleServerChangeRef.current = handleServerChange;
 
   const triggerAutoFailover = () => {
     if (isOfflineMode || (typeof navigator !== 'undefined' && !navigator.onLine)) {

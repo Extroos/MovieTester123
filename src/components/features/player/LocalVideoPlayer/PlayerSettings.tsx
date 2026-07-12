@@ -12,8 +12,7 @@ export interface ServerOption {
 }
 
 export const ALL_SERVERS: ServerOption[] = [
-  { id: 'vidlink-pro', name: 'Vidlink Pro', description: 'Primary gateway — native ad-free stream', badge: 'Recommended', isAdFree: true },
-  { id: 'vidsrc-pm', name: 'VidSrc PM', description: 'Adaptive HLS via VidSrc PM — multi-CDN mirrors', badge: 'HD', isAdFree: true },
+  { id: 'vidsrc-pm', name: 'VidSrc PM', description: 'Adaptive HLS via VidSrc PM — multi-CDN mirrors', badge: 'Recommended', isAdFree: true },
   { id: 'vidsrc-wtf-2', name: 'VidSrc Multi-Lang', description: 'Multi-language HLS via native decryption engine', badge: 'Multi', isAdFree: true },
   { id: 'vidzee', name: 'Vidzee', description: 'Multi-language native HLS mirrors', badge: 'NEW', isAdFree: true },
   { id: 'universal', name: 'Vidsrc.to (Universal)', description: 'Third-party embed — supports multi-language subtitles', badge: 'ADS', isAdFree: false },
@@ -664,7 +663,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                           <line x1="12" y1="9" x2="12" y2="13"/>
                           <line x1="12" y1="17" x2="12.01" y2="17"/>
                         </svg>
-                        <span>Connection to {selectedServer === 'vidlink-pro' ? 'Vidlink Pro' : selectedServer} Failed</span>
+                        <span>Connection to {selectedServer} Failed</span>
                       </div>
                       <span style={{ opacity: 0.85, lineHeight: 1.4 }}>{serverError}</span>
 

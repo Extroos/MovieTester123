@@ -1,18 +1,11 @@
 {
-  "last_updated": "06/29/2026",
+  "last_updated": "07/12/2026",
   "servers": [
-    {
-      "id": "vidlink-pro",
-      "name": "Vidlink Pro",
-      "description": "Primary gateway — native ad-free stream",
-      "badge": "Recommended",
-      "isAdFree": true
-    },
     {
       "id": "vidsrc-pm",
       "name": "VidSrc PM",
       "description": "Adaptive HLS via VidSrc PM — multi-CDN mirrors",
-      "badge": "HD",
+      "badge": "Recommended",
       "isAdFree": true
     },
     {
@@ -20,6 +13,13 @@
       "name": "VidSrc Multi-Lang",
       "description": "Multi-language HLS via native decryption engine",
       "badge": "Multi",
+      "isAdFree": true
+    },
+    {
+      "id": "vidzee",
+      "name": "Vidzee",
+      "description": "Multi-language native HLS mirrors",
+      "badge": "NEW",
       "isAdFree": true
     },
     {
@@ -42,34 +42,35 @@
       "description": "Alternative third-party gateway",
       "badge": "ADS",
       "isAdFree": false
+    },
+    {
+      "id": "vidsrc-top",
+      "name": "VidSrc Top",
+      "description": "Third-party mirror — supports IMDB/TMDB inputs",
+      "badge": "ADS",
+      "isAdFree": false
     }
   ],
   "gateways": {
-    "vidlink": "https://vidlink.pro",
     "cloudnestra": "https://cloudnestra.com",
     "vidsrc_pm": "https://streamdata.vaplayer.ru",
+    "vidsrc_pm_embed": "https://vaplayer.ru",
     "vidsrc_wtf": "https://vidsrc.wtf",
     "vidsrc_sbs": "https://vidsrc.sbs",
     "vidsrc_pk": "https://embed.vidsrc.pk",
-    "vidsrc_fyi": "https://vidsrc.fyi"
+    "vidsrc_fyi": "https://vidsrc.fyi",
+    "vidzee": "https://player.vidzee.wtf",
+    "vidzee_core": "https://core.vidzee.wtf",
+    "vidsrc_top": "https://vid-src.top"
   },
   "embed_urls": {
     "vidsrc_pm_gateways": [
       "https://streamdata.vaplayer.ru",
-      "https://streamdata2.vaplayer.ru"
-    ],
-    "vidlink_gateways": [
-      "https://vidlink.pro",
-      "https://vidlink.me",
-      "https://vidlink.org",
-      "https://vidlink.net"
+      "https://api.vaplayer.ru",
+      "https://data.vaplayer.ru"
     ]
   },
   "headers": {
-    "vidlink_referer": "https://vidlink.pro/",
-    "vidlink_origin": "https://vidlink.pro",
-    "vidsrc_pm_referer": "https://brightpathsignals.com/",
-    "vidsrc_pm_origin": "https://brightpathsignals.com",
     "cloudnestra_referer": "https://cloudnestra.com/",
     "cloudnestra_origin": "https://cloudnestra.com",
     "vidsrc_wtf_referer": "https://vidsrc.wtf/",
@@ -79,8 +80,6 @@
     "vidsrc_pk_referer": "https://embed.vidsrc.pk/",
     "vidsrc_pk_origin": "https://embed.vidsrc.pk",
     "vidsrc_me_referer": "https://vidsrc.me/",
-    "vidsrc_me_origin": "https://vidsrc.me",
-    "brightpath_referer": "https://brightpathsignals.com/",
-    "brightpath_origin": "https://brightpathsignals.com"
+    "vidsrc_me_origin": "https://vidsrc.me"
   }
 }

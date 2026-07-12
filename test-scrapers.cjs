@@ -82,26 +82,20 @@ async function runRelentlessLoop() {
             {
                 name: "VidSrc PM (Fast Direct)",
                 url: target.type === "tv" 
-                    ? `http://localhost:8000/vidsrc-pm/tv/${target.id}/${target.s}/${target.e}`
-                    : `http://localhost:8000/vidsrc-pm/movie/${target.id}`
+                    ? `http://localhost:3001/meta/tmdb/watch/${target.id}?type=tv&s=${target.s}&e=${target.e}&server=vidsrc-pm`
+                    : `http://localhost:3001/meta/tmdb/watch/${target.id}?type=movie&server=vidsrc-pm`
             },
             {
                 name: "VidSrc / Fallback (Failover)",
                 url: target.type === "tv" 
-                    ? `http://localhost:8000/fallback/tv/${target.id}/${target.s}/${target.e}`
-                    : `http://localhost:8000/fallback/movie/${target.id}`
+                    ? `http://localhost:3001/meta/tmdb/watch/${target.id}?type=tv&s=${target.s}&e=${target.e}&server=vidsrc`
+                    : `http://localhost:3001/meta/tmdb/watch/${target.id}?type=movie&server=vidsrc`
             },
             {
                 name: "Vidify / Cloudnestra (Alternative)",
                 url: target.type === "tv" 
-                    ? `http://localhost:8000/vidify/tv/${target.id}/${target.s}/${target.e}`
-                    : `http://localhost:8000/vidify/movie/${target.id}`
-            },
-            {
-                name: "Vidlink Pro / Gateway",
-                url: target.type === "tv"
-                    ? `http://localhost:8000/tv/${target.id}/${target.s}/${target.e}`
-                    : `http://localhost:8000/movie/${target.id}`
+                    ? `http://localhost:3001/meta/tmdb/watch/${target.id}?type=tv&s=${target.s}&e=${target.e}&server=vidify`
+                    : `http://localhost:3001/meta/tmdb/watch/${target.id}?type=movie&server=vidify`
             }
         ];
 

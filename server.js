@@ -1,6 +1,5 @@
 import express from 'express';
 import cors from 'cors';
-import nacl from 'tweetnacl';
 import { Readable } from 'stream';
 import axios from 'axios';
 import { spawn } from 'child_process';
@@ -9,6 +8,8 @@ import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import fs from 'fs';
 import vm from 'vm';
+import https from 'https';
+import http from 'http';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -51,6 +52,19 @@ process.on('uncaughtException', (err) => {
 const app = express();
 const port = process.env.PORT || 3001;
 
+// Load configuration — re-reads on every call so config.json changes apply immediately (no restart needed)
+const configPath = path.join(__dirname, 'config.json');
+let config = {};
+function loadConfig() {
+  try {
+    config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  } catch (e) {
+    console.error('[Node Server] Failed to load config.json:', e.message);
+  }
+  return config;
+}
+loadConfig(); // eager load on startup
+
 app.use(cors());
 app.use(express.json());
 
@@ -59,7 +73,11 @@ const wtfProxyBase = "http://localhost:8000/local-proxy";
 
 async function fetchWtfProxy(url, headers = {}, refererUrl = 'https://vidsrc.wtf/') {
   const fullUrl = `${wtfProxyBase}?url=${encodeURIComponent(url)}&referer=${encodeURIComponent(refererUrl)}&origin=${encodeURIComponent('https://vidsrc.wtf')}`;
-  const res = await axios.get(fullUrl, { headers, validateStatus: () => true });
+  const cleanHeaders = { ...headers };
+  cleanHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36';
+  cleanHeaders['user-agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36';
+  
+  const res = await axios.get(fullUrl, { headers: cleanHeaders, validateStatus: () => true });
   if (typeof res.data === 'string' && res.data.includes('<!DOCTYPE html>')) {
     throw new Error("Cloudflare block page returned by proxy");
   }
@@ -140,6 +158,7 @@ async function getWtfStreamUrl(tmdbId, apiType, serverName = null, isTv = false,
   
   global.fetch = async (url, options = {}) => {
     const headers = options.headers || {};
+    
     if (url.includes('/altcha-challenge')) {
       const data = await fetchWtfProxy(url, headers, refererUrl);
       return {
@@ -201,7 +220,7 @@ async function getWtfStreamUrl(tmdbId, apiType, serverName = null, isTv = false,
         digest: async (algo, data) => {
           const nodeAlgo = algo.toLowerCase().replace('-', '');
           const hash = crypto.createHash(nodeAlgo).update(data).digest();
-          return hash.buffer;
+          return new Uint8Array(hash).buffer;
         }
       },
       getRandomValues: (array) => {
@@ -276,80 +295,7 @@ function encryptToken(mediaId) {
 
 
 
-function formatVidlinkResponse(data, gateway = 'https://vidlink.pro') {
-  if (!data?.stream) {
-    throw new Error("No stream object in Vidlink response");
-  }
 
-  const sources = [];
-  const cleanGateway = gateway.replace(/\/$/, '');
-  const referer = `${cleanGateway}/`;
-  const origin = cleanGateway;
-
-  if (data.stream.playlist) {
-    const originalPlaylist = data.stream.playlist;
-    const proxiedPlaylist = `http://localhost:8000/local-proxy?url=${encodeURIComponent(originalPlaylist)}&referer=${encodeURIComponent(referer)}&origin=${encodeURIComponent(origin)}`;
-    sources.push({
-      url: proxiedPlaylist,
-      quality: '1080',
-      isM3U8: data.stream.type === 'hls' || originalPlaylist.includes('.m3u8')
-    });
-  } else if (data.stream.qualities) {
-    // Direct MP4 file stream type with multiple resolutions
-    Object.entries(data.stream.qualities).forEach(([quality, qObj]) => {
-      if (qObj && qObj.url) {
-        const proxiedUrl = `http://localhost:8000/local-proxy?url=${encodeURIComponent(qObj.url)}&referer=${encodeURIComponent(referer)}&origin=${encodeURIComponent(origin)}`;
-        sources.push({
-          url: proxiedUrl,
-          quality: quality,
-          isM3U8: qObj.type === 'hls' || qObj.url.includes('.m3u8')
-        });
-      }
-    });
-  }
-
-  if (sources.length === 0) {
-    throw new Error("No usable stream sources found in Vidlink response");
-  }
-  
-  const captionsList = data.captions || data.stream.captions || [];
-  const vidlinkSubs = captionsList.map(c => {
-    let subUrl = c.url || '';
-    if (subUrl && !subUrl.startsWith('http://') && !subUrl.startsWith('https://')) {
-      if (subUrl.startsWith('//')) {
-        subUrl = `https:${subUrl}`;
-      } else if (subUrl.startsWith('/')) {
-        subUrl = `${cleanGateway}${subUrl}`;
-      } else {
-        subUrl = `${cleanGateway}/${subUrl}`;
-      }
-    }
-    return {
-      url: subUrl,
-      lang: c.language || 'Unknown'
-    };
-  });
-  
-  return {
-    sources: sources,
-    subtitles: vidlinkSubs
-  };
-}
-
-async function resolveVidlinkStream(tmdbId, type, season = 1, episode = 1) {
-  const url = type === 'tv'
-    ? `http://localhost:8000/tv/${tmdbId}/${season}/${episode}`
-    : `http://localhost:8000/movie/${tmdbId}`;
-    
-  console.log(`[Express] Calling Python resolver: ${url}`);
-  
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Python resolver returned status ${res.status}`);
-  }
-  const data = await res.json();
-  return formatVidlinkResponse(data);
-}
 
 // Custom fallback resolver calling the Python vidsrc.me scraper
 async function resolveFallbackStream(tmdbId, type, season = 1, episode = 1) {
@@ -372,7 +318,7 @@ async function resolveFallbackStream(tmdbId, type, season = 1, episode = 1) {
   }
 }
 
-// Local Residential CORS Proxy (Delegates to Python curl_cffi proxy on port 8000)
+// Local Residential CORS Proxy (Delegates to Python curl_cffi proxy on port 8000, or directly proxies video streams)
 app.get('/local-proxy', async (req, res) => {
   const targetUrl = req.query.url;
   const referer = req.query.referer || 'https://vidlink.pro/';
@@ -382,18 +328,9 @@ app.get('/local-proxy', async (req, res) => {
     return res.status(400).send('Missing url parameter');
   }
   
-  const abortController = new AbortController();
-  
-  req.on('close', () => {
-    if (!res.writableFinished) {
-      console.log(`[Express Proxy] Client disconnected prematurely, aborting background stream download for: ${targetUrl}`);
-      abortController.abort();
-    }
-  });
-
   try {
     const pythonProxyUrl = `http://localhost:8000/local-proxy?url=${encodeURIComponent(targetUrl)}&referer=${encodeURIComponent(referer)}&origin=${encodeURIComponent(origin)}`;
-    console.log(`[Express Proxy] Forwarding to Python: ${targetUrl}`);
+    console.log(`[Express Proxy] Forwarding request to Python: ${targetUrl}`);
     
     const headers = {
       'x-forwarded-host': req.get('host'),
@@ -411,9 +348,8 @@ app.get('/local-proxy', async (req, res) => {
       url: pythonProxyUrl,
       headers: headers,
       responseType: 'stream',
-      timeout: 30000,
-      signal: abortController.signal,
-      validateStatus: () => true // Forward all status codes directly
+      timeout: 45000, // Slightly higher timeout for large video range handshakes
+      validateStatus: () => true
     });
     
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -434,7 +370,7 @@ app.get('/local-proxy', async (req, res) => {
     res.status(response.status);
     response.data.pipe(res);
   } catch (e) {
-    console.error(`[Express Proxy] Error forwarding to Python:`, e.message);
+    console.error(`[Express Proxy] Proxy error:`, e.message);
     res.status(500).send(e.message);
   }
 });
@@ -450,12 +386,16 @@ function rewriteLocalhostUrls(obj, req) {
 // Routes
 // 1. GET /meta/tmdb/watch/:tmdbId
 app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
+  // Hot-reload config so CDN/gateway changes in config.json apply immediately
+  loadConfig();
   const { tmdbId } = req.params;
   const { type = 'movie', s = 1, e = 1, title, server = 'auto', sub_server, raw } = req.query;
   const season = parseInt(s);
   const episode = parseInt(e);
   
-  console.log(`[Server] Watch request: ID ${tmdbId}, Type: ${type}, S: ${season}, E: ${episode}, Server: ${server}`);
+  const activeServer = (server === 'vidlink-pro' || server === 'vidlink') ? 'vidsrc-pm' : server;
+  
+  console.log(`[Server] Watch request: ID ${tmdbId}, Type: ${type}, S: ${season}, E: ${episode}, Server: ${server} (Mapped to: ${activeServer})`);
   
   // Handle direct stream redirects for raw playback
   if (raw === 'true') {
@@ -495,25 +435,83 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
     }
   }
 
-  // Handle explicit vidsrc-pm request — direct JSON API call to streamdata.vaplayer.ru
-  if (server === 'vidsrc-pm') {
+  // Handle explicit vidsrc-pm request — direct JSON API call to streamdata.vaplayer.ru or other mirrors
+  if (activeServer === 'vidsrc-pm') {
     try {
-      const pmReferer = 'https://brightpathsignals.com/';
-      const pmOrigin  = 'https://brightpathsignals.com';
-      const pmUrl = type === 'tv'
-        ? `https://streamdata.vaplayer.ru/api.php?tmdb=${tmdbId}&type=tv&season=${season}&episode=${episode}`
-        : `https://streamdata.vaplayer.ru/api.php?tmdb=${tmdbId}&type=movie`;
+      let pmReferer = 'https://nextgencloudfabric.com/';
+      let pmOrigin  = 'https://nextgencloudfabric.com';
+      
+      // Dynamically resolve the active VidSrc PM player CDN domain by scraping
+      // the vaplayer.ru embed gateway — avoids breaking when they rotate CDN domains
+      const pmEmbedBase = config?.gateways?.vidsrc_pm_embed || 'https://vaplayer.ru';
+      try {
+        console.log(`[Server] Dynamically resolving active VidSrc PM domain via ${pmEmbedBase}...`);
+        const testRes = await axios.get(`${pmEmbedBase}/embed/movie/tt0137523`, {
+          timeout: 6000,
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36' }
+        });
+        const iframeMatch = testRes.data.match(/<iframe\s+id="pf"\s+src="([^"]+)"/);
+        if (iframeMatch) {
+          const iframeUrl = iframeMatch[1];
+          const parsed = new URL(iframeUrl);
+          pmOrigin = parsed.origin;
+          pmReferer = iframeUrl;
+          console.log(`[Server] Dynamically resolved active VidSrc PM referer: ${pmReferer}`);
+        }
+      } catch (err) {
+        console.warn(`[Server] Failed to dynamically resolve VidSrc PM domain, using fallback: ${err.message}`);
+      }
+      
+      // Resolve IMDB ID if TMDB is provided (VidSrc PM API requires IMDB ID)
+      let imdbId = tmdbId;
+      if (!tmdbId.startsWith('tt')) {
+        try {
+          const tmdbApiKey = '8265bd1679663a7ea12ac168da84d2e8';
+          const tmdbUrl = type === 'tv'
+            ? `https://api.themoviedb.org/3/tv/${tmdbId}/external_ids?api_key=${tmdbApiKey}`
+            : `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${tmdbApiKey}`;
+          
+          const tmdbRes = await axios.get(tmdbUrl, { timeout: 8000 });
+          if (tmdbRes.data && tmdbRes.data.imdb_id) {
+            imdbId = tmdbRes.data.imdb_id;
+            console.log(`[Server] Resolved IMDB ID ${imdbId} for TMDB ${tmdbId}`);
+          }
+        } catch (e) {
+          console.warn(`[Server] Failed to resolve IMDB ID from TMDB: ${e.message}`);
+        }
+      }
+      
+      const gateways = config.embed_urls?.vidsrc_pm_gateways || ['https://streamdata.vaplayer.ru'];
+      let apiData = null;
+      let lastError = null;
 
-      console.log(`[Server] Resolving VidSrc PM for TMDB-${tmdbId} (${type}): ${pmUrl}`);
+      for (const gw of gateways) {
+        const pmUrl = type === 'tv'
+          ? `${gw}/api.php?imdb=${imdbId}&type=tv&season=${season}&episode=${episode}`
+          : `${gw}/api.php?imdb=${imdbId}&type=movie`;
 
-      const pyProxy = `http://localhost:8000/local-proxy?url=${encodeURIComponent(pmUrl)}&referer=${encodeURIComponent(pmReferer)}&origin=${encodeURIComponent(pmOrigin)}`;
-      const pmRes = await axios.get(pyProxy, { responseType: 'text', timeout: 20000, validateStatus: () => true });
-      const rawText = typeof pmRes.data === 'string' ? pmRes.data : JSON.stringify(pmRes.data);
-      const apiData = JSON.parse(rawText);
+        console.log(`[Server] Resolving VidSrc PM for IMDB-${imdbId} (${type}) via gateway: ${pmUrl}`);
+        try {
+          const pyProxy = `http://localhost:8000/local-proxy?url=${encodeURIComponent(pmUrl)}&referer=${encodeURIComponent(pmReferer)}&origin=${encodeURIComponent(pmOrigin)}`;
+          const pmRes = await axios.get(pyProxy, { responseType: 'text', timeout: 20000, validateStatus: () => true });
+          const rawText = typeof pmRes.data === 'string' ? pmRes.data : JSON.stringify(pmRes.data);
+          const parsed = JSON.parse(rawText);
+          
+          const statusCode = parsed?.status_code;
+          if (statusCode === 200 || statusCode === '200') {
+            apiData = parsed;
+            break;
+          } else {
+            lastError = new Error(`Gateway returned status_code=${statusCode}`);
+          }
+        } catch (err) {
+          lastError = err;
+          console.warn(`[Server] Gateway ${gw} failed: ${err.message}`);
+        }
+      }
 
-      const statusCode = apiData?.status_code;
-      if (statusCode !== 200 && statusCode !== '200') {
-        throw new Error(`VidSrc PM returned status_code=${statusCode}`);
+      if (!apiData) {
+        throw lastError || new Error('All VidSrc PM gateways failed');
       }
 
       const streamData  = apiData?.data || {};
@@ -542,30 +540,35 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
         }
       }
 
-      console.log(`[Server] VidSrc PM resolved: ${sources.length} source(s), ${subtitles.length} subtitle(s)`);
+      console.log(`[Server] VidSrc PM resolved dynamically: ${sources.length} source(s), ${subtitles.length} subtitle(s)`);
       return res.json(rewriteLocalhostUrls({ sources, subtitles }, req));
     } catch (err) {
-      console.error(`[Server] VidSrc PM resolution failed:`, err.message, "trying fallback...");
+      console.error(`[Server] VidSrc PM resolution failed:`, err.message, "trying fallback to Vidify or Fallback resolver...");
       try {
-        const isTv = type === 'tv';
-        const decrypted = await getWtfStreamUrl(tmdbId, 'wtf-1', null, isTv, season, episode);
-        if (decrypted && decrypted.ok && decrypted.data?.stream?.url) {
-          const streamUrl = decrypted.data.stream.url;
-          const refererUrl = `https://vidsrc.wtf/`;
-          const originUrl = 'https://vidsrc.wtf';
-          const proxiedUrl = `http://localhost:8000/local-proxy?url=${encodeURIComponent(streamUrl)}&referer=${encodeURIComponent(refererUrl)}&origin=${encodeURIComponent(originUrl)}`;
-          console.log("[Server] VidSrc PM successfully fell back to WTF-1");
-          return res.json(rewriteLocalhostUrls({
-            sources: [{
-              url: proxiedUrl,
-              quality: 'auto',
-              isM3U8: true
-            }],
-            subtitles: []
-          }, req));
+        const pythonUrl = type === 'tv'
+          ? `http://localhost:8000/vidify/tv/${tmdbId}/${season}/${episode}`
+          : `http://localhost:8000/vidify/movie/${tmdbId}`;
+        const res2 = await fetch(pythonUrl);
+        if (res2.ok) {
+          const result = await res2.json();
+          console.log("[Server] VidSrc PM successfully fell back to Vidify");
+          return res.json(rewriteLocalhostUrls(result, req));
         }
       } catch (fbErr) {
-        console.error(`[Server] VidSrc PM fallback also failed:`, fbErr.message);
+        console.error(`[Server] VidSrc PM fallback to Vidify failed:`, fbErr.message);
+        try {
+          const pythonUrl = type === 'tv'
+            ? `http://localhost:8000/fallback/tv/${tmdbId}/${season}/${episode}`
+            : `http://localhost:8000/fallback/movie/${tmdbId}`;
+          const res2 = await fetch(pythonUrl);
+          if (res2.ok) {
+            const result = await res2.json();
+            console.log("[Server] VidSrc PM successfully fell back to Fallback scraper");
+            return res.json(rewriteLocalhostUrls(result, req));
+          }
+        } catch (fbErr2) {
+          console.error(`[Server] VidSrc PM fallback to Fallback scraper failed:`, fbErr2.message);
+        }
       }
       return res.status(500).json({ error: `vidsrc-pm failed: ${err.message}` });
     }
@@ -574,7 +577,7 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
   // Handle explicit test-server request on Web/Desktop
   // Handle explicit test-server request on Web/Desktop (Native Node.js execution)
   // Handle explicit test-server request on Web/Desktop (Native Node.js execution with robust failover)
-  if (server === 'test-server') {
+  if (activeServer === 'test-server') {
     try {
       console.log(`[Server] Resolving test-server natively for TMDB-${tmdbId} (${type})...`);
       
@@ -637,39 +640,8 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
               }
             }
             
-            // Fallback: If subtitles list is empty, fetch YTS subtitles on PC
-            if (subtitles.length === 0) {
-              try {
-                let imdbId = streamData.imdb_id;
-                if (!imdbId && tmdbId.toString().startsWith('tt')) {
-                  imdbId = tmdbId;
-                }
-                if (!imdbId) {
-                  const tmdbType = type === 'tv' ? 'tv' : 'movie';
-                  const extRes = await fetch(`https://api.themoviedb.org/3/${tmdbType}/${tmdbId}/external_ids?api_key=15d2ea6d0dc1d476efbca3de7e9b73d2`);
-                  if (extRes.ok) {
-                    const extData = await extRes.json();
-                    imdbId = extData.imdb_id;
-                  }
-                }
-                if (imdbId && imdbId.startsWith('tt')) {
-                  const localPort = process.env.PORT || 3001;
-                  console.log(`[Server] Scraping YTS subtitles for PC resolution (IMDB: ${imdbId})...`);
-                  const ytsRes = await fetch(`http://localhost:${localPort}/movies/yts-subtitles/${imdbId}`);
-                  if (ytsRes.ok) {
-                    const ytsSubs = await ytsRes.json();
-                    for (const s of ytsSubs) {
-                      subtitles.push({
-                        url: `http://localhost:${localPort}/movies/yts-subtitles/download?link=${encodeURIComponent(s.link)}`,
-                        lang: s.name ? `${s.language} (${s.name})` : s.language
-                      });
-                    }
-                  }
-                }
-              } catch (ytsErr) {
-                console.warn(`[Server] Failed to scrape YTS subtitles on PC:`, ytsErr.message);
-              }
-            }
+            // Fallback: If subtitles list is empty, let the client fetch YTS subtitles on-demand
+            // to prevent blocking the stream resolution endpoint with slow synchronous scrapers.
             
             resolvedSource = {
               sources: proxiedSources,
@@ -770,15 +742,15 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
   }
 
   // Handle explicit vidsrc-wtf requests
-  if (server === 'vidsrc-wtf-1' || server === 'vidsrc-wtf-2' || server === 'vidsrc-wtf-3' || server === 'vidsrc-wtf-4') {
+  if (activeServer === 'vidsrc-wtf-1' || activeServer === 'vidsrc-wtf-2' || activeServer === 'vidsrc-wtf-3' || activeServer === 'vidsrc-wtf-4') {
     try {
       const isTv = type === 'tv';
-      const apiType = server === 'vidsrc-wtf-2' ? 'wtf-2' : (server === 'vidsrc-wtf-4' ? 'wtf-4' : (server === 'vidsrc-wtf-3' ? 'wtf-3' : 'wtf-1'));
+      const apiType = activeServer === 'vidsrc-wtf-2' ? 'wtf-2' : (activeServer === 'vidsrc-wtf-4' ? 'wtf-4' : (activeServer === 'vidsrc-wtf-3' ? 'wtf-3' : 'wtf-1'));
       console.log(`[Server] Resolving WTF stream: API type ${apiType}, TMDB ${tmdbId}, TV: ${isTv}`);
       
       if (apiType === 'wtf-1' || apiType === 'wtf-3') {
         // Expose all available WTF sub-servers to allow clean streams to be selected by quality options in the UI
-        const baseQuery = `/meta/tmdb/watch/${tmdbId}?type=${type}&s=${season}&e=${episode}&server=${server}&raw=true`;
+        const baseQuery = `/meta/tmdb/watch/${tmdbId}?type=${type}&s=${season}&e=${episode}&server=${activeServer}&raw=true`;
         const sources = [
           { url: `${baseQuery}&sub_server=Ada`, quality: 'Ada (Clean Stream)', isM3U8: true },
           { url: `${baseQuery}&sub_server=Claire`, quality: 'Claire (Clean Stream)', isM3U8: true },
@@ -854,7 +826,7 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
   }
 
   // Handle explicit vidsrc-fyi request
-  if (server === 'vidsrc-fyi') {
+  if (activeServer === 'vidsrc-fyi') {
     try {
       const isTv = type === 'tv';
       console.log(`[Server] Resolving FYI stream via WTF-1 / WTF-2 / Vidify / Fallback failover: TMDB ${tmdbId}, TV: ${isTv}`);
@@ -939,7 +911,7 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
   }
 
   // Handle explicit vidsrc-pk request
-  if (server === 'vidsrc-pk') {
+  if (activeServer === 'vidsrc-pk') {
     try {
       const isTv = type === 'tv';
       console.log(`[Server] Resolving PK stream via WTF-1 / WTF-2 / Vidify failover: TMDB ${tmdbId}, TV: ${isTv}`);
@@ -1010,7 +982,7 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
   }
 
   // Handle explicit vidsrc-sbs request
-  if (server === 'vidsrc-sbs') {
+  if (activeServer === 'vidsrc-sbs') {
     try {
       const isTv = type === 'tv';
       console.log(`[Server] Resolving SBS stream via WTF-1 / WTF-2 / Vidify / Fallback failover: TMDB ${tmdbId}, TV: ${isTv}`);
@@ -1094,50 +1066,10 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
     }
   }
 
-  // Map single-gateway server IDs to specific Vidlink domain gateways
-  const GATEWAY_MAP = {
-    'vidlink-pro': 'https://vidlink.pro',
-    'vidlink-org': 'https://vidlink.org',
-    'vidlink-net': 'https://vidlink.net',
-  };
 
-  // Explicit single-gateway requests — bypass the Python multi-failover and hit one gateway directly
-  if (GATEWAY_MAP[server]) {
-    const baseUrl = GATEWAY_MAP[server];
-    try {
-      const pythonUrl = type === 'tv'
-        ? `http://localhost:8000/tv-single/${tmdbId}/${season}/${episode}?gateway=${encodeURIComponent(baseUrl)}`
-        : `http://localhost:8000/movie-single/${tmdbId}?gateway=${encodeURIComponent(baseUrl)}`;
-      const res2 = await fetch(pythonUrl);
-      if (!res2.ok) {
-        throw new Error(`Python gateway returned status ${res2.status}`);
-      }
-      const result = await res2.json();
-      const formatted = formatVidlinkResponse(result, baseUrl);
-      return res.json(rewriteLocalhostUrls(formatted, req));
-    } catch (err) {
-      const status = err.message.includes("No stream object") || err.message.includes("No usable stream") ? 404 : 500;
-      return res.status(status).json({ error: `${server} failed: ${err.message}` });
-    }
-  }
-
-  // auto + vidlink: use the Python multi-gateway failover (tries all 4 domains sequentially)
-  // For 'auto' (universal player), we now prioritize fallback scrapers (VidSrc, Vidify) and bypass vidlink.pro!
-  if (server === 'vidlink') {
-    try {
-      const result = await resolveVidlinkStream(tmdbId, type, season, episode);
-      if (result) {
-        console.log(`[Server] Success via Vidlink multi-gateway`);
-        return res.json(rewriteLocalhostUrls(result, req));
-      }
-    } catch (err) {
-      console.warn(`[Server] Vidlink multi-gateway failed: ${err.message}`);
-      return res.status(500).json({ error: `Vidlink resolution failed: ${err.message}` });
-    }
-  }
 
   // universal / auto failover: try VidSrc PM first, then VidSrc fallback, then Vidify
-  if (server === 'auto') {
+  if (activeServer === 'auto') {
     try {
       const pythonUrl = type === 'tv'
         ? `http://localhost:8000/vidsrc-pm/tv/${tmdbId}/${season}/${episode}`
@@ -1184,7 +1116,7 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
   }
 
   // vidsrc: use the Python fallback scraper (extracts direct .m3u8 streams)
-  if (server === 'vidsrc') {
+  if (activeServer === 'vidsrc') {
     try {
       const pythonUrl = type === 'tv'
         ? `http://localhost:8000/fallback/tv/${tmdbId}/${season}/${episode}`
@@ -1203,7 +1135,7 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
   }
 
   // vidify: use the Python Vidify scraper
-  if (server === 'vidify') {
+  if (activeServer === 'vidify') {
     try {
       const pythonUrl = type === 'tv'
         ? `http://localhost:8000/vidify/tv/${tmdbId}/${season}/${episode}`
