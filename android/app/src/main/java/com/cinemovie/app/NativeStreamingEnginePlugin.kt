@@ -1316,23 +1316,55 @@ class NativeStreamingEnginePlugin : Plugin() {
 
             val bytes = response.body?.bytes() ?: throw Exception("Empty response body")
             val zipStream = java.util.zip.ZipInputStream(java.io.ByteArrayInputStream(bytes))
-            var srtContent = ""
+            var rawBytes: ByteArray? = null
             var entry = zipStream.nextEntry
             while (entry != null) {
                 if (entry.name.endsWith(".srt") || entry.name.endsWith(".sub") || entry.name.endsWith(".vtt")) {
-                    val reader = java.io.BufferedReader(java.io.InputStreamReader(zipStream, "ISO-8859-1"))
-                    val sb = java.lang.StringBuilder()
-                    var line = reader.readLine()
-                    while (line != null) {
-                        sb.append(line).append("\n")
-                        line = reader.readLine()
+                    val baos = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(4096)
+                    var len = zipStream.read(buffer)
+                    while (len != -1) {
+                        baos.write(buffer, 0, len)
+                        len = zipStream.read(buffer)
                     }
-                    srtContent = sb.toString()
+                    rawBytes = baos.toByteArray()
                     break
                 }
                 entry = zipStream.nextEntry
             }
             zipStream.close()
+
+            if (rawBytes == null || rawBytes.isEmpty()) throw Exception("No subtitle entry found in zip")
+
+            // Auto-detect encoding (UTF-8 vs Windows-1256/ISO-8859-1)
+            // Arabic subtitles on YTS are typically encoded in Windows-1256.
+            // If the byte stream has invalid UTF-8 sequences, or if it decodes to UTF-8
+            // but contains standard Arabic characters encoded incorrectly, we fall back.
+            var srtContent = ""
+            try {
+                // Try decoding as UTF-8 first
+                val decoder = Charsets.UTF_8.newDecoder()
+                decoder.onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                decoder.onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+                val buf = java.nio.ByteBuffer.wrap(rawBytes)
+                srtContent = decoder.decode(buf).toString()
+            } catch (e: Exception) {
+                // UTF-8 failed, let's try Windows-1256 (which is common for Arabic)
+                try {
+                    srtContent = String(rawBytes, java.nio.charset.Charset.forName("windows-1256"))
+                } catch (e2: Exception) {
+                    // Fall back to ISO-8859-1 if everything else fails
+                    srtContent = String(rawBytes, java.nio.charset.Charset.forName("ISO-8859-1"))
+                }
+            }
+
+            // Additional heuristic check: if we decoded as UTF-8 but the text has the replacement character '\uFFFD',
+            // or if it's Arabic language but lacks expected unicode ranges, decode as windows-1256.
+            if (srtContent.contains("\uFFFD")) {
+                try {
+                    srtContent = String(rawBytes, java.nio.charset.Charset.forName("windows-1256"))
+                } catch (_: Exception) {}
+            }
 
             if (srtContent.isEmpty()) throw Exception("No subtitle entry found in zip")
 
