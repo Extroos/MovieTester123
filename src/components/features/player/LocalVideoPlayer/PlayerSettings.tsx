@@ -1461,7 +1461,6 @@ export const PlayerSettings = React.memo(function PlayerSettings({
               </div>
             </div>
           )}
-
           {settingsTab === 'subtitles' && isSearchingOnline && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
