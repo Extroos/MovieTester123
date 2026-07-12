@@ -1122,7 +1122,7 @@ class NativeStreamingEnginePlugin : Plugin() {
                 refToUse = if (pkUrl.endsWith("/")) pkUrl else "$pkUrl/"
             } else if (targetUrl.contains(fyiHost)) {
                 refToUse = if (fyiUrl.endsWith("/")) fyiUrl else "$fyiUrl/"
-            } else if (targetUrl.contains("vidsrc")) {
+            } else if (targetUrl.contains("vidsrc") && !targetUrl.contains("vidsrc-pm") && !targetUrl.contains("vaplayer") && !targetUrl.contains("nextgencloudfabric")) {
                 refToUse = "https://vidsrc.me/"
             } else if (host.isNotEmpty()) {
                 refToUse = "https://$host/"
@@ -1140,7 +1140,7 @@ class NativeStreamingEnginePlugin : Plugin() {
                 origToUse = pkUrl.removeSuffix("/")
             } else if (targetUrl.contains(fyiHost)) {
                 origToUse = fyiUrl.removeSuffix("/")
-            } else if (targetUrl.contains("vidsrc")) {
+            } else if (targetUrl.contains("vidsrc") && !targetUrl.contains("vidsrc-pm") && !targetUrl.contains("vaplayer") && !targetUrl.contains("nextgencloudfabric")) {
                 origToUse = "https://vidsrc.me"
             } else if (host.isNotEmpty()) {
                 origToUse = "https://$host"
