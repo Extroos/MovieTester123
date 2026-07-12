@@ -35,6 +35,10 @@ const formatTime = (seconds: number) => {
 const getSubtitleProxyUrl = (trackUrl: string): string => {
   if (!trackUrl || !trackUrl.startsWith('http')) return trackUrl;
   const localServer = getLocalServerUrl();
+  // If the track is already hosted locally, bypass proxying to prevent CORS/loop issues
+  if (trackUrl.includes('localhost') || trackUrl.includes('127.0.0.1')) {
+    return trackUrl;
+  }
   if (localServer && localServer.trim() && localServer !== 'null' && localServer !== 'undefined') {
     return `${localServer}/local-proxy?url=${encodeURIComponent(trackUrl)}&referer=${encodeURIComponent('https://vidlink.pro/')}&origin=${encodeURIComponent('https://vidlink.pro')}`;
   }
