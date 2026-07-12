@@ -664,7 +664,7 @@ export default function LocalVideoPlayer({
               url: s.url || s.file || '',
               label: s.lang || s.label || 'Unknown',
               lang: s.lang || s.label || 'Unknown',
-              isBackup: !!s.isBackup
+              isBackup: s.isBackup === true || s.isBackup === 'true' || s.isBackup === 1
             }))
           };
           setVidsrcPmDiagnostics('Success: resolved stream sources successfully.');
@@ -716,7 +716,7 @@ export default function LocalVideoPlayer({
               url: s.url || s.file || '',
               label: s.lang || s.label || 'Unknown',
               lang: s.lang || s.label || 'Unknown',
-              isBackup: !!s.isBackup
+              isBackup: s.isBackup === true || s.isBackup === 'true' || s.isBackup === 1
             }))
           };
           setVidsrcPmDiagnostics('Success: resolved stream sources successfully.');
@@ -923,7 +923,7 @@ export default function LocalVideoPlayer({
           label: sub.label || sub.lang || 'Unknown',
           kind: 'subtitles',
           default: (sub.lang || '').toLowerCase().includes('english') && !sub.isBackup,
-          isBackup: !!sub.isBackup
+          isBackup: sub.isBackup === true || sub.isBackup === 'true' || sub.isBackup === 1
         }));
         const defaultIndex = newTracks.findIndex((t: any) => t.default);
         setServerSubtitleTracks(prev => ({
@@ -966,6 +966,39 @@ export default function LocalVideoPlayer({
               }
             } catch (e) {
               console.warn('[LocalVideoPlayer] Failed to auto-fetch YTS subtitles in background:', e);
+            }
+          })();
+        } else if (type === 'tv' && (imdbId || item?.id)) {
+          // Fetch OpenSubtitles or SubDL TV subtitles automatically in background if server returns none
+          (async () => {
+            try {
+              console.log('[LocalVideoPlayer] Server returned empty TV subtitles. Fetching TV subtitles automatically in background...');
+              const targetId = imdbId || String(item?.id);
+              const osUrl = `${localServer}/movies/opensubtitles/${targetId}?type=tv&season=${season}&episode=${episode}`;
+              const osRes = await fetch(osUrl);
+              if (osRes.ok) {
+                const osSubs = await osRes.json();
+                if (Array.isArray(osSubs) && osSubs.length > 0) {
+                  const newTracks = osSubs.map((sub: any) => ({
+                    file: `${localServer}/movies/opensubtitles/download?link=${encodeURIComponent(sub.link)}`,
+                    label: `${sub.language || 'Unknown'} (Auto OpenSubtitles)`,
+                    kind: 'subtitles',
+                    default: (sub.language || '').toLowerCase().includes('english')
+                  }));
+                  const defaultIndex = newTracks.findIndex((t: any) => t.default);
+                  setServerSubtitleTracks(prev => ({
+                    ...prev,
+                    [serverId]: newTracks
+                  }));
+                  setServerActiveTrackIndices(prev => ({
+                    ...prev,
+                    [serverId]: defaultIndex !== -1 ? defaultIndex : -1
+                  }));
+                  console.log(`[LocalVideoPlayer] Auto-loaded ${newTracks.length} fallback TV subtitles in background`);
+                }
+              }
+            } catch (e) {
+              console.warn('[LocalVideoPlayer] Failed to auto-fetch TV subtitles in background:', e);
             }
           })();
         }
@@ -1027,17 +1060,17 @@ export default function LocalVideoPlayer({
   const [availableSources, setAvailableSources] = useState<{url: string; quality: string; isM3U8: boolean}[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'quality' | 'subtitles' | 'speed' | 'servers' | 'download' | 'diagnostics'>(isOfflineMode ? 'subtitles' : 'servers');
-  const [localTracks, setLocalTracks] = useState<{ file: string; label: string; kind: string; default?: boolean }[]>([]);
+  const [localTracks, setLocalTracks] = useState<{ file: string; label: string; kind: string; default?: boolean; isBackup?: boolean }[]>([]);
   const [activeTrackIndex, setActiveTrackIndex] = useState<number>(-1);
   const [loadingSubtitleIndex, setLoadingSubtitleIndex] = useState<number | null>(null);
   const [subtitleError, setSubtitleError] = useState<string | null>(null);
-  const [lastAttemptedTrack, setLastAttemptedTrack] = useState<{ file: string; label: string; kind: string; default?: boolean } | null>(null);
+  const [lastAttemptedTrack, setLastAttemptedTrack] = useState<{ file: string; label: string; kind: string; default?: boolean; isBackup?: boolean } | null>(null);
   const [vidlinkDiagnostics, setVidlinkDiagnostics] = useState<string | null>(null);
   const [vidsrcPmDiagnostics, setVidsrcPmDiagnostics] = useState<string | null>(null);
   const [testServerDiagnostics, setTestServerDiagnostics] = useState<string | null>(null);
 
   // Server subtitle settings memory
-  const [serverSubtitleTracks, setServerSubtitleTracks] = useState<Record<string, { file: string; label: string; kind: string; default?: boolean }[]>>({
+  const [serverSubtitleTracks, setServerSubtitleTracks] = useState<Record<string, { file: string; label: string; kind: string; default?: boolean; isBackup?: boolean }[]>>({
     'vidsrc-pm': []
   });
   const [serverActiveTrackIndices, setServerActiveTrackIndices] = useState<Record<string, number>>({
@@ -2221,7 +2254,7 @@ export default function LocalVideoPlayer({
                 label: sub.label || sub.lang || 'Unknown',
                 kind: 'subtitles',
                 default: (sub.lang || '').toLowerCase().includes('english') && !sub.isBackup,
-                isBackup: !!sub.isBackup
+                isBackup: sub.isBackup === true || sub.isBackup === 'true' || sub.isBackup === 1
               }));
               const defaultIndex = newTracks.findIndex((t: any) => t.default);
               setServerSubtitleTracks(prev => ({
@@ -2260,6 +2293,32 @@ export default function LocalVideoPlayer({
                     }
                   })
                   .catch(e => console.warn('[LocalVideoPlayer] Failed to pre-fetch YTS subtitles:', e));
+              } else if (type === 'tv' && (imdbId || item?.id)) {
+                const localServer = getLocalServerUrl();
+                const targetId = imdbId || String(item?.id);
+                const osUrl = `${localServer}/movies/opensubtitles/${targetId}?type=tv&season=${season}&episode=${episode}`;
+                fetch(osUrl)
+                  .then(res => res.ok ? res.json() : null)
+                  .then(osSubs => {
+                    if (Array.isArray(osSubs) && osSubs.length > 0) {
+                      const newTracks = osSubs.map((sub: any) => ({
+                        file: `${localServer}/movies/opensubtitles/download?link=${encodeURIComponent(sub.link)}`,
+                        label: `${sub.language || 'Unknown'} (Auto OpenSubtitles)`,
+                        kind: 'subtitles',
+                        default: (sub.language || '').toLowerCase().includes('english')
+                      }));
+                      const defaultIndex = newTracks.findIndex((t: any) => t.default);
+                      setServerSubtitleTracks(prev => ({
+                        ...prev,
+                        [selectedServer]: newTracks
+                      }));
+                      setServerActiveTrackIndices(prev => ({
+                        ...prev,
+                        [selectedServer]: defaultIndex !== -1 ? defaultIndex : -1
+                      }));
+                    }
+                  })
+                  .catch(e => console.warn('[LocalVideoPlayer] Failed to pre-fetch TV subtitles:', e));
               }
             }
           }

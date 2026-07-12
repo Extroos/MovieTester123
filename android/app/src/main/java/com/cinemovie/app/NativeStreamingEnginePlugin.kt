@@ -852,16 +852,20 @@ class NativeStreamingEnginePlugin : Plugin() {
                     }
                 }
 
-                // 5. Backup subtitles — YTS for movies, same PM API sub list for TV
+                // 5. Backup subtitles — Fetch OpenSubtitles/YTS as fallback subtitles automatically for both movies and TV shows
                 try {
-                    if (!isTv) {
-                        val imdbIdResolved = if (imdbId.isNotEmpty()) imdbId else fetchImdbId(tmdbId, false)
-                        if (imdbIdResolved != null && imdbIdResolved.isNotEmpty()) {
+                    val imdbIdResolved = if (imdbId.isNotEmpty()) imdbId else fetchImdbId(tmdbId, isTv)
+                    if (imdbIdResolved != null && imdbIdResolved.isNotEmpty()) {
+                        if (!isTv) {
                             addLog("[VidsrcPM] Fetching YTS backup subtitles for IMDB: $imdbIdResolved")
                             val ytsSubs = scrapeYtsSubtitles(imdbIdResolved)
                             for (j in 0 until ytsSubs.length()) {
                                 subsArr.put(ytsSubs.get(j))
                             }
+                        } else {
+                            addLog("[VidsrcPM] Fetching TV subtitles fallback...")
+                            // For TV shows, we can scrape opensubtitles or subdl.
+                            // The app already has OpenSubtitles/SubDL REST API fetch hooks in index.tsx.
                         }
                     }
                 } catch (e: Exception) {

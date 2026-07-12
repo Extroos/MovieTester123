@@ -928,8 +928,12 @@ export const PlayerSettings = React.memo(function PlayerSettings({
               )}
 
               {(() => {
-                const officialTracks = localTracks.filter(t => !t.isBackup);
-                const backupTracks = localTracks.filter(t => !!t.isBackup);
+              const isTrackBackup = (t: { isBackup?: boolean; label?: string }) =>
+                t.isBackup === true || t.isBackup === ('true' as any) || t.isBackup === (1 as any) ||
+                (t.label || '').includes('(Auto YTS)') ||
+                (t.label || '').includes('(YTS)');
+              const officialTracks = localTracks.filter(t => !isTrackBackup(t));
+              const backupTracks = localTracks.filter(t => isTrackBackup(t));
 
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
