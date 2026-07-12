@@ -32,6 +32,21 @@ const formatTime = (seconds: number) => {
   return `${m}:${s.toString().padStart(2, '0')}`;
 };
 
+// Gets the base URL for API calls: native proxy port on Android, PC server URL on desktop
+async function getNativeProxyBaseUrl(): Promise<string> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const result = await NativeStreamingEngine.getProxyPort();
+      const port = result?.port || 8000;
+      return `http://localhost:${port}`;
+    } catch (e) {
+      console.warn('[LocalVideoPlayer] Failed to get native proxy port, falling back to 8000:', e);
+      return 'http://localhost:8000';
+    }
+  }
+  return getLocalServerUrl();
+}
+
 const getSubtitleProxyUrl = (trackUrl: string): string => {
   if (!trackUrl || !trackUrl.startsWith('http')) return trackUrl;
   const localServer = getLocalServerUrl();
@@ -1595,8 +1610,8 @@ export default function LocalVideoPlayer({
         const imdbId = (item as any)?.imdbId || (item as any)?.imdb_id;
         if (!imdbId) throw new Error('IMDb ID not found for this movie.');
         
-        const localServer = getLocalServerUrl();
-        const searchUrl = `${localServer}/movies/yts-subtitles/${imdbId}`;
+        const baseUrl = await getNativeProxyBaseUrl();
+        const searchUrl = `${baseUrl}/movies/yts-subtitles/${imdbId}`;
         console.log('[LocalVideoPlayer] Fetching YTS subtitles:', searchUrl);
         
         const res = await fetch(searchUrl);
@@ -1606,18 +1621,27 @@ export default function LocalVideoPlayer({
         const langObj = LANGUAGES.find(l => l.code === lang);
         const langName = langObj ? langObj.name : 'English';
         
-        const filtered = data.filter((s: any) => 
-          s.language.toLowerCase() === langName.toLowerCase()
-        );
+        // Native Android returns objects with { link, language } - handle both formats
+        const filtered = data.filter((s: any) => {
+          const sLang = (s.language || s.lang || '').toLowerCase();
+          return sLang.includes(langName.toLowerCase()) || sLang === lang.toLowerCase();
+        });
         
-        setOnlineSubs(filtered);
-        if (filtered.length === 0) {
+        // Normalize to expected shape { link, language, name }
+        const normalized = filtered.map((s: any) => ({
+          link: s.link || s.url || '',
+          language: s.language || s.lang || 'Unknown',
+          name: s.name || s.language || s.lang || '',
+        }));
+        
+        setOnlineSubs(normalized);
+        if (normalized.length === 0) {
           setOnlineSearchError(`No subtitles found on YIFY for language: ${langName}`);
         }
-        return filtered;
+        return normalized;
       } else if (provider === 'subdl') {
         if (!subdlKey.trim()) throw new Error('SubDL API Key is required.');
-        const localServer = getLocalServerUrl();
+        const localServer = await getNativeProxyBaseUrl();
         const imdbId = (item as any)?.imdbId || (item as any)?.imdb_id;
         
         const queryParams = new URLSearchParams({
@@ -1645,7 +1669,7 @@ export default function LocalVideoPlayer({
         return data;
       } else {
         if (!apiKey.trim()) throw new Error('OpenSubtitles API Key is required.');
-        const localServer = getLocalServerUrl();
+        const localServer = await getNativeProxyBaseUrl();
         let token = '';
         if (username.trim() && password.trim()) {
           const loginRes = await fetch(`${localServer}/subtitles/opensubtitles/login`, {
@@ -1690,8 +1714,8 @@ export default function LocalVideoPlayer({
       console.error('[LocalVideoPlayer] Online subtitle search error:', e);
       let errMsg = e.message || String(e);
       if (errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError') || errMsg.includes('TypeError: Load failed')) {
-        const localServer = getLocalServerUrl();
-        errMsg = `Connection Error: Failed to contact local server at "${localServer}". Ensure the server application is running on this device. Details: ${errMsg}`;
+        const localServer = Capacitor.isNativePlatform() ? 'native proxy' : getLocalServerUrl();
+        errMsg = `Connection Error: Failed to contact local server at "${localServer}". Details: ${errMsg}`;
       }
       setOnlineSearchError(errMsg);
       return [];

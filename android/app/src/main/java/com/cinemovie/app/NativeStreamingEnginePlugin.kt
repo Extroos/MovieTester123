@@ -360,6 +360,159 @@ class NativeStreamingEnginePlugin : Plugin() {
                 return
             }
 
+            // Native YTS subtitle search: GET /movies/yts-subtitles/{imdbId}
+            val ytsMatch = Regex("""/movies/yts-subtitles/([^/?]+)""").find(path)
+            if (ytsMatch != null) {
+                val imdbId = ytsMatch.groupValues[1]
+                val out = java.io.BufferedOutputStream(socket.getOutputStream())
+                try {
+                    val subsArray = scrapeYtsSubtitles(imdbId)
+                    // Convert JSArray to a proper JSON list expected by the React client
+                    val jsonBuilder = StringBuilder("[")
+                    for (i in 0 until subsArray.length()) {
+                        val obj = subsArray.getJSONObject(i)
+                        // Map native fields to the format expected by index.tsx: { link, language, name }
+                        val lang = obj.optString("lang", "Unknown")
+                        val url = obj.optString("url", "")
+                        val isBackup = obj.optBoolean("isBackup", true)
+                        if (i > 0) jsonBuilder.append(",")
+                        jsonBuilder.append("""{"link":${org.json.JSONObject.quote(url)},"language":${org.json.JSONObject.quote(lang)},"name":${org.json.JSONObject.quote(lang)},"isBackup":$isBackup}""")
+                    }
+                    jsonBuilder.append("]")
+                    val body = jsonBuilder.toString().toByteArray(Charsets.UTF_8)
+                    val headers = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${body.size}\r\n\r\n"
+                    out.write(headers.toByteArray(Charsets.UTF_8))
+                    out.write(body)
+                    out.flush()
+                } catch (ex: Exception) {
+                    addLog("[Proxy] YTS subtitle route error: ${ex.message}")
+                    val errBody = """{"error":"${ex.message}"}""".toByteArray(Charsets.UTF_8)
+                    val headers = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${errBody.size}\r\n\r\n"
+                    out.write(headers.toByteArray(Charsets.UTF_8))
+                    out.write(errBody)
+                    out.flush()
+                } finally {
+                    socket.close()
+                }
+                return
+            }
+
+            // Native OpenSubtitles search: GET /movies/opensubtitles/{tmdbId}?type=movie|tv&season=&episode=
+            val osMatch = Regex("""/movies/opensubtitles/([^/?]+)""").find(path)
+            if (osMatch != null) {
+                val tmdbId = osMatch.groupValues[1]
+                val queryIdx = path.indexOf("?")
+                val queryString = if (queryIdx >= 0) path.substring(queryIdx + 1) else ""
+                val queryPairs = queryString.split("&").associate {
+                    val eqIdx = it.indexOf("=")
+                    if (eqIdx > 0) java.net.URLDecoder.decode(it.substring(0, eqIdx), "UTF-8") to java.net.URLDecoder.decode(it.substring(eqIdx + 1), "UTF-8")
+                    else it to ""
+                }
+                val type = queryPairs["type"] ?: "movie"
+                val season = queryPairs["season"] ?: ""
+                val episode = queryPairs["episode"] ?: ""
+                val lang = queryPairs["lang"] ?: "en"
+
+                val out = java.io.BufferedOutputStream(socket.getOutputStream())
+                try {
+                    // Build OpenSubtitles REST API URL
+                    val osApiBase = "https://rest.opensubtitles.com/api/v1"
+                    val apiKey = "JkKADcTEWRQzVl95qI2UtAXbMgJhH44R" // public demo key
+                    var osUrl = "$osApiBase/subtitles?tmdb_id=$tmdbId&languages=$lang"
+                    if (type == "tv" && season.isNotEmpty() && episode.isNotEmpty()) {
+                        osUrl += "&season_number=$season&episode_number=$episode"
+                    }
+                    addLog("[Proxy] OpenSubtitles search: $osUrl")
+                    val osReq = okhttp3.Request.Builder()
+                        .url(osUrl)
+                        .header("Api-Key", apiKey)
+                        .header("User-Agent", "CineMovie/1.0")
+                        .header("Content-Type", "application/json")
+                        .get()
+                        .build()
+                    val osResp = client.newCall(osReq).execute()
+                    val osHtml = osResp.body()?.string() ?: "{}"
+                    val json = org.json.JSONObject(osHtml)
+                    val data = json.optJSONArray("data") ?: org.json.JSONArray()
+                    val result = org.json.JSONArray()
+                    for (i in 0 until minOf(data.length(), 100)) {
+                        val item = data.getJSONObject(i)
+                        val attrs = item.optJSONObject("attributes") ?: continue
+                        val files = attrs.optJSONArray("files") ?: continue
+                        if (files.length() == 0) continue
+                        val fileId = files.getJSONObject(0).optInt("file_id", 0)
+                        val langCode = attrs.optString("language", lang)
+                        val release = attrs.optString("release", "")
+                        val dlUrl = "http://localhost:$proxyPort/movies/opensubtitles/download?fileId=$fileId"
+                        result.put(org.json.JSONObject().apply {
+                            put("link", dlUrl)
+                            put("language", langCode)
+                            put("name", release)
+                        })
+                    }
+                    val body = result.toString().toByteArray(Charsets.UTF_8)
+                    val headers = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${body.size}\r\n\r\n"
+                    out.write(headers.toByteArray(Charsets.UTF_8))
+                    out.write(body)
+                    out.flush()
+                } catch (ex: Exception) {
+                    addLog("[Proxy] OpenSubtitles route error: ${ex.message}")
+                    val errBody = """{"error":"${ex.message}"}""".toByteArray(Charsets.UTF_8)
+                    val headers = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${errBody.size}\r\n\r\n"
+                    out.write(headers.toByteArray(Charsets.UTF_8))
+                    out.write(errBody)
+                    out.flush()
+                } finally {
+                    socket.close()
+                }
+                return
+            }
+
+            // OpenSubtitles file download: GET /movies/opensubtitles/download?fileId={id}
+            if (path.startsWith("/movies/opensubtitles/download")) {
+                val queryIdx = path.indexOf("?")
+                val queryString = if (queryIdx >= 0) path.substring(queryIdx + 1) else ""
+                val queryPairs = queryString.split("&").associate {
+                    val eqIdx = it.indexOf("=")
+                    if (eqIdx > 0) java.net.URLDecoder.decode(it.substring(0, eqIdx), "UTF-8") to java.net.URLDecoder.decode(it.substring(eqIdx + 1), "UTF-8")
+                    else it to ""
+                }
+                val fileId = queryPairs["fileId"] ?: ""
+                val out = java.io.BufferedOutputStream(socket.getOutputStream())
+                try {
+                    val dlApiUrl = "https://api.opensubtitles.com/api/v1/download"
+                    val body = org.json.JSONObject().apply { put("file_id", fileId.toInt()) }.toString()
+                    // Use OkHttp for POST
+                    val reqBody = okhttp3.RequestBody.create(okhttp3.MediaType.parse("application/json"), body)
+                    val req = okhttp3.Request.Builder()
+                        .url(dlApiUrl)
+                        .header("Api-Key", "JkKADcTEWRQzVl95qI2UtAXbMgJhH44R")
+                        .header("Content-Type", "application/json")
+                        .post(reqBody)
+                        .build()
+                    val resp = client.newCall(req).execute()
+                    val respBody = resp.body()?.string() ?: "{}"
+                    val dlJson = org.json.JSONObject(respBody)
+                    val dlLink = dlJson.optString("link", "")
+                    if (dlLink.isEmpty()) throw Exception("No download link returned by OpenSubtitles")
+                    // Redirect to subtitle convert endpoint
+                    val vttUrl = "http://localhost:$proxyPort/convert-to-vtt?url=${java.net.URLEncoder.encode(dlLink, "UTF-8")}"
+                    val redirect = "HTTP/1.1 302 Found\r\nLocation: $vttUrl\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: 0\r\n\r\n"
+                    out.write(redirect.toByteArray(Charsets.UTF_8))
+                    out.flush()
+                } catch (ex: Exception) {
+                    addLog("[Proxy] OpenSubtitles download error: ${ex.message}")
+                    val errBody = """{"error":"${ex.message}"}""".toByteArray(Charsets.UTF_8)
+                    val headers = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${errBody.size}\r\n\r\n"
+                    out.write(headers.toByteArray(Charsets.UTF_8))
+                    out.write(errBody)
+                    out.flush()
+                } finally {
+                    socket.close()
+                }
+                return
+            }
+
             if (method.equals("OPTIONS", ignoreCase = true)) {
                 val out = java.io.BufferedOutputStream(socket.getOutputStream())
                 val res = "HTTP/1.1 200 OK\r\n" +
