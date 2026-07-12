@@ -2168,15 +2168,25 @@ export default function LocalVideoPlayer({
       const type = isTV ? 'tv' : 'movie';
       const tmdbId = item.id;
       
-      if (Capacitor.isNativePlatform() && selectedServer === 'vidlink-pro') {
-        console.log(`[LocalVideoPlayer] Pre-fetching native qualities for Vidlink...`);
-        NativeStreamingEngine.resolveVidlink({
-          tmdbId: String(tmdbId),
-          imdbId: (item as any)?.imdbId || (item as any)?.imdb_id || '',
-          type: type,
-          season: season || 1,
-          episode: episode || 1
-        }).then(nativeRes => {
+      if (Capacitor.isNativePlatform() && (selectedServer === 'vidlink-pro' || selectedServer === 'vidsrc-pm')) {
+        console.log(`[LocalVideoPlayer] Pre-fetching native qualities for ${selectedServer}...`);
+        const resolvePromise = selectedServer === 'vidsrc-pm'
+          ? NativeStreamingEngine.resolveVidsrcPm({
+              tmdbId: String(tmdbId),
+              imdbId: (item as any)?.imdbId || (item as any)?.imdb_id || '',
+              type: type,
+              season: season || 1,
+              episode: episode || 1
+            })
+          : NativeStreamingEngine.resolveVidlink({
+              tmdbId: String(tmdbId),
+              imdbId: (item as any)?.imdbId || (item as any)?.imdb_id || '',
+              type: type,
+              season: season || 1,
+              episode: episode || 1
+            });
+
+        resolvePromise.then((nativeRes: any) => {
           if (nativeRes && nativeRes.sources && nativeRes.sources.length > 0) {
             const sources = (nativeRes.sources || []).map((s: any) => ({
               url: s.url,
