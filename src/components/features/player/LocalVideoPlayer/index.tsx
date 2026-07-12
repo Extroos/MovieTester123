@@ -697,9 +697,9 @@ export default function LocalVideoPlayer({
             throw new Error("No streams found in Multi Language response");
           }
         } else {
-          // vidlink-pro native resolution
-          console.log(`[LocalVideoPlayer] Resolving Vidlink S${season}E${episode} natively on Android...`);
-          const nativeRes = await NativeStreamingEngine.resolveVidlink({
+          // fallback to vidsrc-pm native resolution
+          console.log(`[LocalVideoPlayer] Falling back to resolve VidSrc PM S${season}E${episode} natively on Android...`);
+          const nativeRes = await NativeStreamingEngine.resolveVidsrcPm({
             tmdbId: String(tmdbId),
             imdbId: (item as any)?.imdbId || (item as any)?.imdb_id || '',
             type: type,
@@ -714,11 +714,12 @@ export default function LocalVideoPlayer({
             })),
             subtitles: (nativeRes.subtitles || []).map((s: any) => ({
               url: s.url,
+              label: s.lang || 'Unknown',
               lang: s.lang || 'Unknown',
               isBackup: !!s.isBackup
             }))
           };
-          setVidlinkDiagnostics('Success: resolved stream sources successfully.');
+          setVidsrcPmDiagnostics('Success: resolved stream sources successfully.');
         }
       } else {
         const srv = (remoteServers.length > 0 ? remoteServers : ALL_SERVERS).find(s => s.id === serverId);
@@ -1037,25 +1038,20 @@ export default function LocalVideoPlayer({
 
   // Server subtitle settings memory
   const [serverSubtitleTracks, setServerSubtitleTracks] = useState<Record<string, { file: string; label: string; kind: string; default?: boolean }[]>>({
-    'vidlink-pro': [],
     'vidsrc-pm': []
   });
   const [serverActiveTrackIndices, setServerActiveTrackIndices] = useState<Record<string, number>>({
-    'vidlink-pro': -1,
     'vidsrc-pm': -1
   });
 
   // Server qualities and sources memory
   const [serverQualities, setServerQualities] = useState<Record<string, {height: number, index: number}[]>>({
-    'vidlink-pro': [],
     'vidsrc-pm': []
   });
   const [serverCurrentQuality, setServerCurrentQuality] = useState<Record<string, number>>({
-    'vidlink-pro': -1,
     'vidsrc-pm': -1
   });
   const [serverAvailableSources, setServerAvailableSources] = useState<Record<string, {url: string; quality: string; isM3U8: boolean}[]>>({
-    'vidlink-pro': [],
     'vidsrc-pm': []
   });
 
@@ -1239,8 +1235,8 @@ export default function LocalVideoPlayer({
 
   useEffect(() => {
     const initTracks = async () => {
-      const servers: ('vidlink-pro' | 'test-server' | 'vidsrc-sbs' | 'vidsrc-wtf-1' | 'vidsrc-wtf-2' | 'vidsrc-wtf-3' | 'vidsrc-wtf-4' | 'vidsrc-pk' | 'vidsrc-fyi' | 'vidzee' | 'vidsrc-top')[] = [
-        'vidlink-pro', 'test-server', 'vidsrc-sbs', 'vidsrc-wtf-1', 'vidsrc-wtf-2', 'vidsrc-wtf-3', 'vidsrc-wtf-4', 'vidsrc-pk', 'vidsrc-fyi', 'vidzee', 'vidsrc-top'
+      const servers: ('vidsrc-pm' | 'test-server' | 'vidsrc-sbs' | 'vidsrc-wtf-1' | 'vidsrc-wtf-2' | 'vidsrc-wtf-3' | 'vidsrc-wtf-4' | 'vidsrc-pk' | 'vidsrc-fyi' | 'vidzee' | 'vidsrc-top')[] = [
+        'vidsrc-pm', 'test-server', 'vidsrc-sbs', 'vidsrc-wtf-1', 'vidsrc-wtf-2', 'vidsrc-wtf-3', 'vidsrc-wtf-4', 'vidsrc-pk', 'vidsrc-fyi', 'vidzee', 'vidsrc-top'
       ];
       if (tracks && tracks.length > 0) {
         const defaultIndex = tracks.findIndex(t => t.default);
