@@ -628,7 +628,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
           ))}
         </div>
 
-        <div className="player-settings-content" style={{ flex: 1, overflowY: 'auto', height: '420px', maxHeight: '55vh', scrollbarWidth: 'none', pointerEvents: isTransitioning ? 'none' : 'auto' }}>
+        <div className="player-settings-content" style={{ flex: 1, overflowY: 'auto', maxHeight: '68vh', paddingBottom: '16px', scrollbarWidth: 'none', pointerEvents: isTransitioning ? 'none' : 'auto' }}>
           {settingsTab === 'servers' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {isSwitchingServer && (
