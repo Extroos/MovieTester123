@@ -662,6 +662,7 @@ export default function LocalVideoPlayer({
             })),
             subtitles: (nativeRes.subtitles || []).map((s: any) => ({
               url: s.url,
+              label: s.lang || 'Unknown',
               lang: s.lang || 'Unknown',
               isBackup: !!s.isBackup
             }))
