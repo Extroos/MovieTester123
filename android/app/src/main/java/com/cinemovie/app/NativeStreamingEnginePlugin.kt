@@ -1235,7 +1235,7 @@ class NativeStreamingEnginePlugin : Plugin() {
         try {
             addLog("[Vidsrc] Scraping YTS subtitles for IMDB: $imdbId...")
             val subtitlesConfig = remoteConfig.optJSONObject("subtitles") ?: org.json.JSONObject()
-            val ytsBase = subtitlesConfig.optString("yts_subtitles_url", "https://yifysubtitles.org/movie-imdb/")
+            val ytsBase = subtitlesConfig.optString("yts_subtitles_url", "https://yifysubtitles.ch/movie-imdb/")
             val ytsUrl = "$ytsBase$imdbId"
             val ytsHtml = proxyFetch(ytsUrl, "https://google.com/")
             val rowRegex = Regex("""<tr[^>]*data-id="\d+"[^>]*>([\s\S]*?)</tr>""")
