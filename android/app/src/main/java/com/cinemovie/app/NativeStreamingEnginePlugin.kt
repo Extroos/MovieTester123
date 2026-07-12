@@ -742,15 +742,28 @@ class NativeStreamingEnginePlugin : Plugin() {
                     gateways.add("https://streamdata.vaplayer.ru")
                 }
 
+                // 1.5. Resolve IMDB ID if TMDB is provided (VidSrc PM API requires IMDB ID)
+                var resolvedImdbId = imdbId
+                if (resolvedImdbId.isEmpty() || !resolvedImdbId.startsWith("tt")) {
+                    val fetched = fetchImdbId(tmdbId, isTv)
+                    if (fetched != null && fetched.startsWith("tt")) {
+                        resolvedImdbId = fetched
+                        addLog("[VidsrcPM] Resolved IMDB ID $resolvedImdbId from TMDB $tmdbId")
+                    } else {
+                        // fallback to using tmdbId directly
+                        resolvedImdbId = tmdbId
+                    }
+                }
+
                 // 2. Try each gateway until one succeeds
                 var resolvedData: org.json.JSONObject? = null
                 var lastError = ""
 
                 for (gw in gateways) {
                     val apiUrl = if (isTv) {
-                        "$gw/api.php?tmdb=$tmdbId&type=tv&season=$season&episode=$episode"
+                        "$gw/api.php?imdb=$resolvedImdbId&type=tv&season=$season&episode=$episode"
                     } else {
-                        "$gw/api.php?tmdb=$tmdbId&type=movie"
+                        "$gw/api.php?imdb=$resolvedImdbId&type=movie"
                     }
                     addLog("[VidsrcPM] Trying gateway: $apiUrl")
                     try {
