@@ -43,6 +43,10 @@ export function getLocalServerUrl(): string {
       return `http://${host}:3001`;
     }
   }
+  if (Capacitor.isNativePlatform()) {
+    // Android emulator loopback address pointing to host PC
+    return 'http://10.0.2.2:3001';
+  }
   return 'http://localhost:3001';
 }
 
