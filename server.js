@@ -1167,9 +1167,9 @@ app.get('/movies/yts-subtitles/download', async (req, res) => {
   
   console.log(`[Server] YTS Subtitles Download link: ${link}`);
   try {
-    const detailRes = await fetch(`https://yifysubtitles.org${link}`, {
+    const detailRes = await fetch(`https://yifysubtitles.ch${link}`, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
       }
     });
     if (!detailRes.ok) throw new Error(`Detail page returned status ${detailRes.status}`);

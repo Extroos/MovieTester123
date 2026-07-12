@@ -418,19 +418,19 @@ app.get('/movies/yts-subtitles/download', async (req, res) => {
   
   console.log(`[Server] YTS Subtitles Download link: ${link}`);
   try {
-    const detailRes = await fetch(`https://yts-subs.com${link}`, {
+    const detailRes = await fetch(`https://yifysubtitles.ch${link}`, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
       }
     });
     if (!detailRes.ok) throw new Error(`Detail page returned status ${detailRes.status}`);
     const html = await detailRes.text();
     
-    const dataLinkMatch = html.match(/data-link="([^"]*)"/);
-    if (!dataLinkMatch) throw new Error('Could not find data-link attribute in page HTML');
+    const dataLinkMatch = html.match(/class="btn-icon download-subtitle"\s+href="([^"]*)"/);
+    if (!dataLinkMatch) throw new Error('Could not find download-subtitle href attribute in page HTML');
     
-    const base64Link = dataLinkMatch[1];
-    const zipUrl = Buffer.from(base64Link, 'base64').toString('utf-8');
+    const zipPath = dataLinkMatch[1];
+    const zipUrl = `https://yifysubtitles.ch${zipPath}`;
     console.log(`[Server] Decoded ZIP URL: ${zipUrl}`);
     
     const pythonUrl = `http://localhost:8000/unzip-srt?url=${encodeURIComponent(zipUrl)}`;
