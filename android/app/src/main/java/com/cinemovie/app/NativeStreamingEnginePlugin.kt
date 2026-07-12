@@ -15,6 +15,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
 @CapacitorPlugin(name = "NativeStreamingEngine")
@@ -431,7 +433,7 @@ class NativeStreamingEnginePlugin : Plugin() {
                         .get()
                         .build()
                     val osResp = client.newCall(osReq).execute()
-                    val osHtml = osResp.body()?.string() ?: "{}"
+                    val osHtml = osResp.body?.string() ?: "{}"
                     val json = org.json.JSONObject(osHtml)
                     val data = json.optJSONArray("data") ?: org.json.JSONArray()
                     val result = org.json.JSONArray()
@@ -483,7 +485,7 @@ class NativeStreamingEnginePlugin : Plugin() {
                     val dlApiUrl = "https://api.opensubtitles.com/api/v1/download"
                     val body = org.json.JSONObject().apply { put("file_id", fileId.toInt()) }.toString()
                     // Use OkHttp for POST
-                    val reqBody = okhttp3.RequestBody.create(okhttp3.MediaType.parse("application/json"), body)
+                    val reqBody = body.toRequestBody("application/json".toMediaTypeOrNull())
                     val req = okhttp3.Request.Builder()
                         .url(dlApiUrl)
                         .header("Api-Key", "JkKADcTEWRQzVl95qI2UtAXbMgJhH44R")
@@ -491,7 +493,7 @@ class NativeStreamingEnginePlugin : Plugin() {
                         .post(reqBody)
                         .build()
                     val resp = client.newCall(req).execute()
-                    val respBody = resp.body()?.string() ?: "{}"
+                    val respBody = resp.body?.string() ?: "{}"
                     val dlJson = org.json.JSONObject(respBody)
                     val dlLink = dlJson.optString("link", "")
                     if (dlLink.isEmpty()) throw Exception("No download link returned by OpenSubtitles")
