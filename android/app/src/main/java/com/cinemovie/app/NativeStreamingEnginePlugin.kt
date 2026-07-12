@@ -471,6 +471,7 @@ class NativeStreamingEnginePlugin : Plugin() {
                 targetUrlStr.contains("quietmidnightgardeningideas") ||
                 targetUrlStr.contains("creativeautomationlab.site") ||
                 targetUrlStr.contains("brightpathsignals.com") ||
+                targetUrlStr.contains("smartincomeplaybook.site") ||
                 targetUrlStr.contains("/mbzqN9iiy/") ||
                 targetUrlStr.contains("/content/") ||
                 targetUrlStr.contains("/pl/") ||
@@ -1171,6 +1172,7 @@ class NativeStreamingEnginePlugin : Plugin() {
             targetUrl.contains("quietmidnightgardeningideas") ||
             targetUrl.contains("creativeautomationlab.site") ||
             targetUrl.contains("brightpathsignals.com") ||
+            targetUrl.contains("smartincomeplaybook.site") ||
             targetUrl.contains("/mbzqN9iiy/") ||
             targetUrl.contains("/WnVM9YFN1/")
         )
