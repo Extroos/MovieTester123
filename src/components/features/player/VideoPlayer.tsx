@@ -689,6 +689,45 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
           const settingsOverlay = document.getElementById('player-settings-overlay');
           if (settingsOverlay) {
             settingsOverlay.click();
+            return;
+          }
+
+          // Check if current server is ad-supported (from localStorage)
+          let isAdFree = true;
+          try {
+            const currentSrvId = localStorage.getItem('selected_server') || 'vidsrc-pm';
+            const allServers = [
+              { id: 'vidsrc-pm', isAdFree: true },
+              { id: 'vidsrc-wtf-2', isAdFree: true },
+              { id: 'vidzee', isAdFree: true },
+              { id: 'vidlink-pro', isAdFree: true },
+              { id: '2embed', isAdFree: true },
+              { id: 'vixsrc', isAdFree: true },
+              { id: 'universal', isAdFree: false },
+              { id: 'vidsrc-sbs', isAdFree: false },
+              { id: 'vidsrc-fyi', isAdFree: false },
+              { id: 'vidsrc-top', isAdFree: false }
+            ];
+            const found = allServers.find(s => s.id === currentSrvId);
+            if (found) {
+              isAdFree = found.isAdFree;
+            }
+          } catch (_) {}
+
+          if (!isAdFree) {
+            // First back press shows settings overlay instead of closing
+            const settingsBtn = document.querySelector('.tv-focusable[title="Settings"]') as HTMLElement || document.querySelector('[class*="settings"]') as HTMLElement;
+            if (settingsBtn) {
+              settingsBtn.click();
+            } else {
+              // Fallback element select via ID or close normally
+              const directBtn = document.getElementById('settings-button-trigger');
+              if (directBtn) {
+                directBtn.click();
+              } else {
+                onClose();
+              }
+            }
           } else {
             onClose();
           }
@@ -980,57 +1019,9 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
                         <line x1="18" y1="6" x2="6" y2="18"></line>
                         <line x1="6" y1="6" x2="18" y2="18"></line>
                       </svg>
-                      <span>{castConnected ? "Disconnect" : "Force Off"}</span>
                     </button>
                   </div>
                 )}
-
-                <div style={{ width: '100%', height: '1px', background: 'rgba(255,255,255,0.08)', margin: '4px 0' }} />
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <span style={{ fontSize: '0.74rem', fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    Alternative Option: Network Stream URL
-                  </span>
-                  <p style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.5)', margin: 0, lineHeight: 1.35 }}>
-                    Copy raw streaming link to play directly in TV player apps (like VLC, Kodi, or IPTV smart players):
-                  </p>
-                  <div style={{
-                    width: '100%',
-                    padding: '12px 14px',
-                    background: 'rgba(0,0,0,0.3)',
-                    border: '1px solid rgba(255,255,255,0.05)',
-                    borderRadius: '12px',
-                    fontSize: '0.78rem',
-                    color: '#a5b4fc',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    fontFamily: 'monospace',
-                  }}>
-                    {activeSrc}
-                  </div>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(activeSrc);
-                      import('../../../utils/haptics').then(m => m.triggerSuccessHaptic());
-                      setErrorToast("Streaming link copied successfully!");
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '12px',
-                      background: 'rgba(255,255,255,0.06)',
-                      border: '1px solid rgba(255,255,255,0.12)',
-                      borderRadius: '12px',
-                      color: '#ffffff',
-                      fontSize: '0.8rem',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                    }}
-                  >
-                    Copy Link
-                  </button>
-                </div>
               </div>
             </div>
           </motion.div>

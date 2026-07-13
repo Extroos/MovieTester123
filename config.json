@@ -27,21 +27,21 @@
       "name": "VidLink Pro",
       "description": "Clean ad-light embed — fast CDN, subtitle support",
       "badge": "HD",
-      "isAdFree": false
+      "isAdFree": true
     },
     {
       "id": "2embed",
       "name": "2Embed",
       "description": "Multi-source embed aggregator via 2embed.cc",
       "badge": "FREE",
-      "isAdFree": false
+      "isAdFree": true
     },
     {
       "id": "vixsrc",
       "name": "VixSrc",
       "description": "Multi-language embed via vixsrc.to — dark theme",
       "badge": "MULTI",
-      "isAdFree": false
+      "isAdFree": true
     },
     {
       "id": "vidsrc-sbs",

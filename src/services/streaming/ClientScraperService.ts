@@ -707,7 +707,7 @@ export async function scrapeVidzeeStream(
     const errors: string[] = [];
 
     // Query Tcloud (0), IpCloud (1), Achilles (2), Nflix (3), Drag (4)
-    const serversToTest = [0, 1, 3, 4];
+    const serversToTest = [3, 4, 5, 7];
     const promises = serversToTest.map(async (sr) => {
       let url = `https://player.vidzee.wtf/api/server?id=${tmdbId}&sr=${sr}`;
       if (type === 'tv') {
@@ -720,17 +720,19 @@ export async function scrapeVidzeeStream(
             'Referer': referer,
             'Accept': 'application/json'
           }
-        }, 5000);
+        }, 8000);
         
         if (res && res.url && res.url.length > 0) {
           for (const item of res.url) {
             try {
               const decryptedStream = await decryptStreamUrlWebCrypto(item.link, decryptedKey);
-              if (decryptedStream) {
+              if (decryptedStream && decryptedStream.startsWith('http')) {
+                const langLabel = item.lang ? ` [${item.lang}]` : '';
+                const providerLabel = res.provider || item.name || `Server ${sr}`;
                 sources.push({
                   url: decryptedStream,
-                  quality: item.name || `Server ${sr}`,
-                  isM3U8: decryptedStream.includes('.m3u8')
+                  quality: `${providerLabel}${langLabel}`,
+                  isM3U8: decryptedStream.includes('.m3u8') || decryptedStream.includes('.txt')
                 });
               }
             } catch (decErr: any) {
@@ -756,6 +758,211 @@ export async function scrapeVidzeeStream(
     };
   } catch (e: any) {
     console.error(`[Client Vidzee] Scraper failed:`, e.message);
+    throw e;
+  }
+}
+
+export async function scrapeVidlinkStream(
+  tmdbId: string,
+  type: 'movie' | 'tv',
+  season = 1,
+  episode = 1
+): Promise<any> {
+  try {
+    console.log(`[Client VidLink] Encrypting TMDB ID...`);
+    const encUrl = `https://enc-dec.app/api/enc-vidlink?text=${encodeURIComponent(String(tmdbId))}`;
+    let encRes;
+    
+    if (Capacitor.isNativePlatform()) {
+      const { fetchWithCapacitor } = await import('../../utils/nativeFetch');
+      const capRes = await fetchWithCapacitor(encUrl, 'text');
+      encRes = JSON.parse(await capRes.text());
+    } else {
+      const localServer = getLocalServerUrl() || 'http://localhost:3001';
+      const proxied = `${localServer}/local-proxy?url=${encodeURIComponent(encUrl)}`;
+      const res = await fetch(proxied);
+      encRes = await res.json();
+    }
+
+    const encodedTmdb = encRes && encRes.result;
+    if (!encodedTmdb) {
+      throw new Error("Encryption returned no payload");
+    }
+
+    const apiUrl = type === 'tv'
+      ? `https://vidlink.pro/api/b/tv/${encodedTmdb}/${season}/${episode}?multiLang=0`
+      : `https://vidlink.pro/api/b/movie/${encodedTmdb}?multiLang=0`;
+
+    console.log(`[Client VidLink] Fetching stream API...`);
+    let apiRes;
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+      'Referer': 'https://vidlink.pro'
+    };
+
+    if (Capacitor.isNativePlatform()) {
+      const { fetchWithCapacitor } = await import('../../utils/nativeFetch');
+      const capRes = await fetchWithCapacitor(apiUrl, 'text', headers);
+      apiRes = JSON.parse(await capRes.text());
+    } else {
+      const localServer = getLocalServerUrl() || 'http://localhost:3001';
+      const proxied = `${localServer}/local-proxy?url=${encodeURIComponent(apiUrl)}&referer=${encodeURIComponent('https://vidlink.pro')}`;
+      const res = await fetch(proxied);
+      apiRes = await res.json();
+    }
+
+    const sources: any[] = [];
+    if (apiRes.stream && apiRes.stream.qualities) {
+      for (const [quality, fileObj] of Object.entries(apiRes.stream.qualities)) {
+        const item: any = fileObj;
+        if (item && item.url) {
+          sources.push({
+            url: item.url,
+            quality: `${quality}p`,
+            isM3U8: item.url.includes('.m3u8')
+          });
+        }
+      }
+    }
+
+    const subtitles: any[] = [];
+    if (apiRes.subtitles && Array.isArray(apiRes.subtitles)) {
+      for (const sub of apiRes.subtitles) {
+        if (sub.url) {
+          subtitles.push({
+            url: sub.url,
+            lang: sub.language || 'Unknown'
+          });
+        }
+      }
+    }
+
+    if (sources.length === 0) {
+      throw new Error("No qualities found in VidLink response");
+    }
+
+    return { sources, subtitles };
+  } catch (e: any) {
+    console.error(`[Client VidLink] Scraper failed:`, e.message);
+    throw e;
+  }
+}
+
+export async function scrapeVixsrcStream(
+  tmdbId: string,
+  type: 'movie' | 'tv',
+  season = 1,
+  episode = 1
+): Promise<any> {
+  try {
+    const apiUrl = type === 'tv'
+      ? `https://vixsrc.to/api/tv/${tmdbId}/${season}/${episode}`
+      : `https://vixsrc.to/api/movie/${tmdbId}`;
+
+    console.log(`[Client VixSrc] Fetching stream API token...`);
+    let apiData;
+    if (Capacitor.isNativePlatform()) {
+      const { fetchWithCapacitor } = await import('../../utils/nativeFetch');
+      const capRes = await fetchWithCapacitor(apiUrl, 'text', { 'Referer': 'https://vixsrc.to/' });
+      apiData = JSON.parse(await capRes.text());
+    } else {
+      const localServer = getLocalServerUrl() || 'http://localhost:3001';
+      const proxied = `${localServer}/local-proxy?url=${encodeURIComponent(apiUrl)}&referer=${encodeURIComponent('https://vixsrc.to/')}`;
+      const res = await fetch(proxied);
+      apiData = await res.json();
+    }
+
+    if (!apiData || !apiData.src) {
+      throw new Error("Failed to resolve dynamic VixSrc token");
+    }
+
+    const embedUrl = `https://vixsrc.to${apiData.src}`;
+    console.log(`[Client VixSrc] Fetching embed player HTML...`);
+    let html = '';
+    if (Capacitor.isNativePlatform()) {
+      const { fetchWithCapacitor } = await import('../../utils/nativeFetch');
+      const capRes = await fetchWithCapacitor(embedUrl, 'text', { 'Referer': 'https://vixsrc.to/' });
+      html = await capRes.text();
+    } else {
+      const localServer = getLocalServerUrl() || 'http://localhost:3001';
+      const proxied = `${localServer}/local-proxy?url=${encodeURIComponent(embedUrl)}&referer=${encodeURIComponent('https://vixsrc.to/')}`;
+      const res = await fetch(proxied);
+      html = await res.text();
+    }
+
+    const streamsMatch = html.match(/window\.streams\s*=\s*(\[[^\]]+\])/);
+    const tokenMatch = html.match(/'token':\s*'([^']*)'/);
+    const expiresMatch = html.match(/'expires':\s*'([^']*)'/);
+
+    if (!streamsMatch || !tokenMatch || !expiresMatch) {
+      throw new Error("Obfuscated window.streams parameters not found in player page");
+    }
+
+    const streams = JSON.parse(streamsMatch[1]);
+    const token = tokenMatch[1];
+    const expires = expiresMatch[1];
+
+    const sources = streams.map((s: any) => {
+      const l = new URL(s.url);
+      l.searchParams.append("token", token);
+      l.searchParams.append("expires", expires);
+      l.searchParams.append("asn", "");
+      l.searchParams.append("h", "1"); // FHD quality
+      return {
+        url: l.toString(),
+        quality: s.name || 'Server',
+        isM3U8: true
+      };
+    });
+
+    return { sources, subtitles: [] };
+  } catch (e: any) {
+    console.error(`[Client VixSrc] Scraper failed:`, e.message);
+    throw e;
+  }
+}
+
+export async function scrape2EmbedStream(
+  tmdbId: string,
+  type: 'movie' | 'tv',
+  season = 1,
+  episode = 1
+): Promise<any> {
+  try {
+    // 2Embed redirects directly to videasy.to player, load player directly to bypass redirects!
+    const targetUrl = type === 'tv'
+      ? `https://player.videasy.to/tv/${tmdbId}/${season}/${episode}`
+      : `https://player.videasy.to/movie/${tmdbId}`;
+
+    console.log(`[Client 2Embed/Videasy] Fetching player HTML page...`);
+    let html = '';
+    if (Capacitor.isNativePlatform()) {
+      const { fetchWithCapacitor } = await import('../../utils/nativeFetch');
+      const capRes = await fetchWithCapacitor(targetUrl, 'text', { 'Referer': 'https://streamsrcs.2embed.cc/' });
+      html = await capRes.text();
+    } else {
+      const localServer = getLocalServerUrl() || 'http://localhost:3001';
+      const proxied = `${localServer}/local-proxy?url=${encodeURIComponent(targetUrl)}&referer=${encodeURIComponent('https://streamsrcs.2embed.cc/')}`;
+      const res = await fetch(proxied);
+      html = await res.text();
+    }
+
+    const serversMatch = html.match(/window\.streams\s*=\s*(\[[^\]]+\])/);
+    if (!serversMatch) {
+      // If direct pages/chunks changed, let's fallback to search TMDB-Embed-API proxy structure
+      throw new Error("Could not find window.streams variables on videasy player page");
+    }
+
+    const streams = JSON.parse(serversMatch[1]);
+    const sources = streams.map((s: any) => ({
+      url: s.url,
+      quality: s.name || 'Server',
+      isM3U8: s.url.includes('.m3u8')
+    }));
+
+    return { sources, subtitles: [] };
+  } catch (e: any) {
+    console.error(`[Client 2Embed/Videasy] Scraper failed:`, e.message);
     throw e;
   }
 }
