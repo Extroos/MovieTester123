@@ -84,8 +84,9 @@ async function fetchRemoteConfig(): Promise<RemoteConfig> {
     return _cachedConfig;
   }
   const url = getConfigUrl();
+  const cacheBustUrl = `${url}?t=${Date.now()}`;
   try {
-    const res = await fetch(url, { cache: 'no-store' });
+    const res = await fetch(cacheBustUrl, { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data: RemoteConfig = await res.json();
     saveCachedConfig(data);
