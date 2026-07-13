@@ -86,7 +86,13 @@
     "enc_dec": "https://enc-dec.app",
     "vidzee": "https://player.vidzee.wtf",
     "vidzee_core": "https://core.vidzee.wtf",
-    "vidsrc_top": "https://vid-src.top"
+    "vidsrc_top": "https://vid-src.top",
+    "vidsrc_pm_mirrors": ["https://streamdata.vaplayer.ru", "https://stream.vaplayer.ru"],
+    "vidlink_mirrors": ["https://vidlink.pro", "https://vidlink.la", "https://vidlink.click"],
+    "vixsrc_mirrors": ["https://vixsrc.to", "https://vixsrc.cc", "https://vixsrc.xyz"],
+    "videasy_mirrors": ["https://player.videasy.to", "https://player.videasy.net"],
+    "vidzee_mirrors": ["https://player.vidzee.wtf", "https://player.vidzee.cc"],
+    "enc_dec_mirrors": ["https://enc-dec.app", "https://enc-dec.app/api"]
   },
   "embed_urls": {
     "vidsrc_pm_gateways": [
