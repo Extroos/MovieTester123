@@ -2,6 +2,7 @@ import nacl from 'tweetnacl';
 import { Capacitor } from '@capacitor/core';
 import { getLocalServerUrl } from './LocalStreamService';
 import { logToNative } from '../../utils/nativeFetch';
+import { getGateway } from './RemoteConfigService';
 
 const KEY_HEX = "c75136c5668bbfe65a7ecad431a745db68b5f381555b38d8f6c699449cf11fcd";
 
@@ -769,8 +770,11 @@ export async function scrapeVidlinkStream(
   episode = 1
 ): Promise<any> {
   try {
+    const encDecBase = await getGateway('enc_dec') || 'https://enc-dec.app';
+    const vidlinkBase = await getGateway('vidlink') || 'https://vidlink.pro';
+
     console.log(`[Client VidLink] Encrypting TMDB ID...`);
-    const encUrl = `https://enc-dec.app/api/enc-vidlink?text=${encodeURIComponent(String(tmdbId))}`;
+    const encUrl = `${encDecBase}/api/enc-vidlink?text=${encodeURIComponent(String(tmdbId))}`;
     let encRes;
     
     if (Capacitor.isNativePlatform()) {
@@ -790,14 +794,14 @@ export async function scrapeVidlinkStream(
     }
 
     const apiUrl = type === 'tv'
-      ? `https://vidlink.pro/api/b/tv/${encodedTmdb}/${season}/${episode}?multiLang=0`
-      : `https://vidlink.pro/api/b/movie/${encodedTmdb}?multiLang=0`;
+      ? `${vidlinkBase}/api/b/tv/${encodedTmdb}/${season}/${episode}?multiLang=0`
+      : `${vidlinkBase}/api/b/movie/${encodedTmdb}?multiLang=0`;
 
     console.log(`[Client VidLink] Fetching stream API...`);
     let apiRes;
     const headers = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-      'Referer': 'https://vidlink.pro'
+      'Referer': vidlinkBase
     };
 
     if (Capacitor.isNativePlatform()) {
@@ -806,7 +810,7 @@ export async function scrapeVidlinkStream(
       apiRes = JSON.parse(await capRes.text());
     } else {
       const localServer = getLocalServerUrl() || 'http://localhost:3001';
-      const proxied = `${localServer}/local-proxy?url=${encodeURIComponent(apiUrl)}&referer=${encodeURIComponent('https://vidlink.pro')}`;
+      const proxied = `${localServer}/local-proxy?url=${encodeURIComponent(apiUrl)}&referer=${encodeURIComponent(vidlinkBase)}`;
       const res = await fetch(proxied);
       apiRes = await res.json();
     }
@@ -855,19 +859,20 @@ export async function scrapeVixsrcStream(
   episode = 1
 ): Promise<any> {
   try {
+    const vixsrcBase = await getGateway('vixsrc') || 'https://vixsrc.to';
     const apiUrl = type === 'tv'
-      ? `https://vixsrc.to/api/tv/${tmdbId}/${season}/${episode}`
-      : `https://vixsrc.to/api/movie/${tmdbId}`;
+      ? `${vixsrcBase}/api/tv/${tmdbId}/${season}/${episode}`
+      : `${vixsrcBase}/api/movie/${tmdbId}`;
 
     console.log(`[Client VixSrc] Fetching stream API token...`);
     let apiData;
     if (Capacitor.isNativePlatform()) {
       const { fetchWithCapacitor } = await import('../../utils/nativeFetch');
-      const capRes = await fetchWithCapacitor(apiUrl, 'text', { 'Referer': 'https://vixsrc.to/' });
+      const capRes = await fetchWithCapacitor(apiUrl, 'text', { 'Referer': `${vixsrcBase}/` });
       apiData = JSON.parse(await capRes.text());
     } else {
       const localServer = getLocalServerUrl() || 'http://localhost:3001';
-      const proxied = `${localServer}/local-proxy?url=${encodeURIComponent(apiUrl)}&referer=${encodeURIComponent('https://vixsrc.to/')}`;
+      const proxied = `${localServer}/local-proxy?url=${encodeURIComponent(apiUrl)}&referer=${encodeURIComponent(`${vixsrcBase}/`)}`;
       const res = await fetch(proxied);
       apiData = await res.json();
     }
@@ -876,16 +881,16 @@ export async function scrapeVixsrcStream(
       throw new Error("Failed to resolve dynamic VixSrc token");
     }
 
-    const embedUrl = `https://vixsrc.to${apiData.src}`;
+    const embedUrl = `${vixsrcBase}${apiData.src}`;
     console.log(`[Client VixSrc] Fetching embed player HTML...`);
     let html = '';
     if (Capacitor.isNativePlatform()) {
       const { fetchWithCapacitor } = await import('../../utils/nativeFetch');
-      const capRes = await fetchWithCapacitor(embedUrl, 'text', { 'Referer': 'https://vixsrc.to/' });
+      const capRes = await fetchWithCapacitor(embedUrl, 'text', { 'Referer': `${vixsrcBase}/` });
       html = await capRes.text();
     } else {
       const localServer = getLocalServerUrl() || 'http://localhost:3001';
-      const proxied = `${localServer}/local-proxy?url=${encodeURIComponent(embedUrl)}&referer=${encodeURIComponent('https://vixsrc.to/')}`;
+      const proxied = `${localServer}/local-proxy?url=${encodeURIComponent(embedUrl)}&referer=${encodeURIComponent(`${vixsrcBase}/`)}`;
       const res = await fetch(proxied);
       html = await res.text();
     }
@@ -929,10 +934,10 @@ export async function scrape2EmbedStream(
   episode = 1
 ): Promise<any> {
   try {
-    // 2Embed redirects directly to videasy.to player, load player directly to bypass redirects!
+    const videasyBase = await getGateway('videasy') || 'https://player.videasy.to';
     const targetUrl = type === 'tv'
-      ? `https://player.videasy.to/tv/${tmdbId}/${season}/${episode}`
-      : `https://player.videasy.to/movie/${tmdbId}`;
+      ? `${videasyBase}/tv/${tmdbId}/${season}/${episode}`
+      : `${videasyBase}/movie/${tmdbId}`;
 
     console.log(`[Client 2Embed/Videasy] Fetching player HTML page...`);
     let html = '';

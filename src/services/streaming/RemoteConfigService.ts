@@ -44,6 +44,12 @@ const DEFAULT_GATEWAYS: GatewayConfig = {
   vidsrc_sbs: 'https://vidsrc.sbs',
   vidsrc_pk: 'https://embed.vidsrc.pk',
   vidsrc_fyi: 'https://vidsrc.fyi',
+  vidlink: 'https://vidlink.pro',
+  vixsrc: 'https://vixsrc.to',
+  videasy: 'https://player.videasy.to',
+  enc_dec: 'https://enc-dec.app',
+  vidzee: 'https://player.vidzee.wtf',
+  vidzee_core: 'https://core.vidzee.wtf'
 };
 
 let _cachedConfig: RemoteConfig | null = null;

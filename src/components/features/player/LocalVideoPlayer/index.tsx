@@ -13,7 +13,7 @@ import { PlayerSettings, ALL_SERVERS } from './PlayerSettings';
 import { PlayerControls } from './PlayerControls';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 const NativeStreamingEngine = registerPlugin<any>('NativeStreamingEngine');
-import { scrapeVidsrcFallback, scrapeVidifyStream, scrapeVidsrcPmStream, scrapeWtfStream } from '../../../../services/ClientScraperService';
+import { scrapeVidsrcFallback, scrapeVidifyStream, scrapeVidsrcPmStream, scrapeWtfStream, scrapeVidzeeStream, scrapeVidlinkStream, scrapeVixsrcStream, scrape2EmbedStream } from '../../../../services/ClientScraperService';
 import { getGateway, getRemoteServers } from '../../../../services/streaming/RemoteConfigService';
 import { WatchTogetherService, type PartyParticipant, type PartySyncEvent } from '../../../../services/watchTogether';
 import { supabase } from '../../../../services/supabase';
@@ -68,6 +68,109 @@ const getStandardResolutionHeight = (height: number): number => {
   if (height <= 1440) return 1440;
   return 2160;
 };
+
+interface Cue {
+  startTime: number;
+  endTime: number;
+  text: string;
+}
+
+const parseVtt = (vttText: string): Cue[] => {
+  const cues: Cue[] = [];
+  const lines = vttText.split(/\r?\n/);
+  let currentCue: Partial<Cue> | null = null;
+  
+  const parseTime = (timeStr: string): number => {
+    const parts = timeStr.split(':');
+    let secs = 0;
+    if (parts.length === 3) {
+      secs = parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2].replace(',', '.'));
+    } else if (parts.length === 2) {
+      secs = parseFloat(parts[0]) * 60 + parseFloat(parts[1].replace(',', '.'));
+    }
+    return secs;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line.includes('-->')) {
+      const parts = line.split('-->');
+      if (parts.length === 2) {
+        const start = parseTime(parts[0].trim());
+        const end = parseTime(parts[1].trim());
+        currentCue = { startTime: start, endTime: end, text: '' };
+      }
+    } else if (currentCue) {
+      if (line === '') {
+        if (currentCue.startTime !== undefined && currentCue.endTime !== undefined) {
+          cues.push({
+            startTime: currentCue.startTime,
+            endTime: currentCue.endTime,
+            text: currentCue.text?.trim() || ''
+          });
+        }
+        currentCue = null;
+      } else {
+        currentCue.text = currentCue.text ? currentCue.text + '\n' + line : line;
+      }
+    }
+  }
+  if (currentCue && currentCue.startTime !== undefined && currentCue.endTime !== undefined) {
+    cues.push({
+      startTime: currentCue.startTime,
+      endTime: currentCue.endTime,
+      text: currentCue.text?.trim() || ''
+    });
+  }
+  return cues;
+};
+
+const parseMasterPlaylist = (manifestText: string, baseUrl: string): { height: number; url: string }[] => {
+  const levels: { _bw: number; height: number; url: string }[] = [];
+  const lines = manifestText.split('\n');
+  let rawHeight = 0;
+  let bandwidth = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line.includes('RESOLUTION=') || line.includes('BANDWIDTH=')) {
+      const resMatch = line.match(/RESOLUTION=(\d+)x(\d+)/);
+      if (resMatch) rawHeight = parseInt(resMatch[2]);
+      const bwMatch = line.match(/BANDWIDTH=(\d+)/);
+      if (bwMatch) bandwidth = parseInt(bwMatch[1]);
+    } else if (line.startsWith('http') || (line.endsWith('.m3u8') && !line.startsWith('#'))) {
+      if (rawHeight > 0) {
+        // Snap to nearest standard resolution (1080p, 720p, 480p…)
+        const snappedHeight = getStandardResolutionHeight(rawHeight);
+        let resolvedUrl = line;
+        if (!line.startsWith('http')) {
+          try {
+            const urlObj = new URL(baseUrl);
+            const pathParts = urlObj.pathname.split('/');
+            pathParts.pop();
+            urlObj.pathname = pathParts.join('/') + '/' + line;
+            resolvedUrl = urlObj.toString();
+          } catch (e) {
+            resolvedUrl = line;
+          }
+        }
+        // If two raw levels snap to the same standard height, keep the higher-bandwidth one
+        const existingIdx = levels.findIndex(l => l.height === snappedHeight);
+        if (existingIdx !== -1) {
+          if (bandwidth > levels[existingIdx]._bw) {
+            levels[existingIdx] = { height: snappedHeight, url: resolvedUrl, _bw: bandwidth };
+          }
+        } else {
+          levels.push({ height: snappedHeight, url: resolvedUrl, _bw: bandwidth });
+        }
+        rawHeight = 0;
+        bandwidth = 0;
+      }
+    }
+  }
+  return levels.map(({ height, url }) => ({ height, url }));
+};
+
 
 interface LocalVideoPlayerProps {
   src: string;
@@ -167,65 +270,6 @@ export default function LocalVideoPlayer({
   // Ref that holds handleServerChange so the mount effect can call it before the function is declared
   const handleServerChangeRef = useRef<((serverId: string) => Promise<void>) | null>(null);
 
-  // Audio Booster Web Audio API Refs
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const gainNodeRef = useRef<GainNode | null>(null);
-  const audioSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const initAudioBooster = (videoElement: HTMLVideoElement) => {
-      if (audioSourceRef.current) return;
-      try {
-        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-        if (!AudioContextClass) return;
-        
-        const audioCtx = new AudioContextClass();
-        const source = audioCtx.createMediaElementSource(videoElement);
-        const gainNode = audioCtx.createGain();
-        
-        // Amplifies sound to 200% level
-        gainNode.gain.value = 2.0;
-        
-        source.connect(gainNode);
-        gainNode.connect(audioCtx.destination);
-        
-        audioCtxRef.current = audioCtx;
-        gainNodeRef.current = gainNode;
-        audioSourceRef.current = source;
-        
-        console.log('[LocalVideoPlayer] Web Audio booster active: Gain 2.0x');
-      } catch (err) {
-        console.warn('[LocalVideoPlayer] AudioContext booster initiation error:', err);
-      }
-    };
-
-    const handlePlayForBooster = () => {
-      initAudioBooster(video);
-      if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
-        audioCtxRef.current.resume().catch(() => {});
-      }
-    };
-
-    video.addEventListener('play', handlePlayForBooster);
-    video.addEventListener('playing', handlePlayForBooster);
-    
-    return () => {
-      video.removeEventListener('play', handlePlayForBooster);
-      video.removeEventListener('playing', handlePlayForBooster);
-    };
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (audioCtxRef.current) {
-        audioCtxRef.current.close().catch(() => {});
-      }
-    };
-  }, []);
-  
   // Dynamic stream / server selector states
   const [currentSrc, setCurrentSrc] = useState(src);
   const [selectedServer, setSelectedServer] = useState<string>(() => {
@@ -518,7 +562,7 @@ export default function LocalVideoPlayer({
     const doFreshResolve = async () => {
       if (handleServerChangeRef.current) {
         console.log('[LocalVideoPlayer] Mount: resolving fresh stream (ignoring potentially-expired src prop)...');
-        await handleServerChangeRef.current(selectedServerRef.current || 'vidsrc-pm');
+        await handleServerChangeRef.current(selectedServerRef.current || 'vidsrc-pm', true);
       } else {
         // Fallback: if ref not yet set, use src
         setCurrentSrc(src);
@@ -573,7 +617,7 @@ export default function LocalVideoPlayer({
     setShowSettings(true);
   };
 
-  const handleServerChange = async (serverId: string) => {
+  const handleServerChange = async (serverId: string, isInitialMount = false) => {
 
     if (isOfflineMode || (typeof navigator !== 'undefined' && !navigator.onLine)) {
       setPlayerToast({ message: 'You are offline. Server switching is not available.', isError: true });
@@ -601,7 +645,9 @@ export default function LocalVideoPlayer({
     setEmbedServer(null);
 
 
-    setIsSwitchingServer(true);
+    if (!isInitialMount) {
+      setIsSwitchingServer(true);
+    }
     setConnectingServerName(SERVER_DISPLAY_NAMES[serverId] || serverId);
     setServerError(null);
     setVidlinkDiagnostics(null);
@@ -637,7 +683,9 @@ export default function LocalVideoPlayer({
       hlsRef.current.destroy();
       hlsRef.current = null;
     }
-    setPlaying(false);
+    if (!isInitialMount) {
+      setPlaying(false);
+    }
     setBuffering(false);
     
     try {
@@ -655,7 +703,7 @@ export default function LocalVideoPlayer({
       // On native mobile, dispatch to the correct native resolver
       if (Capacitor.isNativePlatform()) {
         const srv = (remoteServers.length > 0 ? remoteServers : ALL_SERVERS).find(s => s.id === serverId);
-        const isIframeSrv = srv ? !srv.isAdFree : (serverId !== 'vidlink-pro' && serverId !== 'vidsrc-pm' && serverId !== 'vidsrc-sbs' && serverId !== 'vidzee');
+        const isIframeSrv = srv ? !srv.isAdFree : (serverId !== 'vidlink-pro' && serverId !== 'vidsrc-pm' && serverId !== 'vidsrc-sbs' && serverId !== 'vidzee' && serverId !== '2embed' && serverId !== 'vixsrc');
         if (isIframeSrv) {
           setIframeFallback(true);
           setEmbedServer(serverId);
@@ -715,6 +763,26 @@ export default function LocalVideoPlayer({
           } else {
             throw new Error("No streams found in Multi Language response");
           }
+        } else if (serverId === 'vidzee' || serverId === 'vidlink-pro' || serverId === 'vixsrc' || serverId === '2embed') {
+          console.log(`[LocalVideoPlayer] Resolving ${serverId} natively on mobile...`);
+          let res;
+          if (serverId === 'vidzee') {
+            res = await scrapeVidzeeStream(String(tmdbId), type, season, episode);
+          } else if (serverId === 'vidlink-pro') {
+            res = await scrapeVidlinkStream(String(tmdbId), type, season, episode);
+          } else if (serverId === 'vixsrc') {
+            res = await scrapeVixsrcStream(String(tmdbId), type, season, episode);
+          } else {
+            res = await scrape2EmbedStream(String(tmdbId), type, season, episode);
+          }
+          data = {
+            sources: res.sources,
+            subtitles: (res.subtitles || []).map((s: any) => ({
+              url: s.url,
+              label: s.lang || 'Unknown',
+              lang: s.lang || 'Unknown'
+            }))
+          };
         } else {
           // fallback to vidsrc-pm native resolution
           console.log(`[LocalVideoPlayer] Falling back to resolve VidSrc PM S${season}E${episode} natively on Android...`);
@@ -742,7 +810,7 @@ export default function LocalVideoPlayer({
         }
       } else {
         const srv = (remoteServers.length > 0 ? remoteServers : ALL_SERVERS).find(s => s.id === serverId);
-        const isIframeSrv = srv ? !srv.isAdFree : (serverId !== 'vidlink-pro' && serverId !== 'vidsrc-pm' && serverId !== 'vidsrc-sbs' && serverId !== 'vidzee');
+        const isIframeSrv = srv ? !srv.isAdFree : (serverId !== 'vidlink-pro' && serverId !== 'vidsrc-pm' && serverId !== 'vidsrc-sbs' && serverId !== 'vidzee' && serverId !== '2embed' && serverId !== 'vixsrc');
         if (isIframeSrv) {
           setIframeFallback(true);
           setEmbedServer(serverId);
@@ -903,6 +971,19 @@ export default function LocalVideoPlayer({
         throw new Error('No streaming sources found. The server may be temporarily unavailable.');
       }
 
+      if (Capacitor.isNativePlatform() && bestSource.startsWith('http://localhost:')) {
+        try {
+          const nativeBase = await getNativeProxyBaseUrl();
+          // Replace http://localhost:PORT with the correct resolved base URL
+          const pathIndex = bestSource.indexOf('/local-proxy');
+          if (pathIndex !== -1) {
+            bestSource = nativeBase + bestSource.substring(pathIndex);
+          }
+        } catch (e) {
+          console.warn('[LocalVideoPlayer] Failed to map dynamic port for bestSource:', e);
+        }
+      }
+
       let finalSrc = bestSource;
       const isExternal = bestSource.startsWith('http') && !bestSource.includes('localhost') && !bestSource.includes('127.0.0.1') && !bestSource.includes('local-proxy');
       
@@ -936,101 +1017,127 @@ export default function LocalVideoPlayer({
         onSourceChange(finalSrc);
       }
       
+      let serverTracks: any[] = [];
       if (data.subtitles && Array.isArray(data.subtitles) && data.subtitles.length > 0) {
-        const newTracks = data.subtitles.map((sub: any) => ({
+        serverTracks = data.subtitles.map((sub: any) => ({
           file: sub.url,
           label: sub.label || sub.lang || 'Unknown',
           kind: 'subtitles',
           default: (sub.lang || '').toLowerCase().includes('english') && !sub.isBackup,
           isBackup: sub.isBackup === true || sub.isBackup === 'true' || sub.isBackup === 1
         }));
-        const defaultIndex = newTracks.findIndex((t: any) => t.default);
-        setServerSubtitleTracks(prev => ({
-          ...prev,
-          [serverId]: newTracks
-        }));
-        setServerActiveTrackIndices(prev => ({
-          ...prev,
-          [serverId]: defaultIndex !== -1 ? defaultIndex : -1
-        }));
-      } else {
-        const imdbId = (item as any)?.imdbId || (item as any)?.imdb_id;
-        if (type === 'movie' && imdbId) {
-          // Fetch YTS subtitles asynchronously in the background so it doesn't block player initialization
-          (async () => {
-            try {
-              console.log('[LocalVideoPlayer] Server returned empty subtitles. Fetching YTS subtitles automatically in background...');
-              const ytsUrl = `${localServer}/movies/yts-subtitles/${imdbId}`;
-              const ytsRes = await fetch(ytsUrl);
-              if (ytsRes.ok) {
-                const ytsSubs = await ytsRes.json();
-                if (Array.isArray(ytsSubs) && ytsSubs.length > 0) {
-                  const newTracks = ytsSubs.map((sub: any) => ({
-                    file: `${localServer}/movies/yts-subtitles/download?link=${encodeURIComponent(sub.link)}`,
-                    label: `${sub.language} (Auto YTS)`,
-                    kind: 'subtitles',
-                    default: sub.language.toLowerCase().includes('english')
-                  }));
-                  const defaultIndex = newTracks.findIndex((t: any) => t.default);
-                  setServerSubtitleTracks(prev => ({
-                    ...prev,
-                    [serverId]: newTracks
-                  }));
-                  setServerActiveTrackIndices(prev => ({
-                    ...prev,
-                    [serverId]: defaultIndex !== -1 ? defaultIndex : -1
-                  }));
-                  console.log(`[LocalVideoPlayer] Auto-loaded ${newTracks.length} fallback YTS subtitles in background`);
-                }
+      }
+      
+      const initialDefaultIdx = serverTracks.findIndex((t: any) => t.default);
+      setServerSubtitleTracks(prev => ({
+        ...prev,
+        [serverId]: serverTracks
+      }));
+      setServerActiveTrackIndices(prev => ({
+        ...prev,
+        [serverId]: initialDefaultIdx !== -1 ? initialDefaultIdx : -1
+      }));
+
+      // Always pre-fetch backup/online subtitles in the background for all languages
+      const imdbId = (item as any)?.imdbId || (item as any)?.imdb_id;
+      if (type === 'movie' && imdbId) {
+        (async () => {
+          try {
+            console.log('[LocalVideoPlayer] Fetching YTS subtitles automatically in background...');
+            const ytsUrl = `${localServer}/movies/yts-subtitles/${imdbId}`;
+            const ytsRes = await fetch(ytsUrl);
+            if (ytsRes.ok) {
+              const ytsSubs = await ytsRes.json();
+              if (Array.isArray(ytsSubs) && ytsSubs.length > 0) {
+                const newTracks = ytsSubs.map((sub: any) => ({
+                  file: `${localServer}/movies/yts-subtitles/download?link=${encodeURIComponent(sub.link)}`,
+                  label: `${sub.language} (Auto YTS)`,
+                  kind: 'subtitles',
+                  default: sub.language.toLowerCase().includes('english')
+                }));
+                setServerSubtitleTracks(prev => {
+                  const existing = prev[serverId] || [];
+                  const combined = [...existing];
+                  newTracks.forEach(t => {
+                    if (!combined.some(c => c.file === t.file)) combined.push(t);
+                  });
+                  return { ...prev, [serverId]: combined };
+                });
               }
-            } catch (e) {
-              console.warn('[LocalVideoPlayer] Failed to auto-fetch YTS subtitles in background:', e);
             }
-          })();
-        } else if (type === 'tv' && (imdbId || item?.id)) {
-          // Fetch OpenSubtitles or SubDL TV subtitles automatically in background if server returns none
-          (async () => {
-            try {
-              console.log('[LocalVideoPlayer] Server returned empty TV subtitles. Fetching TV subtitles automatically in background...');
-              const targetId = imdbId || String(item?.id);
-              const osUrl = `${localServer}/movies/opensubtitles/${targetId}?type=tv&season=${season}&episode=${episode}`;
-              const osRes = await fetch(osUrl);
-              if (osRes.ok) {
-                const osSubs = await osRes.json();
-                if (Array.isArray(osSubs) && osSubs.length > 0) {
-                  const newTracks = osSubs.map((sub: any) => ({
-                    file: `${localServer}/movies/opensubtitles/download?link=${encodeURIComponent(sub.link)}`,
-                    label: `${sub.language || 'Unknown'} (Auto OpenSubtitles)`,
+          } catch (e) {
+            console.warn('[LocalVideoPlayer] Failed to auto-fetch YTS subtitles in background:', e);
+          }
+        })();
+      } else if (type === 'tv' && (imdbId || item?.id)) {
+        (async () => {
+          try {
+            console.log('[LocalVideoPlayer] Fetching TV subtitles automatically in background...');
+            const targetId = imdbId || String(item?.id);
+            const localServer = await getNativeProxyBaseUrl();
+            const osUrl = `${localServer}/movies/opensubtitles/${targetId}?type=tv&season=${season}&episode=${episode}&lang=en,ar,es,pt,ko,hi,de,fr,it,zh,tr,ru`;
+            const osRes = await fetch(osUrl);
+            if (osRes.ok) {
+              const osSubs = await osRes.json();
+              if (Array.isArray(osSubs) && osSubs.length > 0) {
+                const LANG_MAP: Record<string, string> = {
+                  en: 'English', ar: 'Arabic', es: 'Spanish', pt: 'Portuguese',
+                  ko: 'Korean', hi: 'Hindi', de: 'German', fr: 'French',
+                  it: 'Italian', zh: 'Chinese', tr: 'Turkish', ru: 'Russian',
+                  ja: 'Japanese', vi: 'Vietnamese', id: 'Indonesian',
+                  pl: 'Polish', nl: 'Dutch', fa: 'Persian'
+                };
+                const newTracks = osSubs.map((sub: any) => {
+                  const fileUrl = sub.link && (sub.link.startsWith('http') || sub.link.includes('fileId='))
+                    ? sub.link
+                    : `${localServer}/movies/opensubtitles/download?link=${encodeURIComponent(sub.link)}`;
+                  const langCode = (sub.language || '').toLowerCase();
+                  const langLabel = LANG_MAP[langCode] || sub.language || 'Unknown';
+                  return {
+                    file: fileUrl,
+                    label: `${langLabel} (Auto)`,
                     kind: 'subtitles',
-                    default: (sub.language || '').toLowerCase().includes('english')
-                  }));
-                  const defaultIndex = newTracks.findIndex((t: any) => t.default);
-                  setServerSubtitleTracks(prev => ({
-                    ...prev,
-                    [serverId]: newTracks
-                  }));
-                  setServerActiveTrackIndices(prev => ({
-                    ...prev,
-                    [serverId]: defaultIndex !== -1 ? defaultIndex : -1
-                  }));
-                  console.log(`[LocalVideoPlayer] Auto-loaded ${newTracks.length} fallback TV subtitles in background`);
-                }
+                    default: false
+                  };
+                });
+                setServerSubtitleTracks(prev => {
+                  const existing = prev[serverId] || [];
+                  const combined = [...existing];
+                  newTracks.forEach(t => {
+                    if (!combined.some(c => c.file === t.file)) combined.push(t);
+                  });
+                  
+                  if (initialDefaultIdx === -1) {
+                    const defaultIndex = combined.findIndex((t: any) => t.default);
+                    if (defaultIndex !== -1) {
+                      setServerActiveTrackIndices(activePrev => ({
+                        ...activePrev,
+                        [serverId]: defaultIndex
+                      }));
+                    }
+                  }
+                  
+                  return { ...prev, [serverId]: combined };
+                });
               }
-            } catch (e) {
-              console.warn('[LocalVideoPlayer] Failed to auto-fetch TV subtitles in background:', e);
             }
-          })();
-        }
+          } catch (e) {
+            console.warn('[LocalVideoPlayer] Failed to auto-fetch TV subtitles in background:', e);
+          }
+        })();
       }
       
       setShowSettings(false);
       resetControlsTimeout();
+      setPlaying(true);
     } catch (err: any) {
       if (err.name === 'AbortError') {
         console.warn('[LocalVideoPlayer] Server switch fetch timed out or was aborted.');
-        const msg = 'Connection timed out. The streaming server is taking too long to respond.';
-        setServerError(msg);
-        if (serverId === 'vidsrc-pm') setVidsrcPmDiagnostics(msg); else setVidlinkDiagnostics(msg);
+        if (!isInitialMount) {
+          const msg = 'Connection timed out. The streaming server is taking too long to respond.';
+          setServerError(msg);
+          if (serverId === 'vidsrc-pm') setVidsrcPmDiagnostics(msg); else setVidlinkDiagnostics(msg);
+        }
       } else {
         console.error('[LocalVideoPlayer] Failed to switch server:', err);
         setServerError(err.message || 'Resolution failed. Please try again.');
@@ -1145,6 +1252,30 @@ export default function LocalVideoPlayer({
       return saved !== null ? parseFloat(saved) : -40;
     }
   );
+  const hlsPtsOffsetRef = useRef<number>(0);
+  const [currentSubtitleHtml, setCurrentSubtitleHtml] = useState<string>('');
+  const [parsedCues, setParsedCues] = useState<Cue[]>([]);
+
+  useEffect(() => {
+    const activeTrack = activeTrackIndex !== -1 ? localTracks[activeTrackIndex] : null;
+    if (!activeTrack) {
+      setParsedCues([]);
+      setCurrentSubtitleHtml('');
+      return;
+    }
+    
+    fetch(activeTrack.file)
+      .then(res => res.text())
+      .then(text => {
+         const cues = parseVtt(text);
+         setParsedCues(cues);
+         console.log(`[LocalVideoPlayer] Successfully parsed ${cues.length} cues`);
+      })
+      .catch(e => {
+         console.error('[LocalVideoPlayer] Failed to load/parse subtitle:', e);
+         setParsedCues([]);
+      });
+  }, [activeTrackIndex, localTracks]);
 
   useEffect(() => {
     const handleSettingsChange = (e: any) => {
@@ -1263,15 +1394,26 @@ export default function LocalVideoPlayer({
     const track = trackElement ? trackElement.track : null;
     if (!track || !track.cues) return;
     
+    const totalOffset = delay - hlsPtsOffsetRef.current;
+    
     for (let i = 0; i < track.cues.length; i++) {
       const cue = track.cues[i] as any;
       if (cue._origStart === undefined) {
         cue._origStart = cue.startTime;
         cue._origEnd = cue.endTime;
       }
-      cue.startTime = cue._origStart + delay;
-      cue.endTime = cue._origEnd + delay;
+      cue.startTime = cue._origStart + totalOffset;
+      cue.endTime = cue._origEnd + totalOffset;
     }
+
+    // Force Android WebView to rebuild the text track index with new times
+    const currentMode = track.mode;
+    track.mode = 'hidden';
+    setTimeout(() => {
+      if (trackElement) {
+        track.mode = currentMode;
+      }
+    }, 20);
   };
 
   useEffect(() => {
@@ -1481,7 +1623,10 @@ export default function LocalVideoPlayer({
   };
 
   const [isSearchingOnline, setIsSearchingOnline] = useState(false);
-  const [onlineProvider, setOnlineProvider] = useState<'yify' | 'opensubtitles' | 'subdl'>('yify');
+  const [onlineProvider, setOnlineProvider] = useState<'yify' | 'opensubtitles' | 'subdl'>(() => {
+    const isTV = !!season || !!episode;
+    return isTV ? 'opensubtitles' : 'yify';
+  });
   const [searchLang, setSearchLang] = useState('en');
   const [onlineSubs, setOnlineSubs] = useState<any[]>([]);
   const [searchingSubs, setSearchingSubs] = useState(false);
@@ -1602,8 +1747,13 @@ export default function LocalVideoPlayer({
     try {
       const isTV = !!season || !!episode;
       const tmdbId = item?.id || '';
-      const provider = overrideProvider || onlineProvider;
+      let provider = overrideProvider || onlineProvider;
       const lang = overrideLang || searchLang;
+      
+      if (isTV && provider === 'yify') {
+        provider = 'opensubtitles';
+        setOnlineProvider('opensubtitles');
+      }
       
       if (provider === 'yify') {
         if (isTV) throw new Error('YIFY Subtitles only supports movies. Please use OpenSubtitles for TV shows.');
@@ -1668,8 +1818,21 @@ export default function LocalVideoPlayer({
         }
         return data;
       } else {
-        if (!apiKey.trim()) throw new Error('OpenSubtitles API Key is required.');
         const localServer = await getNativeProxyBaseUrl();
+        if (!apiKey.trim()) {
+          const targetId = tmdbId || '';
+          const osUrl = `${localServer}/movies/opensubtitles/${targetId}?type=${isTV ? 'tv' : 'movie'}&season=${season || 1}&episode=${episode || 1}&lang=${lang}`;
+          console.log('[LocalVideoPlayer] Searching free proxy OpenSubtitles:', osUrl);
+          const res = await fetch(osUrl);
+          if (!res.ok) throw new Error(`Free subtitle search failed: ${res.statusText}`);
+          const data = await res.json();
+          setOnlineSubs(data);
+          if (data.length === 0) {
+            setOnlineSearchError(`No subtitles found on OpenSubtitles.`);
+          }
+          return data;
+        }
+
         let token = '';
         if (username.trim() && password.trim()) {
           const loginRes = await fetch(`${localServer}/subtitles/opensubtitles/login`, {
@@ -1771,30 +1934,36 @@ export default function LocalVideoPlayer({
         downloadUrl = `${localServer}/subtitles/subdl/download?link=${encodeURIComponent(sub.link)}`;
         headers = { 'x-api-key': subdlKey.trim() };
       } else {
-        if (!apiKey.trim()) throw new Error('OpenSubtitles API Key is required.');
-        let token = '';
-        if (username.trim() && password.trim()) {
-          const loginRes = await fetch(`${localServer}/subtitles/opensubtitles/login`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-api-key': apiKey.trim()
-            },
-            body: JSON.stringify({ username: username.trim(), password: password.trim() })
-          });
-          if (loginRes.ok) {
-            const loginData = await loginRes.json();
-            token = loginData.token || '';
+        if (!apiKey.trim()) {
+          if (sub.link && (sub.link.startsWith('http://localhost') || sub.link.startsWith('http://127.0.0.1') || sub.link.startsWith('http'))) {
+            downloadUrl = sub.link;
+          } else {
+            throw new Error('Built-in free OpenSubtitles download link is missing.');
           }
-        }
-        if (!token) throw new Error('Credentials required to download.');
-        // If sub.link is already a full native localhost URL (Android), use it directly
-        if (sub.link && (sub.link.startsWith('http://localhost') || sub.link.startsWith('http://127.0.0.1'))) {
-          downloadUrl = sub.link;
         } else {
-          downloadUrl = `${localServer}/subtitles/opensubtitles/download?fileId=${sub.id}`;
+          let token = '';
+          if (username.trim() && password.trim()) {
+            const loginRes = await fetch(`${localServer}/subtitles/opensubtitles/login`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': apiKey.trim()
+              },
+              body: JSON.stringify({ username: username.trim(), password: password.trim() })
+            });
+            if (loginRes.ok) {
+              const loginData = await loginRes.json();
+              token = loginData.token || '';
+            }
+          }
+          if (!token) throw new Error('Credentials required to download.');
+          if (sub.link && (sub.link.startsWith('http://localhost') || sub.link.startsWith('http://127.0.0.1'))) {
+            downloadUrl = sub.link;
+          } else {
+            downloadUrl = `${localServer}/subtitles/opensubtitles/download?fileId=${sub.id}`;
+          }
+          headers = { 'x-api-key': apiKey.trim(), 'x-auth-token': token };
         }
-        headers = { 'x-api-key': apiKey.trim(), 'x-auth-token': token };
       }
       
       console.log('[LocalVideoPlayer] Downloading subtitle:', downloadUrl);
@@ -1856,7 +2025,7 @@ export default function LocalVideoPlayer({
   const durationRef = useRef(duration);
   const isHls = currentSrc.includes('.m3u8') || 
                 currentSrc.includes('type=m3u8') || 
-                ((selectedServer === 'vidlink-pro' || selectedServer === 'vidsrc-pm' || selectedServer === 'test-server' || selectedServer === 'vidsrc-sbs' || selectedServer === 'vidsrc-wtf-2' || selectedServer === 'vidsrc-pk' || selectedServer === 'vidsrc-fyi' || selectedServer === 'vidzee' || selectedServer === 'vidsrc-top') && 
+                ((selectedServer === 'vidlink-pro' || selectedServer === 'vidsrc-pm' || selectedServer === 'test-server' || selectedServer === 'vidsrc-sbs' || selectedServer === 'vidsrc-wtf-2' || selectedServer === 'vidsrc-pk' || selectedServer === 'vidsrc-fyi' || selectedServer === 'vidzee' || selectedServer === 'vidsrc-top' || selectedServer === '2embed' || selectedServer === 'vixsrc') && 
                   !currentSrc.includes('type=mp4') && 
                   !currentSrc.includes('.mp4')) || 
                 ((currentSrc.includes('vodvidl.site') || currentSrc.includes('vidlink') || currentSrc.includes('vidsrc') || currentSrc.includes('cloudnestra') || currentSrc.includes('brightpath') || currentSrc.includes('yonderunyielding') || currentSrc.includes('unctuousundertow') || currentSrc.includes('conversionfocusedstudio') || currentSrc.includes('onlinevisibilitysystem') || currentSrc.includes('quietmidnightgardeningideas') || currentSrc.includes('visionaryfounderslab')) && 
@@ -1997,9 +2166,7 @@ export default function LocalVideoPlayer({
   const resetControlsTimeout = () => {
     if (controlsTimeout.current) clearTimeout(controlsTimeout.current);
     setShowControls(true);
-    // FIX: Do NOT call setCurrentTime here. It caused a full React re-render
-    // on every mouse move (30-60x/sec) during playback. The progress bar
-    // is updated by the timeupdate event handler which throttles correctly.
+    setCurrentTime(currentTimeRef.current); // Sync scrubber state immediately on show
     if (showSettings || !playing) return;
     controlsTimeout.current = setTimeout(() => {
       setShowControls(false);
@@ -2292,80 +2459,111 @@ export default function LocalVideoPlayer({
               setServerCurrentQuality(prev => ({ ...prev, [selectedServer]: -1 }));
             }
 
+            let serverTracks: any[] = [];
             if (nativeRes.subtitles && Array.isArray(nativeRes.subtitles) && nativeRes.subtitles.length > 0) {
-              const newTracks = nativeRes.subtitles.map((sub: any) => ({
+              serverTracks = nativeRes.subtitles.map((sub: any) => ({
                 file: sub.url || sub.file || '',
                 label: sub.label || sub.lang || 'Unknown',
                 kind: 'subtitles',
                 default: (sub.lang || '').toLowerCase().includes('english') && !sub.isBackup,
                 isBackup: sub.isBackup === true || sub.isBackup === 'true' || sub.isBackup === 1
               }));
-              const defaultIndex = newTracks.findIndex((t: any) => t.default);
-              setServerSubtitleTracks(prev => ({
-                ...prev,
-                [selectedServer]: newTracks
-              }));
-              setServerActiveTrackIndices(prev => ({
-                ...prev,
-                [selectedServer]: defaultIndex !== -1 ? defaultIndex : -1
-              }));
-            } else {
-              // Fallback to YTS subtitles
-              const imdbId = (item as any)?.imdbId || (item as any)?.imdb_id;
-              if (type === 'movie' && imdbId) {
-                const localServer = getLocalServerUrl();
-                const ytsUrl = `${localServer}/movies/yts-subtitles/${imdbId}`;
-                fetch(ytsUrl)
-                  .then(res => res.ok ? res.json() : null)
-                  .then(ytsSubs => {
-                    if (Array.isArray(ytsSubs) && ytsSubs.length > 0) {
-                      const newTracks = ytsSubs.map((sub: any) => ({
-                        file: `${localServer}/movies/yts-subtitles/download?link=${encodeURIComponent(sub.link)}`,
-                        label: `${sub.language} (Auto YTS)`,
-                        kind: 'subtitles',
-                        default: sub.language.toLowerCase().includes('english')
-                      }));
-                      const defaultIndex = newTracks.findIndex((t: any) => t.default);
-                      setServerSubtitleTracks(prev => ({
-                        ...prev,
-                        [selectedServer]: newTracks
-                      }));
-                      setServerActiveTrackIndices(prev => ({
-                        ...prev,
-                        [selectedServer]: defaultIndex !== -1 ? defaultIndex : -1
-                      }));
-                    }
-                  })
-                  .catch(e => console.warn('[LocalVideoPlayer] Failed to pre-fetch YTS subtitles:', e));
-              } else if (type === 'tv' && (imdbId || item?.id)) {
-                const localServer = getLocalServerUrl();
-                const targetId = imdbId || String(item?.id);
-                const osUrl = `${localServer}/movies/opensubtitles/${targetId}?type=tv&season=${season}&episode=${episode}`;
-                fetch(osUrl)
-                  .then(res => res.ok ? res.json() : null)
-                  .then(osSubs => {
-                    if (Array.isArray(osSubs) && osSubs.length > 0) {
-                      const newTracks = osSubs.map((sub: any) => ({
-                        file: `${localServer}/movies/opensubtitles/download?link=${encodeURIComponent(sub.link)}`,
-                        label: `${sub.language || 'Unknown'} (Auto OpenSubtitles)`,
-                        kind: 'subtitles',
-                        default: (sub.language || '').toLowerCase().includes('english')
-                      }));
-                      const defaultIndex = newTracks.findIndex((t: any) => t.default);
-                      setServerSubtitleTracks(prev => ({
-                        ...prev,
-                        [selectedServer]: newTracks
-                      }));
-                      setServerActiveTrackIndices(prev => ({
-                        ...prev,
-                        [selectedServer]: defaultIndex !== -1 ? defaultIndex : -1
-                      }));
-                    }
-                  })
-                  .catch(e => console.warn('[LocalVideoPlayer] Failed to pre-fetch TV subtitles:', e));
-              }
             }
+            
+            const initialDefaultIdx = serverTracks.findIndex((t: any) => t.default);
+            setServerSubtitleTracks(prev => ({
+              ...prev,
+              [selectedServer]: serverTracks
+            }));
+            setServerActiveTrackIndices(prev => ({
+              ...prev,
+              [selectedServer]: initialDefaultIdx !== -1 ? initialDefaultIdx : -1
+            }));
+
+            // Always pre-fetch backup/online subtitles in the background for all languages
+            const imdbId = (item as any)?.imdbId || (item as any)?.imdb_id;
+            if (type === 'movie' && imdbId) {
+              const localServer = getLocalServerUrl();
+              const ytsUrl = `${localServer}/movies/yts-subtitles/${imdbId}`;
+              fetch(ytsUrl)
+                .then(res => res.ok ? res.json() : null)
+                .then(ytsSubs => {
+                  if (Array.isArray(ytsSubs) && ytsSubs.length > 0) {
+                    const newTracks = ytsSubs.map((sub: any) => ({
+                      file: `${localServer}/movies/yts-subtitles/download?link=${encodeURIComponent(sub.link)}`,
+                      label: `${sub.language} (Auto YTS)`,
+                      kind: 'subtitles',
+                      default: sub.language.toLowerCase().includes('english')
+                    }));
+                    setServerSubtitleTracks(prev => {
+                      const existing = prev[selectedServer] || [];
+                      const combined = [...existing];
+                      newTracks.forEach(t => {
+                        if (!combined.some(c => c.file === t.file)) combined.push(t);
+                      });
+                      return { ...prev, [selectedServer]: combined };
+                    });
+                  }
+                })
+                .catch(e => console.warn('[LocalVideoPlayer] Failed to pre-fetch YTS subtitles:', e));
+            } else if (type === 'tv' && (imdbId || item?.id)) {
+              (async () => {
+                try {
+                  const localServer = await getNativeProxyBaseUrl();
+                  const targetId = imdbId || String(item?.id);
+                  const osUrl = `${localServer}/movies/opensubtitles/${targetId}?type=tv&season=${season}&episode=${episode}&lang=en,ar,es,pt,ko,hi,de,fr,it,zh,tr,ru`;
+                  fetch(osUrl)
+                .then(res => res.ok ? res.json() : null)
+                .then(osSubs => {
+                  if (Array.isArray(osSubs) && osSubs.length > 0) {
+                    const LANG_MAP: Record<string, string> = {
+                      en: 'English', ar: 'Arabic', es: 'Spanish', pt: 'Portuguese',
+                      ko: 'Korean', hi: 'Hindi', de: 'German', fr: 'French',
+                      it: 'Italian', zh: 'Chinese', tr: 'Turkish', ru: 'Russian',
+                      ja: 'Japanese', vi: 'Vietnamese', id: 'Indonesian',
+                      pl: 'Polish', nl: 'Dutch', fa: 'Persian'
+                    };
+                    const newTracks = osSubs.map((sub: any) => {
+                      const fileUrl = sub.link && (sub.link.startsWith('http') || sub.link.includes('fileId='))
+                        ? sub.link
+                        : `${localServer}/movies/opensubtitles/download?link=${encodeURIComponent(sub.link)}`;
+                      const langCode = (sub.language || '').toLowerCase();
+                      const langLabel = LANG_MAP[langCode] || sub.language || 'Unknown';
+                      return {
+                        file: fileUrl,
+                        label: `${langLabel} (Auto)`,
+                        kind: 'subtitles',
+                        default: false
+                      };
+                    });
+                    setServerSubtitleTracks(prev => {
+                      const existing = prev[selectedServer] || [];
+                      const combined = [...existing];
+                      newTracks.forEach(t => {
+                        if (!combined.some(c => c.file === t.file)) combined.push(t);
+                      });
+                      
+                      if (initialDefaultIdx === -1) {
+                        const defaultIndex = combined.findIndex((t: any) => t.default);
+                        if (defaultIndex !== -1) {
+                          setServerActiveTrackIndices(activePrev => ({
+                            ...activePrev,
+                            [selectedServer]: defaultIndex
+                          }));
+                        }
+                      }
+                      
+                      return { ...prev, [selectedServer]: combined };
+                    });
+                  }
+                })
+                .catch(e => console.warn('[LocalVideoPlayer] Failed to pre-fetch TV subtitles:', e));
+              } catch (e) {
+                console.warn('[LocalVideoPlayer] Failed to pre-fetch TV subtitles:', e);
+              }
+            })();
           }
+        }
         }).catch(e => console.warn('[LocalVideoPlayer] Failed to pre-fetch native qualities:', e));
       } else {
         const localServer = getLocalServerUrl();
@@ -2404,8 +2602,16 @@ export default function LocalVideoPlayer({
   // Handle HLS Playback Setup
   useEffect(() => {
       if (!currentSrc) return;
+      hlsPtsOffsetRef.current = 0; // Reset offset for new stream source
       if (videoRef.current && isHls) {
-          if (Hls.isSupported()) {
+          const isCloudnestra = currentSrc.includes('cloudnestra') || 
+                               currentSrc.includes('yonderunyielding') || 
+                               currentSrc.includes('unctuousundertow') ||
+                               currentSrc.includes('vodvidl.site');
+          // Use Hls.js on Android for local-proxied streams because standard native HTML5 player fails to parse rewritten headers/segments
+          const forceNativeHls = false;
+
+          if (Hls.isSupported() && !forceNativeHls) {
               const startPos = pendingSeekTimeRef.current !== null 
                       ? pendingSeekTimeRef.current 
                       : (currentTimeRef.current > 10 ? currentTimeRef.current : (startTime && startTime > 10 ? startTime : -1));
@@ -2442,10 +2648,10 @@ export default function LocalVideoPlayer({
                   ? buildNativeHlsLoader((Hls as any).DefaultConfig.loader)
                   : (Hls as any).DefaultConfig.loader,
                 // Device-specific buffer memory optimizations to prevent Garbage Collection stutters
-                maxBufferLength: IS_MOBILE_DEVICE ? 30 : 60,
-                maxMaxBufferLength: IS_MOBILE_DEVICE ? 45 : 120,
-                maxBufferSize: IS_MOBILE_DEVICE ? 30 * 1024 * 1024 : 60 * 1024 * 1024,
-                backBufferLength: IS_MOBILE_DEVICE ? 30 : 30,
+                maxBufferLength: IS_MOBILE_DEVICE ? 15 : 60,
+                maxMaxBufferLength: IS_MOBILE_DEVICE ? 20 : 120,
+                maxBufferSize: IS_MOBILE_DEVICE ? 20 * 1024 * 1024 : 60 * 1024 * 1024,
+                backBufferLength: IS_MOBILE_DEVICE ? 5 : 30,
                 fragLoadingTimeOut: 30000,
                 manifestLoadingTimeOut: 30000,
                 levelLoadingTimeOut: 30000,
@@ -2459,11 +2665,11 @@ export default function LocalVideoPlayer({
                 nudgeMax: 5,
                 nudgeOffset: 0.1,
                 // MSE performance: cap quality to player size and use web worker for transmuxing
-                capLevelToPlayerSize: IS_MOBILE_DEVICE,
+                capLevelToPlayerSize: false,
                 enableWorker: true,
                 // ABR tuning: higher default estimate prevents the player from being too
                 // conservative on the first quality upgrade (e.g. switching to 1080p on WiFi)
-                abrBandWidthFactor: 0.70,         // 30% safety margin prevents constant bouncing
+                abrBandWidthFactor: 0.95,         // 5% safety margin allows upgrading to real 1080p on WiFi constant bouncing
                 abrEwmaFastVoD: 4,
                 abrEwmaSlowVoD: 20,               // Slow average smooths momentary WiFi drops
                 abrEwmaDefaultEstimate: 5_000_000, // 5 Mbps — realistic modern WiFi starting point
@@ -2588,6 +2794,18 @@ export default function LocalVideoPlayer({
                           break;
                   }
               });
+              
+              hls.on(Hls.Events.FRAG_CHANGED, (event, data) => {
+                  const frag = data.frag;
+                  if (frag && typeof frag.start === 'number' && typeof frag.startPosition === 'number') {
+                      const ptsDiff = frag.start - frag.startPosition;
+                      if (hlsPtsOffsetRef.current === 0 && Math.abs(ptsDiff) > 0.3) {
+                          console.log('[LocalVideoPlayer] HLS PTS timeline offset locked:', ptsDiff);
+                          hlsPtsOffsetRef.current = ptsDiff;
+                          applySubtitleDelay(subtitleDelay);
+                      }
+                  }
+              });
 
               hls.on(Hls.Events.MANIFEST_PARSED, () => {
                   hlsNetworkRetryCountRef.current = 0;
@@ -2666,13 +2884,24 @@ export default function LocalVideoPlayer({
                   video.removeEventListener('playing', markStarted);
                   video.removeEventListener('canplay', markStarted);
               };
-          } else if (videoRef.current.canPlayType('application/vnd.apple.mpegurl')) {
-              videoRef.current.src = currentSrc;
+          } else if (Capacitor.isNativePlatform() || videoRef.current.canPlayType('application/vnd.apple.mpegurl')) {
+              if (videoRef.current) {
+                  videoRef.current.src = currentSrc;
+              }
+              // Attach listeners first so nothing fires before we're ready
+              const markNativeStarted = () => {
+                  setIsInitialLoading(false);
+              };
               const handleLoadedMetadata = () => {
-                  if (pendingSeekTimeRef.current !== null) {
-                      if (videoRef.current) videoRef.current.currentTime = pendingSeekTimeRef.current;
-                      pendingSeekTimeRef.current = null;
+                  const startPos = pendingSeekTimeRef.current !== null
+                      ? pendingSeekTimeRef.current
+                      : (currentTimeRef.current > 10 ? currentTimeRef.current : (startTime && startTime > 10 ? startTime : -1));
+                  if (startPos > 0) {
+                      if (videoRef.current) videoRef.current.currentTime = startPos;
+                      setCurrentTime(startPos);
+                      seekedOnStartRef.current = true;
                   }
+                  pendingSeekTimeRef.current = null;
                   const d = videoRef.current?.duration;
                   if (d && isFinite(d) && d > 0 && d < 86399) setDuration(d);
                   if (playing) videoRef.current?.play().catch(() => {});
@@ -2700,12 +2929,47 @@ export default function LocalVideoPlayer({
                       triggerAutoFailover();
                   }
               };
-              videoRef.current.addEventListener('loadedmetadata', handleLoadedMetadata);
-              videoRef.current.addEventListener('durationchange', handleDurationChange);
-              videoRef.current.addEventListener('error', handleNativeError);
+              if (videoRef.current) {
+                  videoRef.current.addEventListener('loadedmetadata', handleLoadedMetadata);
+                  videoRef.current.addEventListener('loadeddata', markNativeStarted);
+                  videoRef.current.addEventListener('durationchange', handleDurationChange);
+                  videoRef.current.addEventListener('playing', markNativeStarted);
+                  videoRef.current.addEventListener('canplay', markNativeStarted);
+                  videoRef.current.addEventListener('error', handleNativeError);
+              }
+
+              // Populate qualities from the pre-fetched availableSources list instead of dynamic fetching (to prevent CORS/Referer blocks)
+              if (availableSources && availableSources.length > 0) {
+                  const mapped = availableSources.map((s, idx) => ({
+                      height: parseInt(s.quality) || 1080,
+                      index: idx
+                  }));
+                  setQualities(mapped);
+                  setServerQualities(prev => ({ ...prev, [selectedServer]: mapped }));
+              }
+
+              // Let the native player load currentSrc directly (as it already routes through proxy)
+              let failsafeTimeout: ReturnType<typeof setTimeout> | null = null;
+              if (videoRef.current) {
+                  videoRef.current.src = currentSrc;
+                  videoRef.current.load();
+                  
+                  // Failsafe: force remove the loading spinner if the native player takes longer than 12s to buffer/fire events
+                  failsafeTimeout = setTimeout(() => {
+                      if (videoRef.current) {
+                          console.log('[LocalVideoPlayer] Native HLS: loading failsafe timeout triggered. Clearing loader.');
+                          setIsInitialLoading(false);
+                      }
+                  }, 12000);
+              }
+
               return () => {
+                  if (failsafeTimeout) clearTimeout(failsafeTimeout);
                   videoRef.current?.removeEventListener('loadedmetadata', handleLoadedMetadata);
+                  videoRef.current?.removeEventListener('loadeddata', markNativeStarted);
                   videoRef.current?.removeEventListener('durationchange', handleDurationChange);
+                  videoRef.current?.removeEventListener('playing', markNativeStarted);
+                  videoRef.current?.removeEventListener('canplay', markNativeStarted);
                   videoRef.current?.removeEventListener('error', handleNativeError);
               };
           }
@@ -2787,19 +3051,63 @@ export default function LocalVideoPlayer({
              const cTime = videoRef.current.currentTime;
              const dur = videoRef.current.duration || 0;
              progressRef.current = { time: cTime, duration: dur };
+             currentTimeRef.current = cTime; // Sync the ref immediately
 
-             // FIX: Throttle state updates to max once per second.
-             // Previously this fired every 250ms unconditionally, causing
-             // 4 re-renders/sec even with the showControls guard.
-             // Now only updates if time changed by ≥1s OR controls are visible
-             // and time changed by ≥0.25s (for smooth scrubber movement).
-             const prevTime = lastTimeUpdateStateRef.current;
-             const timeDelta = Math.abs(cTime - prevTime);
-             const threshold = showControlsRef.current ? 0.25 : 1.0;
-             if (timeDelta >= threshold) {
-               lastTimeUpdateStateRef.current = cTime;
-               setCurrentTime(cTime);
+             // Auto-detect native HLS timeline offset on first play
+             if (hlsPtsOffsetRef.current === 0) {
+                 try {
+                     let offset = 0;
+                     if (videoRef.current.seekable && videoRef.current.seekable.length > 0) {
+                         offset = videoRef.current.seekable.start(0);
+                     } else if (videoRef.current.buffered && videoRef.current.buffered.length > 0) {
+                         offset = videoRef.current.buffered.start(0);
+                     }
+                     if (offset > 0.3) {
+                         console.log('[LocalVideoPlayer] Native HLS timeline offset locked:', offset);
+                         hlsPtsOffsetRef.current = offset;
+                     }
+                 } catch (e) {}
              }
+
+             // Update custom subtitle text on time change
+             try {
+                 if (parsedCues.length > 0) {
+                     let activeText = '';
+                     // Apply delay and timeline offset correction directly to the search time
+                     const searchTime = cTime - (subtitleDelay || 0) - (hlsPtsOffsetRef.current || 0);
+                     
+                     for (let i = 0; i < parsedCues.length; i++) {
+                         const cue = parsedCues[i];
+                         if (searchTime >= cue.startTime && searchTime <= cue.endTime) {
+                             activeText = cue.text;
+                             break;
+                         }
+                     }
+                     setCurrentSubtitleHtml(prev => {
+                         if (prev !== activeText) return activeText;
+                         return prev;
+                     });
+                 } else {
+                     setCurrentSubtitleHtml(prev => {
+                         if (prev !== '') return '';
+                         return prev;
+                     });
+                 }
+             } catch (e) {}
+
+             // MAJOR OPTIMIZATION: If the player controls are hidden, bypass ALL React state
+             // updates. This completely stops thread-blocking React re-render cycles
+             // during video playback, eliminating audio/video drift and video frame drops
+             // on Android devices.
+             if (showControlsRef.current) {
+                 const prevTime = lastTimeUpdateStateRef.current;
+                 const timeDelta = Math.abs(cTime - prevTime);
+                 if (timeDelta >= 0.25) {
+                     lastTimeUpdateStateRef.current = cTime;
+                     setCurrentTime(cTime);
+                 }
+             }
+
              // Only update duration if it actually changed (avoid redundant sets)
              if (dur > 0 && isFinite(dur) && dur < 86399 && Math.abs(dur - durationRef.current) > 1) {
                setDuration(dur);
@@ -3238,20 +3546,37 @@ export default function LocalVideoPlayer({
           setShowSettings(false);
           resetControlsTimeout();
       } else if (index === -1 || availableSources[index]) {
-          const idxToUse = index === -1 ? 0 : index;
-          if (availableSources[idxToUse]) {
-              const selectedSource = availableSources[idxToUse].url;
-              const savedTime = videoRef.current ? videoRef.current.currentTime : currentTime;
-              
-              import('../../../../utils/haptics').then(m => m.triggerHaptic('medium'));
-              pendingSeekTimeRef.current = savedTime > 5 ? savedTime : null;
-              
-              setCurrentSrc(selectedSource);
-              setCurrentQuality(index);
-              setServerCurrentQuality(prev => ({ ...prev, [selectedServer]: index }));
-              setShowSettings(false);
-              resetControlsTimeout();
+          // Native HLS path: directly switch the video source URL
+          // For AUTO (-1), use the highest quality available sub-playlist (index 0 = already sorted highest first)
+          const selectedSource = index === -1
+              ? (availableSources[0]?.url || src)
+              : availableSources[index].url;
+          const savedTime = videoRef.current ? videoRef.current.currentTime : currentTime;
+
+          import('../../../../utils/haptics').then(m => m.triggerHaptic('medium'));
+
+          if (videoRef.current && selectedSource) {
+              // Directly switch the native video element src without re-triggering
+              // the whole HLS setup effect — avoids ABR re-engaging at lower quality
+              videoRef.current.src = selectedSource;
+              videoRef.current.load();
+              if (savedTime > 2) {
+                  const onCanPlay = () => {
+                      if (videoRef.current) {
+                          videoRef.current.currentTime = savedTime;
+                          videoRef.current.play().catch(() => {});
+                      }
+                      videoRef.current?.removeEventListener('canplay', onCanPlay);
+                  };
+                  videoRef.current.addEventListener('canplay', onCanPlay);
+              } else {
+                  videoRef.current.play().catch(() => {});
+              }
           }
+
+          setCurrentSrc(selectedSource);
+          setCurrentQuality(index);
+          setServerCurrentQuality(prev => ({ ...prev, [selectedServer]: index }));
           setShowSettings(false);
           resetControlsTimeout();
       }
@@ -3422,6 +3747,23 @@ export default function LocalVideoPlayer({
                   ? `https://vidsrc.fyi/embed/tv/${idToUse}/${season}/${episode}`
                   : `https://vidsrc.fyi/embed/movie/${idToUse}`;
               }
+              if (currentSrv === '2embed') {
+                // 2embed.cc uses IMDB ID
+                const embedId = imdbId || idToUse;
+                return season || episode
+                  ? `https://www.2embed.cc/embedtv/${embedId}&s=${season}&e=${episode}`
+                  : `https://www.2embed.cc/embed/${embedId}`;
+              }
+              if (currentSrv === 'vixsrc') {
+                return season || episode
+                  ? `https://vixsrc.to/tv/${item?.id}/${season}/${episode}`
+                  : `https://vixsrc.to/movie/${item?.id}`;
+              }
+              if (currentSrv === 'vidlink-pro') {
+                return season || episode
+                  ? `https://vidlink.pro/tv/${item?.id}/${season}/${episode}?primaryColor=ffffff&nextbutton=true`
+                  : `https://vidlink.pro/movie/${item?.id}?primaryColor=ffffff`;
+              }
               if (currentSrv === 'universal' || currentSrv === 'test-server') {
                 return season || episode
                   ? `https://vidsrc.to/embed/tv/${item?.id}/${season}/${episode}`
@@ -3468,20 +3810,13 @@ export default function LocalVideoPlayer({
                     label={localTracks[activeTrackIndex].label || 'Active Subtitle'}
                     srcLang={localTracks[activeTrackIndex].label ? localTracks[activeTrackIndex].label.substring(0, 2).toLowerCase() : 'en'}
                     src={localTracks[activeTrackIndex].file}
-                    default
                     onLoad={() => {
                         console.log('[LocalVideoPlayer] Track loaded successfully');
+                        applySubtitleDelay(subtitleDelay);
                         if (videoRef.current && videoRef.current.textTracks) {
                             const textTracks = videoRef.current.textTracks;
-                            const trackElement = videoRef.current.querySelector('track');
-                            const sideLoadedTrack = trackElement ? trackElement.track : null;
                             for (let i = 0; i < textTracks.length; i++) {
-                                const textTrack = textTracks[i];
-                                if (sideLoadedTrack && textTrack === sideLoadedTrack) {
-                                    textTrack.mode = 'showing';
-                                } else {
-                                    textTrack.mode = 'hidden';
-                                }
+                                textTracks[i].mode = 'hidden';
                             }
                         }
                     }}
@@ -3491,6 +3826,42 @@ export default function LocalVideoPlayer({
                 />
             )}
         </video>
+      )}
+
+      {/* Custom Subtitles overlay */}
+      {!iframeFallback && !embedServer && currentSubtitleHtml && (
+        <div 
+          style={{
+            position: 'absolute',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            bottom: `${subtitlePosition + (showControls ? 85 : 40)}px`,
+            zIndex: 10007,
+            pointerEvents: 'none',
+            display: 'flex',
+            justifyContent: 'center',
+            width: '85%',
+            textAlign: 'center',
+          }}
+        >
+          <span 
+            style={{
+              color: subtitleColor,
+              backgroundColor: `rgba(0, 0, 0, ${subtitleBgOpacity})`,
+              fontSize: 
+                subtitleSize === 'small' ? '0.95rem' : 
+                subtitleSize === 'normal' ? '1.15rem' : 
+                subtitleSize === 'large' ? '1.35rem' : '1.65rem',
+              padding: '6px 14px',
+              borderRadius: '8px',
+              fontWeight: 600,
+              textShadow: '0px 1px 3px rgba(0,0,0,0.8)',
+              wordBreak: 'break-word',
+              lineHeight: 1.4,
+            }}
+            dangerouslySetInnerHTML={{ __html: currentSubtitleHtml.replace(/\n/g, '<br/>') }}
+          />
+        </div>
       )}
 
       {/* Gestures UI rippling indicators, brightness/volume HUD, aspect ratio HUD */}
