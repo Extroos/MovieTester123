@@ -393,7 +393,7 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
   const season = parseInt(s);
   const episode = parseInt(e);
   
-  const activeServer = (server === 'vidlink-pro' || server === 'vidlink') ? 'vidsrc-pm' : server;
+  const activeServer = server;
   
   console.log(`[Server] Watch request: ID ${tmdbId}, Type: ${type}, S: ${season}, E: ${episode}, Server: ${server} (Mapped to: ${activeServer})`);
   
