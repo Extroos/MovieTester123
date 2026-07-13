@@ -16,7 +16,7 @@ export const ALL_SERVERS: ServerOption[] = [
   { id: 'vidsrc-wtf-2', name: 'VidSrc Multi-Lang', description: 'Multi-language HLS via native decryption engine', badge: 'Multi', isAdFree: true },
   { id: 'vidzee', name: 'Vidzee', description: 'Multi-language native HLS mirrors', badge: 'NEW', isAdFree: true },
   { id: 'universal', name: 'Vidsrc.to (Universal)', description: 'Third-party embed — supports multi-language subtitles', badge: 'ADS', isAdFree: false },
-  { id: 'vidsrc-sbs', name: 'Vidsrc SBS', description: 'Third-party mirror — alternative content hosting', badge: 'ADS', isAdFree: false },
+  { id: 'vidsrc-sbs', name: 'Vidsrc SBS', description: 'Third-party mirror — alternative content hosting', badge: '', isAdFree: false },
   { id: 'vidsrc-fyi', name: 'Vidsrc FYI', description: 'Alternative third-party gateway', badge: 'ADS', isAdFree: false },
   { id: 'vidsrc-top', name: 'VidSrc Top', description: 'Third-party mirror — supports IMDB/TMDB inputs', badge: 'ADS', isAdFree: false }
 ];
@@ -272,123 +272,129 @@ export const PlayerSettings = React.memo(function PlayerSettings({
     };
   }, [settingsTab, showConsole]);
 
+  const userHasScrolledUpRef = React.useRef(false);
+
+  const handleLogsScroll = () => {
+    const el = consoleContainerRef.current;
+    if (!el) return;
+    const isAtBottom = el.scrollHeight - el.clientHeight - el.scrollTop < 40;
+    userHasScrolledUpRef.current = !isAtBottom;
+  };
+
   React.useEffect(() => {
     const el = consoleContainerRef.current;
-    if (el) {
-      const isNearBottom = el.scrollHeight - el.clientHeight - el.scrollTop < 40;
-      // Scroll to bottom only if user was already at the bottom or it was the initial load
-      if (isNearBottom || el.scrollTop === 0) {
-        el.scrollTop = el.scrollHeight;
-      }
+    if (el && !userHasScrolledUpRef.current) {
+      el.scrollTop = el.scrollHeight;
     }
   }, [logs]);
 
-  if (!showSettings) return null;
+  const FileExistenceDiagnostic = ({ itemId, isTv, s, e }: { itemId?: any, isTv: boolean, s?: number, e?: number }) => {
+    const [diskStatus, setDiskStatus] = React.useState<string>('Checking storage...');
+    const [dbStatus, setDbStatus] = React.useState<string>('Checking database...');
+    const [subtitlesCheck, setSubtitlesCheck] = React.useState<string[]>([]);
 
-  if (showConsole) {
-    const FileExistenceDiagnostic = ({ itemId, isTv, s, e }: { itemId?: any, isTv: boolean, s?: number, e?: number }) => {
-      const [diskStatus, setDiskStatus] = React.useState<string>('Checking storage...');
-      const [dbStatus, setDbStatus] = React.useState<string>('Checking database...');
-      const [subtitlesCheck, setSubtitlesCheck] = React.useState<string[]>([]);
-
-      React.useEffect(() => {
-        if (!itemId) {
-          setDiskStatus('No item ID');
-          setDbStatus('No item ID');
-          return;
+    React.useEffect(() => {
+      if (!itemId) {
+        setDiskStatus('No item ID');
+        setDbStatus('No item ID');
+        return;
+      }
+      const downloadId = isTv ? `tv_${itemId}_${s}_${e}` : `movie_${itemId}`;
+      
+      try {
+        const raw = localStorage.getItem('cinemovie_downloads');
+        if (raw) {
+          const list = JSON.parse(raw);
+          const record = list.find((i: any) => i.id === downloadId);
+          if (record) {
+            setDbStatus(`Found: status=${record.status}, progress=${record.progress}%, localUrl=${record.localUrl ? record.localUrl.substring(0, 50) + '...' : 'none'}`);
+          } else {
+            setDbStatus('Not found in localStorage list');
+          }
+        } else {
+          setDbStatus('localStorage downloads list empty');
         }
-        const downloadId = isTv ? `tv_${itemId}_${s}_${e}` : `movie_${itemId}`;
-        
+      } catch(err: any) {
+        setDbStatus(`Error: ${err.message}`);
+      }
+
+      OfflineStorageService.exists(downloadId).then(exists => {
+        if (exists) {
+          setDiskStatus('✅ Success! Files are physically present on local storage.');
+        } else {
+          setDiskStatus('❌ Warning! Stored files could not be found in local directory.');
+        }
+      }).catch(err => {
+        setDiskStatus(`Error querying disk: ${err.message}`);
+      });
+
+      // Check subtitle files existence on disk
+      const checkSubtitles = async () => {
+        const subLines: string[] = [];
         try {
           const raw = localStorage.getItem('cinemovie_downloads');
           if (raw) {
             const list = JSON.parse(raw);
             const record = list.find((i: any) => i.id === downloadId);
             if (record) {
-              setDbStatus(`Found: status=${record.status}, progress=${record.progress}%, localUrl=${record.localUrl ? record.localUrl.substring(0, 50) + '...' : 'none'}`);
-            } else {
-              setDbStatus('Not found in localStorage list');
-            }
-          } else {
-            setDbStatus('localStorage downloads list empty');
-          }
-        } catch(err: any) {
-          setDbStatus(`Error: ${err.message}`);
-        }
-
-        OfflineStorageService.exists(downloadId).then(exists => {
-          if (exists) {
-            setDiskStatus('✅ Success! Files are physically present on local storage.');
-          } else {
-            setDiskStatus('❌ Warning! Stored files could not be found in local directory.');
-          }
-        }).catch(err => {
-          setDiskStatus(`Error querying disk: ${err.message}`);
-        });
-
-        // Check subtitle files existence on disk
-        const checkSubtitles = async () => {
-          const subLines: string[] = [];
-          try {
-            const raw = localStorage.getItem('cinemovie_downloads');
-            if (raw) {
-              const list = JSON.parse(raw);
-              const record = list.find((i: any) => i.id === downloadId);
-              if (record) {
-                if (record.subtitles && Array.isArray(record.subtitles)) {
-                  if (record.subtitles.length === 0) {
-                    subLines.push('Warning: Subtitles list in download record is empty.');
-                  } else {
-                    const { Filesystem } = await import('@capacitor/filesystem');
-                    for (const sub of record.subtitles) {
-                      try {
-                        let fileAtPath = sub.file;
-                        if (fileAtPath.includes('_capacitor_file_')) {
-                          fileAtPath = fileAtPath.substring(fileAtPath.indexOf('_capacitor_file_') + 16);
-                        } else if (fileAtPath.includes('_app_file_')) {
-                          fileAtPath = fileAtPath.substring(fileAtPath.indexOf('_app_file_') + 10);
-                        }
-                        fileAtPath = decodeURIComponent(fileAtPath);
-
-                        const stat = await Filesystem.stat({ path: fileAtPath });
-                        subLines.push(`✅ Subtitle: ${sub.label} -> EXISTS (${(stat.size / 1024).toFixed(1)} KB)`);
-                      } catch (statErr: any) {
-                        subLines.push(`❌ Subtitle: ${sub.label} -> NOT FOUND ON DISK: ${statErr.message}`);
+              if (record.subtitles && Array.isArray(record.subtitles)) {
+                if (record.subtitles.length === 0) {
+                  subLines.push('Warning: Subtitles list in download record is empty.');
+                } else {
+                  const { Filesystem } = await import('@capacitor/filesystem');
+                  for (const sub of record.subtitles) {
+                    try {
+                      let fileAtPath = sub.file;
+                      if (fileAtPath.includes('_capacitor_file_')) {
+                        fileAtPath = fileAtPath.substring(fileAtPath.indexOf('_capacitor_file_') + 16);
+                      } else if (fileAtPath.includes('_app_file_')) {
+                        fileAtPath = fileAtPath.substring(fileAtPath.indexOf('_app_file_') + 10);
                       }
+                      fileAtPath = decodeURIComponent(fileAtPath);
+
+                      const stat = await Filesystem.stat({ path: fileAtPath });
+                      subLines.push(`✅ Subtitle: ${sub.label} -> EXISTS (${(stat.size / 1024).toFixed(1)} KB)`);
+                    } catch (statErr: any) {
+                      subLines.push(`❌ Subtitle: ${sub.label} -> NOT FOUND ON DISK: ${statErr.message}`);
                     }
                   }
-                } else {
-                  subLines.push('Warning: No subtitles field in download record.');
                 }
               } else {
-                subLines.push('No download record found to check subtitles.');
+                subLines.push('Warning: No subtitles field in download record.');
               }
+            } else {
+              subLines.push('No download record found to check subtitles.');
             }
-          } catch (e: any) {
-            subLines.push(`Error checking subtitles: ${e.message}`);
           }
-          setSubtitlesCheck(subLines);
-        };
-        checkSubtitles();
-      }, [itemId, isTv, s, e]);
+        } catch (e: any) {
+          subLines.push(`Error checking subtitles: ${e.message}`);
+        }
+        setSubtitlesCheck(subLines);
+      };
+      checkSubtitles();
+    }, [itemId, isTv, s, e]);
 
-      return (
-        <>
-          <div>• <strong>Storage Status:</strong> <span style={{ color: diskStatus.includes('✅') ? '#34d399' : '#f87171' }}>{diskStatus}</span></div>
-          <div style={{ wordBreak: 'break-all' }}>• <strong>DB Record:</strong> {dbStatus}</div>
-          {subtitlesCheck.length > 0 && (
-            <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '6px' }}>
-              <div style={{ color: '#60a5fa', fontWeight: 800, marginBottom: '4px' }}>Subtitle Files Diagnostics:</div>
-              {subtitlesCheck.map((line, idx) => (
-                <div key={idx} style={{ paddingLeft: '8px', color: line.startsWith('✅') ? '#34d399' : line.startsWith('❌') ? '#f87171' : 'rgba(255,255,255,0.6)' }}>
-                  {line}
-                </div>
-              ))}
-            </div>
-          )}
-        </>
-      );
-    };
+    return (
+      <>
+        <div>• <strong>Storage Status:</strong> <span style={{ color: diskStatus.includes('✅') ? '#34d399' : '#f87171' }}>{diskStatus}</span></div>
+        <div style={{ wordBreak: 'break-all' }}>• <strong>DB Record:</strong> {dbStatus}</div>
+        {subtitlesCheck.length > 0 && (
+          <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '6px' }}>
+            <div style={{ color: '#60a5fa', fontWeight: 800, marginBottom: '4px' }}>Subtitle Files Diagnostics:</div>
+            {subtitlesCheck.map((line, idx) => (
+              <div key={idx} style={{ paddingLeft: '8px', color: line.startsWith('✅') ? '#34d399' : line.startsWith('❌') ? '#f87171' : 'rgba(255,255,255,0.6)' }}>
+                {line}
+              </div>
+            ))}
+          </div>
+        )}
+      </>
+    );
+  };
+
+  if (!showSettings) return null;
+
+  if (showConsole) {
 
     return (
       <div 
@@ -409,14 +415,57 @@ export const PlayerSettings = React.memo(function PlayerSettings({
           overflowY: 'auto'
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '12px', marginBottom: '16px' }}>
-          <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 900, color: '#38bdf8' }}>🔍 CineMovie Offline Diagnostics</h2>
-          <button 
-            onClick={(e) => { e.stopPropagation(); setShowConsole(false); }}
-            style={{ background: '#ef4444', border: 'none', color: '#fff', padding: '8px 16px', borderRadius: '10px', cursor: 'pointer', fontWeight: 800, fontSize: '0.8rem' }}
-          >
-            Close
-          </button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '12px', marginBottom: '16px', gap: '8px' }}>
+          <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900, color: '#38bdf8' }}>🔍 Diagnostics</h2>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button 
+              onClick={async (e) => {
+                e.stopPropagation();
+                try {
+                  const report = [
+                    "========================================",
+                    "        CINEMOVIE DIAGNOSTICS REPORT    ",
+                    "========================================",
+                    `Generated: ${new Date().toISOString()}`,
+                    `Offline Mode Active: ${isOfflineMode ? "YES" : "NO"}`,
+                    `Current Source: ${currentSrc || 'None'}`,
+                    `Active Item: ${item ? `${item.title || (item as any).name} (ID: ${item.id})` : 'None'}`,
+                    `Season/Episode: ${season !== undefined ? `S${season}E${episode}` : 'N/A'}`,
+                    "",
+                    "--- PLAYER DIAGNOSTICS ---",
+                    `Vidlink Info: ${vidlinkDiagnostics || 'None'}`,
+                    `VidSrc PM Info: ${vidsrcPmDiagnostics || 'None'}`,
+                    "",
+                    "--- CONSOLE LOGS ---",
+                    logs.join('\n')
+                  ].join('\n');
+
+                  if (navigator.clipboard) {
+                    await navigator.clipboard.writeText(report);
+                  } else {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = report;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                  }
+                  alert('Full report copied to clipboard!');
+                } catch (err) {
+                  alert('Copy failed: ' + err);
+                }
+              }}
+              style={{ background: '#38bdf8', border: 'none', color: '#000', padding: '8px 14px', borderRadius: '10px', cursor: 'pointer', fontWeight: 800, fontSize: '0.78rem' }}
+            >
+              Copy Full Report
+            </button>
+            <button 
+              onClick={(e) => { e.stopPropagation(); setShowConsole(false); }}
+              style={{ background: '#ef4444', border: 'none', color: '#fff', padding: '8px 14px', borderRadius: '10px', cursor: 'pointer', fontWeight: 800, fontSize: '0.78rem' }}
+            >
+              Close
+            </button>
+          </div>
         </div>
 
         {/* Offline info */}
@@ -444,24 +493,52 @@ export const PlayerSettings = React.memo(function PlayerSettings({
         </div>
 
         {/* Console Logs */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '200px' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '300px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <span style={{ color: '#10b981', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: '0.82rem' }}>📜 Native Plugin Console Logs</span>
-            <button 
-              onClick={async (e) => {
-                e.stopPropagation();
-                try {
-                  await NativeStreamingEngine.clearNativeLogs();
-                  setLogs([]);
-                } catch(err){}
-              }}
-              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 700 }}
-            >
-              Clear Logs
-            </button>
+            <span style={{ color: '#34d399', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: '0.82rem' }}>📜 Native Plugin Console Logs</span>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button 
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  try {
+                    const text = logs.join('\n');
+                    if (navigator.clipboard) {
+                      await navigator.clipboard.writeText(text);
+                    } else {
+                      // Fallback textarea copy for older Android WebViews
+                      const textarea = document.createElement('textarea');
+                      textarea.value = text;
+                      document.body.appendChild(textarea);
+                      textarea.select();
+                      document.execCommand('copy');
+                      document.body.removeChild(textarea);
+                    }
+                    alert('Logs copied to clipboard!');
+                  } catch (err) {
+                    console.error('Failed to copy logs:', err);
+                  }
+                }}
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 700 }}
+              >
+                Copy Logs
+              </button>
+              <button 
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  try {
+                    await NativeStreamingEngine.clearNativeLogs();
+                    setLogs([]);
+                  } catch(err){}
+                }}
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 700 }}
+              >
+                Clear Logs
+              </button>
+            </div>
           </div>
           <div 
             ref={consoleContainerRef}
+            onScroll={handleLogsScroll}
             style={{
               flex: 1,
               background: '#020204',
@@ -472,10 +549,11 @@ export const PlayerSettings = React.memo(function PlayerSettings({
               fontSize: '0.72rem',
               lineHeight: 1.4,
               color: '#34d399',
-              whiteSpace: 'pre-wrap'
+              whiteSpace: 'pre-wrap',
+              maxHeight: '400px'
             }}
           >
-            {logs.length === 0 ? "No logs captured yet..." : logs.join('\n')}
+            {logs.length === 0 ? "No logs captured yet..." : logs.slice(-2000).join('\n')}
           </div>
         </div>
       </div>
@@ -786,11 +864,76 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                     fontSize: '0.68rem',
                     color: 'rgba(255,255,255,0.3)',
                     fontFamily: 'monospace',
-                    letterSpacing: '0.02em'
+                    letterSpacing: '0.02em',
+                    marginBottom: '12px'
                   }}>
                     Server Engine last updated: {lastUpdated}
                   </div>
                 </>
+            </div>
+          )}
+
+          {settingsTab === 'diagnostics' && (
+            <div style={{ 
+              marginTop: '16px', 
+              borderTop: '1px solid rgba(255,255,255,0.08)', 
+              paddingTop: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px'
+            }}>
+              <div style={{ color: '#fff', fontSize: '0.8rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                ⚙️ CineMovie Player Diagnostics
+              </div>
+              
+              <div style={{ 
+                background: 'rgba(56, 189, 248, 0.03)', 
+                border: '1px solid rgba(56, 189, 248, 0.15)', 
+                borderRadius: '12px', 
+                padding: '14px 16px', 
+                display: 'flex', 
+                flexDirection: 'column', 
+                gap: '8px', 
+                fontSize: '0.78rem' 
+              }}>
+                <div style={{ color: '#38bdf8', fontWeight: 800, fontSize: '0.8rem' }}>📁 Connection Status</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', opacity: 0.9 }}>
+                  <span>Source:</span>
+                  <span style={{ wordBreak: 'break-all', maxWidth: '70%', textAlign: 'right', color: '#e2e8f0', fontFamily: 'monospace' }}>{currentSrc ? currentSrc.substring(0, 45) + '...' : 'None'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', opacity: 0.9 }}>
+                  <span>Offline Active:</span>
+                  <span style={{ fontWeight: 700, color: isOfflineMode ? '#fbbf24' : '#10b981' }}>{isOfflineMode ? "YES" : "NO"}</span>
+                </div>
+                {item && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', opacity: 0.9 }}>
+                    <span>Active Item:</span>
+                    <span style={{ fontWeight: 700, color: '#fff' }}>{item.title || (item as any).name || 'Unknown'} (ID: {item.id})</span>
+                  </div>
+                )}
+                <FileExistenceDiagnostic itemId={item?.id} isTv={!!season} s={season} e={episode} />
+              </div>
+
+              <div style={{ 
+                background: 'rgba(251, 191, 36, 0.03)', 
+                border: '1px solid rgba(251, 191, 36, 0.15)', 
+                borderRadius: '12px', 
+                padding: '14px 16px', 
+                display: 'flex', 
+                flexDirection: 'column', 
+                gap: '8px', 
+                fontSize: '0.78rem' 
+              }}>
+                <div style={{ color: '#fbbf24', fontWeight: 800, fontSize: '0.8rem' }}>⚠️ Player Warnings</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ color: '#a78bfa', fontWeight: 700 }}>Vidlink:</span>
+                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', color: 'rgba(255,255,255,0.7)', fontSize: '0.74rem', fontFamily: 'monospace', lineHeight: 1.3 }}>{vidlinkDiagnostics || 'No issues reported.'}</pre>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '6px' }}>
+                  <span style={{ color: '#a78bfa', fontWeight: 700 }}>VidSrc PM:</span>
+                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', color: 'rgba(255,255,255,0.7)', fontSize: '0.74rem', fontFamily: 'monospace', lineHeight: 1.3 }}>{vidsrcPmDiagnostics || 'No issues reported.'}</pre>
+                </div>
+              </div>
             </div>
           )}
 
@@ -931,7 +1074,9 @@ export const PlayerSettings = React.memo(function PlayerSettings({
               const isTrackBackup = (t: { isBackup?: boolean; label?: string }) =>
                 t.isBackup === true || t.isBackup === ('true' as any) || t.isBackup === (1 as any) ||
                 (t.label || '').includes('(Auto YTS)') ||
-                (t.label || '').includes('(YTS)');
+                (t.label || '').includes('(YTS)') ||
+                (t.label || '').toLowerCase().includes('opensubtitles') ||
+                (t.label || '').toLowerCase().includes('(os)');
               const officialTracks = localTracks.filter(t => !isTrackBackup(t));
               const backupTracks = localTracks.filter(t => isTrackBackup(t));
 
@@ -961,35 +1106,8 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                       Official Server Subtitles
                     </div>
                     {officialTracks.length === 0 ? (
-                      <div style={{ padding: '8px 0' }}>
-                        <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.8rem', marginBottom: '8px', textAlign: 'left' }}>
-                          No official subtitles returned by this server.
-                        </div>
-                        <button
-                          onClick={() => {
-                            // Switches tab state to online search inside parent component
-                            setIsSearchingOnline(true);
-                          }}
-                          style={{
-                            background: 'rgba(255, 255, 255, 0.08)',
-                            color: '#ffffff',
-                            border: '1px solid rgba(255, 255, 255, 0.15)',
-                            borderRadius: '8px',
-                            padding: '8px 14px',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            fontSize: '0.8rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            transition: 'all 0.2s'
-                          }}
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                          </svg>
-                          Search Subtitles Online
-                        </button>
+                      <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.8rem', padding: '8px 0', textAlign: 'left' }}>
+                        No official subtitles returned by this server.
                       </div>
                     ) : (
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '8px' }}>
@@ -1036,11 +1154,38 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                     )}
 
                     {/* SECTION 2: Backup Subtitles */}
-                    <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '4px', marginTop: '8px' }}>
-                      Backup Subtitles (YTS / opensubtitles)
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '4px', marginTop: '8px' }}>
+                      <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        Backup Subtitles (YTS / opensubtitles)
+                      </div>
+                      <button
+                        onClick={() => {
+                          import('../../../../utils/haptics').then(m => m.triggerHaptic('light'));
+                          setIsSearchingOnline(true);
+                        }}
+                        style={{
+                          background: 'rgba(255, 255, 255, 0.08)',
+                          color: '#ffffff',
+                          border: '1px solid rgba(255, 255, 255, 0.15)',
+                          borderRadius: '6px',
+                          padding: '4px 8px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          fontSize: '0.66rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                        </svg>
+                        Search Online
+                      </button>
                     </div>
                     {backupTracks.length === 0 ? (
-                      <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.8rem', padding: '8px', textAlign: 'left' }}>
+                      <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.8rem', padding: '8px 0', textAlign: 'left' }}>
                         No backup subtitles loaded.
                       </div>
                     ) : (
@@ -1526,14 +1671,14 @@ export const PlayerSettings = React.memo(function PlayerSettings({
 
 
 
-                {onlineProvider === 'opensubtitles' && !apiKey.trim() && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(239, 68, 68, 0.08)', padding: '12px', borderRadius: '10px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-                    <div style={{ color: '#f87171', fontSize: '0.76rem', fontWeight: 600 }}>OpenSubtitles credentials not set. Set them below:</div>
+                {onlineProvider === 'opensubtitles' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(255, 255, 255, 0.03)', padding: '12px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                    <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.74rem', fontWeight: 600 }}>Using built-in free subtitle search. Optionally enter your own OpenSubtitles VIP key below:</div>
                     <input
                       type="text"
                       value={apiKey}
                       onChange={(e) => setApiKey(e.target.value)}
-                      placeholder="OpenSubtitles API Key"
+                      placeholder="OpenSubtitles API Key (Optional)"
                       style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', padding: '6px 10px', color: '#fff', fontSize: '0.75rem', fontFamily: 'monospace' }}
                     />
                     <div style={{ display: 'flex', gap: '8px' }}>
@@ -1541,14 +1686,14 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                         type="text"
                         value={username}
                         onChange={(e) => setUsername(e.target.value)}
-                        placeholder="Username"
+                        placeholder="Username (Optional)"
                         style={{ flex: 1, background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', padding: '6px 10px', color: '#fff', fontSize: '0.75rem' }}
                       />
                       <input
                         type="password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        placeholder="Password"
+                        placeholder="Password (Optional)"
                         style={{ flex: 1, background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', padding: '6px 10px', color: '#fff', fontSize: '0.75rem' }}
                       />
                     </div>
@@ -1563,12 +1708,12 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                       }}
                       style={{ background: '#fff', border: 'none', color: '#000', padding: '6px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}
                     >
-                      {isCredentialsSaved ? '✓ Credentials Saved' : 'Save Credentials'}
+                      {isCredentialsSaved ? '✓ Credentials Saved' : 'Save Custom Credentials'}
                     </button>
                   </div>
                 )}
 
-                {((onlineProvider === 'opensubtitles' && apiKey.trim()) || onlineProvider === 'yify') && (
+                {(onlineProvider === 'opensubtitles' || onlineProvider === 'yify') && (
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <select
                       value={searchLang}
