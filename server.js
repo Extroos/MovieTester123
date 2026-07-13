@@ -375,6 +375,43 @@ app.get('/local-proxy', async (req, res) => {
   }
 });
 
+app.get('/local-proxy', async (req, res) => {
+  const { url, referer, origin } = req.query;
+  if (!url) return res.status(400).send("Missing url parameter");
+  
+  console.log(`[Express Proxy] Proxying URL: ${url}`);
+  
+  try {
+    const headers = {};
+    const clientUa = req.headers['user-agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+    headers['user-agent'] = clientUa;
+    headers['User-Agent'] = clientUa;
+    if (referer) headers['Referer'] = referer;
+    if (origin) headers['Origin'] = origin;
+    
+    const pythonProxyUrl = `http://localhost:8000/local-proxy?url=${encodeURIComponent(url)}` + 
+      (referer ? `&referer=${encodeURIComponent(referer)}` : '') +
+      (origin ? `&origin=${encodeURIComponent(origin)}` : '');
+      
+    const targetRes = await axios.get(pythonProxyUrl, {
+      headers,
+      responseType: 'stream',
+      timeout: 25000,
+      validateStatus: () => true
+    });
+    
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    if (targetRes.headers['content-type']) {
+      res.setHeader('Content-Type', targetRes.headers['content-type']);
+    }
+    
+    targetRes.data.pipe(res);
+  } catch (err) {
+    console.error(`[Express Proxy] Error proxying ${url}:`, err.message);
+    res.status(500).send(err.message);
+  }
+});
+
 // Helper to dynamically rewrite localhost:8000 URLs to the incoming client host URL
 function rewriteLocalhostUrls(obj, req) {
   const hostBase = `${req.protocol}://${req.get('host')}`;
@@ -1186,7 +1223,7 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
         sources.push({
           url: apiRes.data.stream.playlist,
           quality: 'auto',
-          isM3U8: true
+          isM3U8: apiRes.data.stream.playlist.includes('.m3u8')
         });
       }
       if (sources.length === 0 && apiRes.data.stream && apiRes.data.stream.qualities) {
@@ -1280,49 +1317,51 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
       const tmdbIdNum = parseInt(tmdbId);
       const isTv = type === 'tv';
 
-      const seedRes = await axios.get(`${wingsBase}/seed?mediaId=${tmdbId}`, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-          'Referer': 'https://player.videasy.to/',
-          'Origin': 'https://player.videasy.to'
-        },
-        timeout: 10000
-      });
-      const seed = seedRes.data?.seed;
+      const fetchVideasyProxy = async (url) => {
+        const proxyUrl = `http://localhost:8000/local-proxy?url=${encodeURIComponent(url)}&referer=${encodeURIComponent('https://player.videasy.to/')}&origin=${encodeURIComponent('https://player.videasy.to')}`;
+        const sRes = await axios.get(proxyUrl);
+        return sRes.data;
+      };
+
+      const seedData = await fetchVideasyProxy(`${wingsBase}/seed?mediaId=${tmdbId}`);
+      const seed = seedData?.seed;
       if (!seed) throw new Error("Failed to retrieve seed from wingsdatabase");
 
       let movieTitle = title || 'Movie';
       let releaseYear = '2024';
+      let imdbId = '';
 
       try {
         const tmdbApiKey = '8265bd1679663a7ea12ac168da84d2e8';
         const tmdbUrl = isTv
-          ? `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${tmdbApiKey}`
+          ? `https://api.themoviedb.org/3/tv/${tmdbId}/external_ids?api_key=${tmdbApiKey}`
           : `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${tmdbApiKey}`;
         const tmdbRes = await axios.get(tmdbUrl, { timeout: 8000 });
         if (tmdbRes.data) {
+          imdbId = tmdbRes.data.imdb_id || '';
           movieTitle = tmdbRes.data.title || tmdbRes.data.name || movieTitle;
           const dateStr = tmdbRes.data.release_date || tmdbRes.data.first_air_date || '';
           if (dateStr) releaseYear = dateStr.split('-')[0];
+        }
+
+        if (isTv && !imdbId) {
+          const infoUrl = `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${tmdbApiKey}`;
+          const infoRes = await axios.get(infoUrl, { timeout: 8000 });
+          if (infoRes.data) {
+            movieTitle = infoRes.data.name || movieTitle;
+            const dateStr = infoRes.data.first_air_date || '';
+            if (dateStr) releaseYear = dateStr.split('-')[0];
+          }
         }
       } catch (e) {
         console.warn("[Server] Failed to fetch TMDB details for 2Embed:", e.message);
       }
 
-      const query = `?title=${encodeURIComponent(movieTitle)}&mediaType=${isTv ? 'TV Series' : 'Movie'}&year=${releaseYear}&tmdbId=${tmdbId}&enc=2&seed=${seed}${isTv ? `&seasonId=${season}&episodeId=${episode}` : ''}`;
+      const query = `?title=${encodeURIComponent(movieTitle)}&mediaType=${isTv ? 'TV Series' : 'Movie'}&year=${releaseYear}&tmdbId=${tmdbId}&imdbId=${imdbId}&enc=2&seed=${seed}${isTv ? `&seasonId=${season}&episodeId=${episode}` : ''}`;
       const sourcesUrl = `${wingsBase}/neon2/sources-with-title${query}`;
 
-      const sourcesRes = await axios.get(sourcesUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-          'Referer': 'https://player.videasy.to/',
-          'Origin': 'https://player.videasy.to'
-        },
-        timeout: 15000,
-        responseType: 'text'
-      });
-      
-      const rawText = typeof sourcesRes.data === 'string' ? sourcesRes.data : JSON.stringify(sourcesRes.data);
+      const sourcesData = await fetchVideasyProxy(sourcesUrl);
+      const rawText = typeof sourcesData === 'string' ? sourcesData : JSON.stringify(sourcesData);
 
       // Decryption
       const f = [1116352408, 1899447441, 3049323471, 3921009573, 961987163, 1508970993, 2453635748, 2870763221, 3624381080, 310598401, 607225278, 1426881987, 1925078388, 2162078206, 2614888103, 3248222580];
@@ -1484,7 +1523,7 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
           });
           if (resSrv.data && resSrv.data.url && resSrv.data.url.length > 0) {
             for (const item of resSrv.data.url) {
-              const decoded = Buffer.from(item.link, 'base64').toString('utf8');
+              const decoded = Buffer.from(item.link, 'base64').toString('binary');
               const parts = decoded.split(':');
               if (parts.length === 2) {
                 const linkIv = Buffer.from(parts[0], 'base64');

@@ -850,7 +850,7 @@ export async function scrapeVidlinkStream(
     sources.push({
       url: apiRes.stream.playlist,
       quality: 'auto',
-      isM3U8: true
+      isM3U8: apiRes.stream.playlist.includes('.m3u8')
     });
   }
   if (sources.length === 0 && apiRes.stream && apiRes.stream.qualities) {
@@ -1001,11 +1001,12 @@ export async function scrape2EmbedStream(
     console.log(`[Client 2Embed/Videasy] Fetching sources-with-title using seed: ${seed}`);
     let movieTitle = 'Movie';
     let releaseYear = '2024';
+    let imdbId = '';
 
     try {
       const tmdbApiKey = '8265bd1679663a7ea12ac168da84d2e8';
       const tmdbUrl = isTv
-        ? `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${tmdbApiKey}`
+        ? `https://api.themoviedb.org/3/tv/${tmdbId}/external_ids?api_key=${tmdbApiKey}`
         : `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${tmdbApiKey}`;
       
       let resDetails;
@@ -1021,15 +1022,37 @@ export async function scrape2EmbedStream(
       }
       
       if (resDetails) {
+        imdbId = resDetails.imdb_id || '';
         movieTitle = resDetails.title || resDetails.name || movieTitle;
         const dateStr = resDetails.release_date || resDetails.first_air_date || '';
         if (dateStr) releaseYear = dateStr.split('-')[0];
+      }
+
+      // If TV show details don't have name/title, fetch the main tv info as fallback
+      if (isTv && !imdbId) {
+        const infoUrl = `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${tmdbApiKey}`;
+        let mainDetails;
+        if (Capacitor.isNativePlatform()) {
+          const { fetchWithCapacitor } = await import('../../utils/nativeFetch');
+          const capRes = await fetchWithCapacitor(infoUrl, 'text');
+          mainDetails = JSON.parse(await capRes.text());
+        } else {
+          const localServer = getLocalServerUrl() || 'http://localhost:3001';
+          const proxied = `${localServer}/local-proxy?url=${encodeURIComponent(infoUrl)}`;
+          const res = await fetch(proxied);
+          mainDetails = await res.json();
+        }
+        if (mainDetails) {
+          movieTitle = mainDetails.name || movieTitle;
+          const dateStr = mainDetails.first_air_date || '';
+          if (dateStr) releaseYear = dateStr.split('-')[0];
+        }
       }
     } catch (e: any) {
       console.warn("[Client 2Embed] Failed to fetch TMDB details:", e.message);
     }
 
-    const query = `?title=${encodeURIComponent(movieTitle)}&mediaType=${isTv ? 'TV Series' : 'Movie'}&year=${releaseYear}&tmdbId=${tmdbId}&enc=2&seed=${seed}${isTv ? `&seasonId=${season}&episodeId=${episode}` : ''}`;
+    const query = `?title=${encodeURIComponent(movieTitle)}&mediaType=${isTv ? 'TV Series' : 'Movie'}&year=${releaseYear}&tmdbId=${tmdbId}&imdbId=${imdbId}&enc=2&seed=${seed}${isTv ? `&seasonId=${season}&episodeId=${episode}` : ''}`;
     const sourcesUrl = `${wingsBase}/neon2/sources-with-title${query}`;
 
     let encryptedText = '';
