@@ -964,49 +964,177 @@ export async function scrape2EmbedStream(
   season = 1,
   episode = 1
 ): Promise<any> {
-  const primaryVideasy = await getGateway('videasy') || 'https://player.videasy.to';
-  const videasyMirrors = await getGatewayList('videasy_mirrors');
-  const videasyHosts = [primaryVideasy, ...videasyMirrors].filter(Boolean);
+  const wingsBase = 'https://api.wingsdatabase.com';
+  const tmdbIdNum = parseInt(tmdbId);
+  const isTv = type === 'tv';
 
-  let lastError = '';
-  for (const videasyBase of videasyHosts) {
-    try {
-      const targetUrl = type === 'tv'
-        ? `${videasyBase}/tv/${tmdbId}/${season}/${episode}`
-        : `${videasyBase}/movie/${tmdbId}`;
-
-      console.log(`[Client 2Embed/Videasy] Fetching player HTML page via host: ${videasyBase}`);
-      let html = '';
-      if (Capacitor.isNativePlatform()) {
-        const { fetchWithCapacitor } = await import('../../utils/nativeFetch');
-        const capRes = await fetchWithCapacitor(targetUrl, 'text', { 'Referer': 'https://streamsrcs.2embed.cc/' });
-        html = await capRes.text();
-      } else {
-        const localServer = getLocalServerUrl() || 'http://localhost:3001';
-        const proxied = `${localServer}/local-proxy?url=${encodeURIComponent(targetUrl)}&referer=${encodeURIComponent('https://streamsrcs.2embed.cc/')}`;
-        const res = await fetch(proxied);
-        html = await res.text();
-      }
-
-      const serversMatch = html.match(/window\.streams\s*=\s*(\[[^\]]+\])/);
-      if (!serversMatch) {
-        throw new Error("Could not find window.streams variables on videasy player page");
-      }
-
-      const streams = JSON.parse(serversMatch[1]);
-      const sources = streams.map((s: any) => ({
-        url: s.url,
-        quality: s.name || 'Server',
-        isM3U8: s.url.includes('.m3u8')
-      }));
-
-      return { sources, subtitles: [] };
-    } catch (e: any) {
-      lastError = e.message;
+  try {
+    console.log(`[Client 2Embed/Videasy] Fetching seed for TMDB: ${tmdbId}`);
+    const seedUrl = `${wingsBase}/seed?mediaId=${tmdbId}`;
+    let seedData: any;
+    if (Capacitor.isNativePlatform()) {
+      const { fetchWithCapacitor } = await import('../../utils/nativeFetch');
+      const capRes = await fetchWithCapacitor(seedUrl, 'text', {
+        'Referer': 'https://player.videasy.to/',
+        'Origin': 'https://player.videasy.to'
+      });
+      seedData = JSON.parse(await capRes.text());
+    } else {
+      const localServer = getLocalServerUrl() || 'http://localhost:3001';
+      const proxied = `${localServer}/local-proxy?url=${encodeURIComponent(seedUrl)}&referer=${encodeURIComponent('https://player.videasy.to/')}&origin=${encodeURIComponent('https://player.videasy.to')}`;
+      const res = await fetch(proxied);
+      seedData = await res.json();
     }
-  }
 
-  throw new Error(`2Embed/Videasy resolution failed on all mirror hosts. Last error: ${lastError}`);
+    const seed = seedData.seed;
+    if (!seed) throw new Error("Failed to retrieve seed from wingsdatabase");
+
+    console.log(`[Client 2Embed/Videasy] Fetching sources-with-title using seed: ${seed}`);
+    // Extract title, year, etc. if available (or use placeholders)
+    const title = 'Movie';
+    const query = `?title=${encodeURIComponent(title)}&mediaType=${isTv ? 'TV Series' : 'Movie'}&year=2024&tmdbId=${tmdbId}&enc=2&seed=${seed}${isTv ? `&seasonId=${season}&episodeId=${episode}` : ''}`;
+    const sourcesUrl = `${wingsBase}/neon2/sources-with-title${query}`;
+
+    let encryptedText = '';
+    if (Capacitor.isNativePlatform()) {
+      const { fetchWithCapacitor } = await import('../../utils/nativeFetch');
+      const capRes = await fetchWithCapacitor(sourcesUrl, 'text', {
+        'Referer': 'https://player.videasy.to/',
+        'Origin': 'https://player.videasy.to'
+      });
+      encryptedText = await capRes.text();
+    } else {
+      const localServer = getLocalServerUrl() || 'http://localhost:3001';
+      const proxied = `${localServer}/local-proxy?url=${encodeURIComponent(sourcesUrl)}&referer=${encodeURIComponent('https://player.videasy.to/')}&origin=${encodeURIComponent('https://player.videasy.to')}`;
+      const res = await fetch(proxied);
+      encryptedText = await res.text();
+    }
+
+    // XOR Decryption Algorithm
+    const f = [1116352408, 1899447441, 3049323471, 3921009573, 961987163, 1508970993, 2453635748, 2870763221, 3624381080, 310598401, 607225278, 1426881987, 1925078388, 2162078206, 2614888103, 3248222580];
+    const b = [109, 118, 109, 49]; // "mvm1"
+    const h = (e: number) => (e * (e + 1) & 1) === 0;
+    const I = (e: number) => (e * (e + 1) & 1) === 1;
+
+    const w = (e: number) => {
+      e >>>= 0;
+      e ^= e >>> 16;
+      e = Math.imul(e, 2246822507) >>> 0;
+      e ^= e >>> 13;
+      e = Math.imul(e, 3266489909) >>> 0;
+      return (e ^= e >>> 16) >>> 0;
+    };
+
+    const v = (e: number, t: number) => {
+      e >>>= 0;
+      t &= 31;
+      return t === 0 ? e >>> 0 : (e << t | e >>> 32 - t) >>> 0;
+    };
+
+    const o = (() => {
+      const pad = encryptedText.replace(/-/g, "+").replace(/_/g, "/").padEnd(4 * Math.ceil(encryptedText.length / 4), "=");
+      const binary = atob(pad);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return bytes;
+    })();
+
+    const getSAndAcc = (e: string, t: number) => {
+      if (I(e.length)) {
+        const S = (() => {
+          const t = Array(256);
+          for (let e = 0; e < 256; e++) t[e] = e;
+          let s = 0;
+          for (let a = 0; a < 256; a++) {
+            s = (s + t[a] + e.charCodeAt(a % e.length)) & 255;
+            const o = t[a];
+            t[a] = t[s];
+            t[s] = o;
+          }
+          return t;
+        })();
+        const acc = (() => {
+          let t = 1732584193;
+          for (let s = 0; s < e.length; s++) t = v((t ^ Math.imul(e.charCodeAt(s), f[15 & s])) >>> 0, 5);
+          return (w(t) ^ 0) >>> 0;
+        })();
+        return { S, acc };
+      }
+
+      const s = Array(61);
+      let a = w((() => {
+        let t = 2166136261;
+        for (let s = 0; s < e.length; s++) t = Math.imul(t ^ e.charCodeAt(s), 16777619) >>> 0;
+        return w(t);
+      })() ^ w(t >>> 0 ^ 2654435769)) >>> 0;
+
+      for (let e = 0; e < 8; e++) {
+        if (h(e)) {
+          const t = a % 61;
+          a = v((a + 2654435769) >>> 0, 7 + (7 & e));
+          s[t] = (a ^ w(a)) >>> 0;
+          a = w((a + t) >>> 0);
+        } else {
+          s[e] = f[15 & e];
+        }
+      }
+      return {
+        S: s,
+        acc: w(2779096485 ^ a) >>> 0
+      };
+    };
+
+    const r = (() => {
+      const a = getSAndAcc(seed, tmdbIdNum);
+      const prng = new Uint8Array(o.length);
+      let idx = 0;
+      for (let e = 0; e < o.length; ) {
+        const t = ((eStore: any, tVal: number) => {
+          let sVal, aVal;
+          const oArr = eStore.S;
+          let rVal = eStore.acc;
+          const nVal = rVal % 61;
+          const iVal = 0 - Number(nVal in oArr);
+          const dVal = oArr[nVal] >>> 0;
+          const lVal = (((sVal = rVal) ^ (aVal = (dVal ^ Math.imul(2654435769, tVal + 1) >>> 0) >>> 0)) >>> 0 | (sVal & aVal & iVal) >>> 0) >>> 0;
+          rVal = w((lVal = (v((lVal + rVal) >>> 0, 31 & nVal) ^ v(rVal, 31 & Math.imul(nVal, 7))) >>> 0) + 2654435769 >>> 0);
+          oArr[nVal] = rVal >>> 0;
+          eStore.acc = rVal;
+          return rVal >>> 0;
+        })(a, idx++);
+        prng[e++] = 255 & t;
+        e < o.length && (prng[e++] = (t >>> 8) & 255);
+        e < o.length && (prng[e++] = (t >>> 16) & 255);
+        e < o.length && (prng[e++] = (t >>> 24) & 255);
+      }
+      return prng;
+    })();
+
+    for (let e = 0; e < o.length; e++) o[e] ^= r[e];
+    for (let e = 0; e < b.length; e++) {
+      if (o[e] !== b[e]) throw Error("decrypt failed: bad seed or tampered payload");
+    }
+
+    const payload = o.subarray(b.length);
+    const decryptedJson = new TextDecoder("utf-8").decode(payload);
+    const resultObj = JSON.parse(decryptedJson);
+
+    const sources = (resultObj.sources || []).map((s: any) => ({
+      url: s.url,
+      quality: s.name || s.quality || 'Server',
+      isM3U8: s.url.includes('.m3u8') || s.type === 'm3u8'
+    }));
+
+    const subtitles = (resultObj.subtitles || []).map((sub: any) => ({
+      url: sub.url,
+      lang: sub.label || sub.lang || 'English'
+    }));
+
+    return { sources, subtitles };
+  } catch (e: any) {
+    console.error(`[Client 2Embed/Videasy] Decryption failed:`, e.message);
+    throw new Error(`2Embed/Videasy resolution failed: ${e.message}`);
+  }
 }
 
 
