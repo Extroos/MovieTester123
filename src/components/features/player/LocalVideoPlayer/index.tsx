@@ -820,17 +820,45 @@ export default function LocalVideoPlayer({
           resetControlsTimeout();
           return;
         }
-        // On web/desktop, route through the Express server proxy.
-        let watchUrl = `${localServer}/meta/tmdb/watch/${tmdbId}?type=${type}&server=${serverId}&title=${encodeURIComponent(titleToUse)}`;
-        if (isTV) {
-          watchUrl += `&s=${season}&e=${episode}`;
+        // On web/desktop, resolve via client-side scrapers first for custom servers to bypass Express backend 404
+        if (serverId === 'vidzee' || serverId === 'vidlink-pro' || serverId === 'vixsrc' || serverId === '2embed') {
+          console.log(`[LocalVideoPlayer] Resolving ${serverId} client-side in browser...`);
+          try {
+            let res;
+            if (serverId === 'vidzee') {
+              res = await scrapeVidzeeStream(String(tmdbId), type, season, episode);
+            } else if (serverId === 'vidlink-pro') {
+              res = await scrapeVidlinkStream(String(tmdbId), type, season, episode);
+            } else if (serverId === 'vixsrc') {
+              res = await scrapeVixsrcStream(String(tmdbId), type, season, episode);
+            } else {
+              res = await scrape2EmbedStream(String(tmdbId), type, season, episode);
+            }
+            data = {
+              sources: res.sources,
+              subtitles: (res.subtitles || []).map((s: any) => ({
+                url: s.url,
+                label: s.lang || 'Unknown',
+                lang: s.lang || 'Unknown'
+              }))
+            };
+          } catch (scrapeErr: any) {
+            console.error(`[LocalVideoPlayer] Client-side scraping failed on web:`, scrapeErr.message);
+          }
         }
-        
-        console.log('[LocalVideoPlayer] Requesting server switch via Express:', watchUrl);
+
         let res;
-        try {
-          res = await fetch(watchUrl, { signal: controller.signal });
-        } catch (fetchErr: any) {
+        if (!data) {
+          // On web/desktop, route through the Express server proxy.
+          let watchUrl = `${localServer}/meta/tmdb/watch/${tmdbId}?type=${type}&server=${serverId}&title=${encodeURIComponent(titleToUse)}`;
+          if (isTV) {
+            watchUrl += `&s=${season}&e=${episode}`;
+          }
+          
+          console.log('[LocalVideoPlayer] Requesting server switch via Express:', watchUrl);
+          try {
+            res = await fetch(watchUrl, { signal: controller.signal });
+          } catch (fetchErr: any) {
           setVidlinkDiagnostics(`Failed to connect to local server: ${fetchErr.message}`);
           throw fetchErr;
         }
@@ -911,6 +939,7 @@ export default function LocalVideoPlayer({
           throw new Error(finalErrMsg);
         }
       }
+    }
 
       // On native path, bestSource is not set inside the if/else branches — set it here from data
       if (!bestSource && data?.sources?.[0]?.url) {

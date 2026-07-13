@@ -446,8 +446,11 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
       const pmEmbedBase = config?.gateways?.vidsrc_pm_embed || 'https://vaplayer.ru';
       try {
         console.log(`[Server] Dynamically resolving active VidSrc PM domain via ${pmEmbedBase}...`);
-        const testRes = await axios.get(`${pmEmbedBase}/embed/movie/tt0137523`, {
-          timeout: 6000,
+        const embedTargetUrl = `${pmEmbedBase}/embed/movie/tt0137523`;
+        const pyProxy = `http://localhost:8000/local-proxy?url=${encodeURIComponent(embedTargetUrl)}&referer=${encodeURIComponent('https://brightpathsignals.com/')}&origin=${encodeURIComponent('https://brightpathsignals.com')}`;
+        
+        const testRes = await axios.get(pyProxy, {
+          timeout: 10000,
           headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36' }
         });
         const iframeMatch = testRes.data.match(/<iframe\s+id="pf"\s+src="([^"]+)"/);
@@ -1153,6 +1156,159 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
     }
   }
   
+  // Handle explicit vidlink-pro / vixsrc / 2embed / vidzee requests on Express
+  if (activeServer === 'vidlink-pro') {
+    try {
+      console.log(`[Server] Resolving VidLink Pro for TMDB-${tmdbId}...`);
+      const encDecBase = config?.gateways?.enc_dec || 'https://enc-dec.app';
+      const vidlinkBase = config?.gateways?.vidlink || 'https://vidlink.pro';
+      
+      const encUrl = `${encDecBase}/api/enc-vidlink?text=${encodeURIComponent(String(tmdbId))}`;
+      const encRes = await axios.get(encUrl, { timeout: 10000 });
+      const encodedTmdb = encRes.data?.result;
+      if (!encodedTmdb) throw new Error("Encryption failed");
+
+      const apiUrl = type === 'tv'
+        ? `${vidlinkBase}/api/b/tv/${encodedTmdb}/${season}/${episode}?multiLang=0`
+        : `${vidlinkBase}/api/b/movie/${encodedTmdb}?multiLang=0`;
+
+      console.log(`[Server] Fetching VidLink stream: ${apiUrl}`);
+      const apiRes = await axios.get(apiUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+          'Referer': vidlinkBase
+        },
+        timeout: 15000
+      });
+
+      const sources = [];
+      if (apiRes.data.stream && apiRes.data.stream.qualities) {
+        for (const [quality, fileObj] of Object.entries(apiRes.data.stream.qualities)) {
+          if (fileObj && fileObj.url) {
+            sources.push({
+              url: fileObj.url,
+              quality: `${quality}p`,
+              isM3U8: fileObj.url.includes('.m3u8')
+            });
+          }
+        }
+      }
+
+      const subtitles = [];
+      if (apiRes.data.subtitles && Array.isArray(apiRes.data.subtitles)) {
+        for (const sub of apiRes.data.subtitles) {
+          if (sub.url) {
+            subtitles.push({
+              url: sub.url,
+              lang: sub.language || 'Unknown'
+            });
+          }
+        }
+      }
+
+      return res.json(rewriteLocalhostUrls({ sources, subtitles }, req));
+    } catch (err) {
+      console.error(`[Server] VidLink Pro resolution failed:`, err.message);
+      return res.status(500).json({ error: `vidlink-pro failed: ${err.message}` });
+    }
+  }
+
+  if (activeServer === 'vixsrc') {
+    try {
+      console.log(`[Server] Resolving VixSrc for TMDB-${tmdbId}...`);
+      const vixsrcBase = config?.gateways?.vixsrc || 'https://vixsrc.to';
+      const apiUrl = type === 'tv'
+        ? `${vixsrcBase}/api/tv/${tmdbId}/${season}/${episode}`
+        : `${vixsrcBase}/api/movie/${tmdbId}`;
+
+      const apiRes = await axios.get(apiUrl, {
+        headers: { 'Referer': vixsrcBase + '/' },
+        timeout: 10000
+      });
+      if (!apiRes.data || !apiRes.data.src) throw new Error("Failed to get VixSrc embed path");
+
+      const embedUrl = `${vixsrcBase}${apiRes.data.src}`;
+      const embedRes = await axios.get(embedUrl, {
+        headers: { 'Referer': vixsrcBase + '/' },
+        timeout: 10000
+      });
+
+      const html = embedRes.data;
+      const streamsMatch = html.match(/window\.streams\s*=\s*(\[[^\]]+\])/);
+      const tokenMatch = html.match(/'token':\s*'([^']*)'/);
+      const expiresMatch = html.match(/'expires':\s*'([^']*)'/);
+
+      if (!streamsMatch || !tokenMatch || !expiresMatch) {
+        throw new Error("Obfuscated window.streams parameters not found");
+      }
+
+      const streams = JSON.parse(streamsMatch[1]);
+      const token = tokenMatch[1];
+      const expires = expiresMatch[1];
+
+      const sources = streams.map((s) => {
+        const l = new URL(s.url);
+        l.searchParams.append("token", token);
+        l.searchParams.append("expires", expires);
+        l.searchParams.append("asn", "");
+        l.searchParams.append("h", "1");
+        return {
+          url: l.toString(),
+          quality: s.name || 'Server',
+          isM3U8: true
+        };
+      });
+
+      return res.json(rewriteLocalhostUrls({ sources, subtitles: [] }, req));
+    } catch (err) {
+      console.error(`[Server] VixSrc resolution failed:`, err.message);
+      return res.status(500).json({ error: `vixsrc failed: ${err.message}` });
+    }
+  }
+
+  if (activeServer === '2embed') {
+    try {
+      console.log(`[Server] Resolving 2Embed for TMDB-${tmdbId}...`);
+      const videasyBase = config?.gateways?.videasy || 'https://player.videasy.to';
+      const targetUrl = type === 'tv'
+        ? `${videasyBase}/tv/${tmdbId}/${season}/${episode}`
+        : `${videasyBase}/movie/${tmdbId}`;
+
+      const pageRes = await axios.get(targetUrl, {
+        headers: { 'Referer': 'https://streamsrcs.2embed.cc/' },
+        timeout: 10000
+      });
+
+      const html = pageRes.data;
+      const serversMatch = html.match(/window\.streams\s*=\s*(\[[^\]]+\])/);
+      if (!serversMatch) throw new Error("Could not find window.streams variables");
+
+      const streams = JSON.parse(serversMatch[1]);
+      const sources = streams.map((s) => ({
+        url: s.url,
+        quality: s.name || 'Server',
+        isM3U8: s.url.includes('.m3u8')
+      }));
+
+      return res.json(rewriteLocalhostUrls({ sources, subtitles: [] }, req));
+    } catch (err) {
+      console.error(`[Server] 2Embed resolution failed:`, err.message);
+      return res.status(500).json({ error: `2embed failed: ${err.message}` });
+    }
+  }
+
+  if (activeServer === 'vidzee') {
+    try {
+      console.log(`[Server] Resolving Vidzee for TMDB-${tmdbId}...`);
+      const testServerUrl = `http://localhost:${process.env.PORT || 3001}/meta/tmdb/watch/${tmdbId}?type=${type}&s=${season}&e=${episode}&server=test-server`;
+      const srvRes = await axios.get(testServerUrl, { timeout: 20000 });
+      return res.json(rewriteLocalhostUrls(srvRes.data, req));
+    } catch (err) {
+      console.error(`[Server] Vidzee resolution failed:`, err.message);
+      return res.status(500).json({ error: `vidzee failed: ${err.message}` });
+    }
+  }
+
   return res.status(404).json({ error: 'Unknown server option.' });
 });
 
@@ -1182,7 +1338,7 @@ app.get('/movies/yts-subtitles/download', async (req, res) => {
     const zipUrl = `https://yifysubtitles.ch${zipPath}`;
     console.log(`[Server] Decoded ZIP URL: ${zipUrl}`);
     
-    const pythonUrl = `http://localhost:8000/unzip-srt?url=${encodeURIComponent(zipUrl)}`;
+    const pythonUrl = `http://localhost:8000/unzip-srt?url=${encodeURIComponent(zipUrl)}&referer=${encodeURIComponent(`https://yifysubtitles.ch${link}`)}`;
     const unzipRes = await fetch(pythonUrl);
     if (!unzipRes.ok) {
       const errorText = await unzipRes.text();
@@ -1291,6 +1447,164 @@ app.get('/movies/yts-subtitles/:imdbId', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Helper to fetch the dynamic config key from GitHub config
+let remoteConfigCache = null;
+let lastConfigFetchTime = 0;
+
+async function getOpenSubtitlesApiKey() {
+  const now = Date.now();
+  // Cache config for 5 minutes to prevent GitHub rate-limiting
+  if (remoteConfigCache && (now - lastConfigFetchTime < 5 * 60 * 1000)) {
+    return remoteConfigCache.subtitles?.opensubtitles_api_key || 'JkKADcTEWRQzVl95qI2UtAXbMgJhH44R';
+  }
+  try {
+    const res = await fetch('https://raw.githubusercontent.com/Extroos/MovieTester123/main/config.json');
+    if (res.ok) {
+      remoteConfigCache = await res.json();
+      lastConfigFetchTime = now;
+      console.log('[Server] Successfully fetched dynamic remote config. API Key found:', remoteConfigCache.subtitles?.opensubtitles_api_key ? 'Yes' : 'No');
+      return remoteConfigCache.subtitles?.opensubtitles_api_key || 'JkKADcTEWRQzVl95qI2UtAXbMgJhH44R';
+    }
+  } catch (err) {
+    console.warn('[Server] Failed to fetch remote config:', err.message);
+  }
+  return 'JkKADcTEWRQzVl95qI2UtAXbMgJhH44R';
+}
+
+// OpenSubtitles Search (Movies and TV Shows) - Powered by Stremio Keyless Proxy
+app.get('/movies/opensubtitles/:tmdbId', async (req, res) => {
+  const { tmdbId } = req.params;
+  const { type = 'movie', season = '', episode = '', lang = 'en' } = req.query;
+  const localPort = process.env.PORT || 3001;
+  console.log(`[Server] OpenSubtitles Search: ${tmdbId}, type=${type}, S=${season}E${episode}, lang=${lang}`);
+  
+  try {
+    // 1. Resolve TMDB ID to IMDB ID if needed
+    let imdbId = tmdbId;
+    const tmdbApiKey = '8265bd1679663a7ea12ac168da84d2e8';
+    
+    if (!tmdbId.startsWith('tt')) {
+      const tmdbUrl = type === 'tv'
+        ? `https://api.themoviedb.org/3/tv/${tmdbId}/external_ids?api_key=${tmdbApiKey}`
+        : `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${tmdbApiKey}`;
+      
+      const tmdbRes = await fetch(tmdbUrl);
+      if (tmdbRes.ok) {
+        const tmdbData = await tmdbRes.json();
+        imdbId = tmdbData.imdb_id || tmdbId;
+      }
+    }
+    
+    if (!imdbId.startsWith('tt')) {
+      throw new Error(`Could not resolve IMDB ID for TMDB ID: ${tmdbId}`);
+    }
+    
+    // 2. Query Stremio OpenSubtitles v3 Proxy
+    let stremioUrl = '';
+    if (type === 'tv' || type === 'series' || (season && episode)) {
+      stremioUrl = `https://opensubtitles-v3.strem.io/subtitles/series/${imdbId}:${season || 1}:${episode || 1}.json`;
+    } else {
+      stremioUrl = `https://opensubtitles-v3.strem.io/subtitles/movie/${imdbId}.json`;
+    }
+    
+    console.log(`[Server] Fetching from Stremio proxy: ${stremioUrl}`);
+    const response = await fetch(stremioUrl);
+    if (!response.ok) {
+      throw new Error(`Stremio proxy returned status ${response.status}`);
+    }
+    
+    const json = await response.json();
+    const subtitles = json.subtitles || [];
+    
+    // 3. Map Stremio subtitles to React expected format
+    const results = [];
+    const threeToTwoMap = {
+      eng: 'en', ara: 'ar', spa: 'es', por: 'pt', kor: 'ko', hin: 'hi', ger: 'de', fre: 'fr', ita: 'it', chi: 'zh', tur: 'tr', rus: 'ru',
+      en: 'en', ar: 'ar', es: 'es', pt: 'pt', ko: 'ko', hi: 'hi', de: 'de', fr: 'fr', it: 'it', zh: 'zh', tr: 'tr', ru: 'ru'
+    };
+    
+    const targetLangs = lang ? lang.split(',').map(l => l.trim().toLowerCase()) : [];
+    
+    for (const sub of subtitles) {
+      const subLang3 = (sub.lang || '').toLowerCase();
+      const subLang2 = threeToTwoMap[subLang3] || subLang3.substring(0, 2);
+      
+      if (targetLangs.length > 0 && !targetLangs.includes(subLang2) && !targetLangs.includes(subLang3)) {
+        continue;
+      }
+      
+      const dlUrl = `http://localhost:${localPort}/subtitles/convert?url=${encodeURIComponent(sub.url)}`;
+      
+      results.push({
+        link: dlUrl,
+        language: subLang2,
+        name: `${sub.lang?.toUpperCase() || 'SUB'} - Release ${sub.id || 'Subtitle'}`
+      });
+    }
+    
+    res.json(results);
+  } catch (err) {
+    console.error(`[Server] OpenSubtitles Search error:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// OpenSubtitles Download
+app.get('/movies/opensubtitles/download', async (req, res) => {
+  const { fileId } = req.query;
+  if (!fileId) return res.status(400).send('Missing fileId parameter');
+  
+  console.log(`[Server] OpenSubtitles Download fileId: ${fileId}`);
+  try {
+    const apiKey = await getOpenSubtitlesApiKey();
+    const dlApiUrl = 'https://api.opensubtitles.com/api/v1/download';
+    const response = await fetch(dlApiUrl, {
+      method: 'POST',
+      headers: {
+        'Api-Key': apiKey,
+        'Content-Type': 'application/json',
+        'User-Agent': 'CineMovie/1.0'
+      },
+      body: JSON.stringify({ file_id: parseInt(fileId) })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`OpenSubtitles Download API returned status ${response.status}`);
+    }
+    
+    const dlJson = await response.json();
+    const dlLink = dlJson.link;
+    if (!dlLink) throw new Error('No download link returned by OpenSubtitles');
+    
+    console.log(`[Server] Downloading subtitle file: ${dlLink}`);
+    const subFileRes = await fetch(dlLink, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+      }
+    });
+    if (!subFileRes.ok) throw new Error(`Failed to fetch subtitle file: ${subFileRes.statusText}`);
+    
+    const text = await subFileRes.text();
+    
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    res.setHeader('Content-Type', 'text/vtt');
+    
+    let vttContent = text;
+    if (dlLink.toLowerCase().includes('.srt') || !text.trim().startsWith('WEBVTT')) {
+      let cleanSrt = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      vttContent = 'WEBVTT\n\n' + cleanSrt.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
+    }
+    
+    res.send(vttContent);
+  } catch (err) {
+    console.error(`[Server] OpenSubtitles Download error:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 app.get('/subtitles/convert', async (req, res) => {
   const { url } = req.query;
