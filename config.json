@@ -17,10 +17,31 @@
     },
     {
       "id": "vidzee",
-      "name": "Vidzee",
-      "description": "Multi-language native HLS mirrors",
-      "badge": "NEW",
+      "name": "Nflix Multi",
+      "description": "Multi-language HLS — Nflix, Drag, Viet & Hindi CDN mirrors",
+      "badge": "Multi",
       "isAdFree": true
+    },
+    {
+      "id": "vidlink-pro",
+      "name": "VidLink Pro",
+      "description": "Clean ad-light embed — fast CDN, subtitle support",
+      "badge": "HD",
+      "isAdFree": false
+    },
+    {
+      "id": "2embed",
+      "name": "2Embed",
+      "description": "Multi-source embed aggregator via 2embed.cc",
+      "badge": "FREE",
+      "isAdFree": false
+    },
+    {
+      "id": "vixsrc",
+      "name": "VixSrc",
+      "description": "Multi-language embed via vixsrc.to — dark theme",
+      "badge": "MULTI",
+      "isAdFree": false
     },
     {
       "id": "vidsrc-sbs",
