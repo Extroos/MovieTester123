@@ -1319,7 +1319,12 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
 
       const fetchVideasyProxy = async (url) => {
         const proxyUrl = `http://localhost:8000/local-proxy?url=${encodeURIComponent(url)}&referer=${encodeURIComponent('https://player.videasy.to/')}&origin=${encodeURIComponent('https://player.videasy.to')}`;
-        const sRes = await axios.get(proxyUrl);
+        const sRes = await axios.get(proxyUrl, {
+          headers: {
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+          }
+        });
         return sRes.data;
       };
 
