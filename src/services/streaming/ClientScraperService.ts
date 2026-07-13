@@ -703,7 +703,9 @@ export async function scrapeVidzeeStream(
     const decryptedKey = await decryptApiKeyWebCrypto(encryptedKey, HARDCODED_KEY_HEX);
     console.log(`[Client Vidzee] Decrypted API key: ${decryptedKey}`);
 
-    const referer = `https://player.vidzee.wtf/embed/${type}/${tmdbId}`;
+    const referer = type === 'tv'
+      ? `https://player.vidzee.wtf/embed/tv/${tmdbId}/${season}/${episode}`
+      : `https://player.vidzee.wtf/embed/movie/${tmdbId}`;
     const sources: any[] = [];
     const errors: string[] = [];
 
@@ -844,7 +846,14 @@ export async function scrapeVidlinkStream(
   }
 
   const sources: any[] = [];
-  if (apiRes.stream && apiRes.stream.qualities) {
+  if (apiRes.stream && apiRes.stream.playlist) {
+    sources.push({
+      url: apiRes.stream.playlist,
+      quality: 'auto',
+      isM3U8: true
+    });
+  }
+  if (sources.length === 0 && apiRes.stream && apiRes.stream.qualities) {
     for (const [quality, fileObj] of Object.entries(apiRes.stream.qualities)) {
       const item: any = fileObj;
       if (item && item.url) {
@@ -990,9 +999,37 @@ export async function scrape2EmbedStream(
     if (!seed) throw new Error("Failed to retrieve seed from wingsdatabase");
 
     console.log(`[Client 2Embed/Videasy] Fetching sources-with-title using seed: ${seed}`);
-    // Extract title, year, etc. if available (or use placeholders)
-    const title = 'Movie';
-    const query = `?title=${encodeURIComponent(title)}&mediaType=${isTv ? 'TV Series' : 'Movie'}&year=2024&tmdbId=${tmdbId}&enc=2&seed=${seed}${isTv ? `&seasonId=${season}&episodeId=${episode}` : ''}`;
+    let movieTitle = 'Movie';
+    let releaseYear = '2024';
+
+    try {
+      const tmdbApiKey = '8265bd1679663a7ea12ac168da84d2e8';
+      const tmdbUrl = isTv
+        ? `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${tmdbApiKey}`
+        : `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${tmdbApiKey}`;
+      
+      let resDetails;
+      if (Capacitor.isNativePlatform()) {
+        const { fetchWithCapacitor } = await import('../../utils/nativeFetch');
+        const capRes = await fetchWithCapacitor(tmdbUrl, 'text');
+        resDetails = JSON.parse(await capRes.text());
+      } else {
+        const localServer = getLocalServerUrl() || 'http://localhost:3001';
+        const proxied = `${localServer}/local-proxy?url=${encodeURIComponent(tmdbUrl)}`;
+        const res = await fetch(proxied);
+        resDetails = await res.json();
+      }
+      
+      if (resDetails) {
+        movieTitle = resDetails.title || resDetails.name || movieTitle;
+        const dateStr = resDetails.release_date || resDetails.first_air_date || '';
+        if (dateStr) releaseYear = dateStr.split('-')[0];
+      }
+    } catch (e: any) {
+      console.warn("[Client 2Embed] Failed to fetch TMDB details:", e.message);
+    }
+
+    const query = `?title=${encodeURIComponent(movieTitle)}&mediaType=${isTv ? 'TV Series' : 'Movie'}&year=${releaseYear}&tmdbId=${tmdbId}&enc=2&seed=${seed}${isTv ? `&seasonId=${season}&episodeId=${episode}` : ''}`;
     const sourcesUrl = `${wingsBase}/neon2/sources-with-title${query}`;
 
     let encryptedText = '';

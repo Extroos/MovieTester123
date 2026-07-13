@@ -1182,7 +1182,14 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
       });
 
       const sources = [];
-      if (apiRes.data.stream && apiRes.data.stream.qualities) {
+      if (apiRes.data.stream && apiRes.data.stream.playlist) {
+        sources.push({
+          url: apiRes.data.stream.playlist,
+          quality: 'auto',
+          isM3U8: true
+        });
+      }
+      if (sources.length === 0 && apiRes.data.stream && apiRes.data.stream.qualities) {
         for (const [quality, fileObj] of Object.entries(apiRes.data.stream.qualities)) {
           if (fileObj && fileObj.url) {
             sources.push({
@@ -1284,8 +1291,25 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
       const seed = seedRes.data?.seed;
       if (!seed) throw new Error("Failed to retrieve seed from wingsdatabase");
 
-      const title = 'Movie';
-      const query = `?title=${encodeURIComponent(title)}&mediaType=${isTv ? 'TV Series' : 'Movie'}&year=2024&tmdbId=${tmdbId}&enc=2&seed=${seed}${isTv ? `&seasonId=${season}&episodeId=${episode}` : ''}`;
+      let movieTitle = title || 'Movie';
+      let releaseYear = '2024';
+
+      try {
+        const tmdbApiKey = '8265bd1679663a7ea12ac168da84d2e8';
+        const tmdbUrl = isTv
+          ? `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${tmdbApiKey}`
+          : `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${tmdbApiKey}`;
+        const tmdbRes = await axios.get(tmdbUrl, { timeout: 8000 });
+        if (tmdbRes.data) {
+          movieTitle = tmdbRes.data.title || tmdbRes.data.name || movieTitle;
+          const dateStr = tmdbRes.data.release_date || tmdbRes.data.first_air_date || '';
+          if (dateStr) releaseYear = dateStr.split('-')[0];
+        }
+      } catch (e) {
+        console.warn("[Server] Failed to fetch TMDB details for 2Embed:", e.message);
+      }
+
+      const query = `?title=${encodeURIComponent(movieTitle)}&mediaType=${isTv ? 'TV Series' : 'Movie'}&year=${releaseYear}&tmdbId=${tmdbId}&enc=2&seed=${seed}${isTv ? `&seasonId=${season}&episodeId=${episode}` : ''}`;
       const sourcesUrl = `${wingsBase}/neon2/sources-with-title${query}`;
 
       const sourcesRes = await axios.get(sourcesUrl, {
@@ -1423,9 +1447,73 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
   if (activeServer === 'vidzee') {
     try {
       console.log(`[Server] Resolving Vidzee for TMDB-${tmdbId}...`);
-      const testServerUrl = `http://localhost:${process.env.PORT || 3001}/meta/tmdb/watch/${tmdbId}?type=${type}&s=${season}&e=${episode}&server=test-server`;
-      const srvRes = await axios.get(testServerUrl, { timeout: 20000 });
-      return res.json(rewriteLocalhostUrls(srvRes.data, req));
+      
+      const keyRes = await axios.get('https://core.vidzee.wtf/api-key', { timeout: 8000 });
+      const encryptedKey = keyRes.data;
+      
+      const HARDCODED_KEY_HEX = "c4a8f1d7e2b9a6c3d0f5e8a1b7c4d9e2";
+      const keyHash = crypto.createHash('sha256').update(HARDCODED_KEY_HEX).digest();
+      const binaryKey = Buffer.from(encryptedKey, 'base64');
+      const iv = binaryKey.subarray(0, 12);
+      const tag = binaryKey.subarray(12, 28);
+      const ciphertext = binaryKey.subarray(28);
+      
+      const decipher = crypto.createDecipheriv('aes-256-gcm', keyHash, iv);
+      decipher.setAuthTag(tag);
+      const decryptedKey = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+
+      const referer = type === 'tv'
+        ? `https://player.vidzee.wtf/embed/tv/${tmdbId}/${season}/${episode}`
+        : `https://player.vidzee.wtf/embed/movie/${tmdbId}`;
+      const sources = [];
+      const serversToTest = [3, 4, 5, 7];
+      
+      for (const sr of serversToTest) {
+        let url = `https://player.vidzee.wtf/api/server?id=${tmdbId}&sr=${sr}`;
+        if (type === 'tv') {
+          url += `&ss=${season}&ep=${episode}`;
+        }
+        try {
+          const resSrv = await axios.get(url, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+              'Referer': referer,
+              'Accept': 'application/json'
+            },
+            timeout: 8000
+          });
+          if (resSrv.data && resSrv.data.url && resSrv.data.url.length > 0) {
+            for (const item of resSrv.data.url) {
+              const decoded = Buffer.from(item.link, 'base64').toString('utf8');
+              const parts = decoded.split(':');
+              if (parts.length === 2) {
+                const linkIv = Buffer.from(parts[0], 'base64');
+                const linkCiphertext = Buffer.from(parts[1], 'base64');
+                const paddedKey = Buffer.alloc(32);
+                Buffer.from(decryptedKey).copy(paddedKey, 0, 0, 32);
+                
+                const linkDecipher = crypto.createDecipheriv('aes-256-cbc', paddedKey, linkIv);
+                const decryptedStream = Buffer.concat([linkDecipher.update(linkCiphertext), linkDecipher.final()]).toString('utf8');
+                
+                if (decryptedStream && decryptedStream.startsWith('http')) {
+                  const langLabel = item.lang ? ` [${item.lang}]` : '';
+                  const providerLabel = resSrv.data.provider || item.name || `Server ${sr}`;
+                  sources.push({
+                    url: decryptedStream,
+                    quality: `${providerLabel}${langLabel}`,
+                    isM3U8: decryptedStream.includes('.m3u8')
+                  });
+                }
+              }
+            }
+          }
+        } catch (errSrv) {
+          console.warn(`[Server] Vidzee server ${sr} fetch failed:`, errSrv.message);
+        }
+      }
+
+      if (sources.length === 0) throw new Error("No streams resolved");
+      return res.json(rewriteLocalhostUrls({ sources, subtitles: [] }, req));
     } catch (err) {
       console.error(`[Server] Vidzee resolution failed:`, err.message);
       return res.status(500).json({ error: `vidzee failed: ${err.message}` });
