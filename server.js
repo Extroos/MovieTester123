@@ -1245,7 +1245,7 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
     } catch (err) {
       console.error(`[Server] VixSrc resolution failed:`, err.message);
       return res.status(500).json({ error: `vixsrc failed: ${err.message}` });
-    }  }
+    }
   }
 
   if (activeServer === 'vidzee') {
