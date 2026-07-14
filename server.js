@@ -1496,7 +1496,7 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
         throw lastError || new Error("All 2Embed mirrors failed to resolve");
       }
 
-      const resultObj = JSON.parse(decryptedJson);edJson);
+      const resultObj = JSON.parse(decryptedJson);
 
       const sources = (resultObj.sources || []).map((s) => ({
         url: s.url,
