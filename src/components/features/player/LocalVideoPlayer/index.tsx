@@ -2722,6 +2722,7 @@ export default function LocalVideoPlayer({
                         (data.response ? `Response Code: ${data.response.code}. ` : "") +
                         "This generally happens when the video hosting server blocks the request.";
                       console.error('[LocalVideoPlayer]', hlsErrorMsg);
+                      try { hls.destroy(); } catch (_) {}
                       setServerError(hlsErrorMsg);
                       setIsInitialLoading(false);
                       setIsSwitchingServer(false);
@@ -2749,6 +2750,7 @@ export default function LocalVideoPlayer({
                               console.error('[LocalVideoPlayer] Max HLS network recovery attempts reached. Reporting fatal error.');
                               hlsNetworkRetryCountRef.current = 0;
                               const netErrorMsg = `HLS Network Error: The streaming server failed to respond.`;
+                              try { hls.destroy(); } catch (_) {}
                               setServerError(netErrorMsg);
                               setIsInitialLoading(false);
                               setIsSwitchingServer(false);
