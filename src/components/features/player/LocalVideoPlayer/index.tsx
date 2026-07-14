@@ -2723,6 +2723,12 @@ export default function LocalVideoPlayer({
                         "This generally happens when the video hosting server blocks the request.";
                       console.error('[LocalVideoPlayer]', hlsErrorMsg);
                       try { hls.destroy(); } catch (_) {}
+                      if (videoRef.current) {
+                          try {
+                              videoRef.current.src = "";
+                              videoRef.current.load();
+                          } catch (_) {}
+                      }
                       setServerError(hlsErrorMsg);
                       setIsInitialLoading(false);
                       setIsSwitchingServer(false);
@@ -2751,6 +2757,12 @@ export default function LocalVideoPlayer({
                               hlsNetworkRetryCountRef.current = 0;
                               const netErrorMsg = `HLS Network Error: The streaming server failed to respond.`;
                               try { hls.destroy(); } catch (_) {}
+                              if (videoRef.current) {
+                                  try {
+                                      videoRef.current.src = "";
+                                      videoRef.current.load();
+                                  } catch (_) {}
+                              }
                               setServerError(netErrorMsg);
                               setIsInitialLoading(false);
                               setIsSwitchingServer(false);
