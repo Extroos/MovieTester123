@@ -148,8 +148,12 @@ export async function scrapeVidzeeStream(
                 // Build a clean quality label: provider + language
                 const langLabel = item.lang ? ` [${item.lang}]` : '';
                 const providerLabel = res.provider || item.name || `Server ${sr}`;
+                // Append origin_referer so the local proxy always sends Referer: player.vidzee.wtf
+                // regardless of which rotating CDN domain Vidzee resolves to.
+                const sep = decryptedStream.includes('?') ? '&' : '?';
+                const streamWithRef = `${decryptedStream}${sep}origin_referer=${encodeURIComponent('https://player.vidzee.wtf/')}`;
                 sources.push({
-                  url: decryptedStream,
+                  url: streamWithRef,
                   quality: `${providerLabel}${langLabel}`,
                   isM3U8: decryptedStream.includes('.m3u8') || decryptedStream.includes('.txt'),
                   language: item.lang || 'Unknown',

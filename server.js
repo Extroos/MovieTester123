@@ -1265,10 +1265,14 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
                 if (decryptedStream && decryptedStream.startsWith('http')) {
                   const langLabel = item.lang ? ` [${item.lang}]` : '';
                   const providerLabel = resSrv.data.provider || item.name || `Server ${sr}`;
+                  // Append origin_referer so the local proxy sends the correct Referer header
+                  // regardless of what CDN domain Vidzee rotates to.
+                  const sep = decryptedStream.includes('?') ? '&' : '?';
+                  const streamWithRef = `${decryptedStream}${sep}origin_referer=${encodeURIComponent('https://player.vidzee.wtf/')}`;
                   sources.push({
-                    url: decryptedStream,
+                    url: streamWithRef,
                     quality: `${providerLabel}${langLabel}`,
-                    isM3U8: decryptedStream.includes('.m3u8')
+                    isM3U8: decryptedStream.includes('.m3u8') || decryptedStream.includes('.txt')
                   });
                 }
               }
