@@ -846,21 +846,35 @@ export async function scrapeVidlinkStream(
   }
 
   const sources: any[] = [];
-  if (apiRes.stream && apiRes.stream.playlist) {
+  
+  // 1. Primary HLS Playlist
+  if (apiRes.stream && apiRes.stream.playlist && apiRes.stream.playlist.includes('.m3u8')) {
     sources.push({
       url: apiRes.stream.playlist,
       quality: 'auto',
-      isM3U8: apiRes.stream.playlist.includes('.m3u8')
+      isM3U8: true
     });
   }
-  if (sources.length === 0 && apiRes.stream && apiRes.stream.qualities) {
+
+  // 2. Alternate HLS Playlists
+  const alts = apiRes.alternates || apiRes.stream?.alternates;
+  if (alts && alts.hls && alts.hls.playlist && alts.hls.playlist.includes('.m3u8')) {
+    sources.push({
+      url: alts.hls.playlist,
+      quality: 'auto',
+      isM3U8: true
+    });
+  }
+
+  // 3. HLS Qualities (only if they contain .m3u8)
+  if (apiRes.stream && apiRes.stream.qualities) {
     for (const [quality, fileObj] of Object.entries(apiRes.stream.qualities)) {
       const item: any = fileObj;
-      if (item && item.url) {
+      if (item && item.url && item.url.includes('.m3u8')) {
         sources.push({
           url: item.url,
           quality: `${quality}p`,
-          isM3U8: item.url.includes('.m3u8')
+          isM3U8: true
         });
       }
     }
@@ -879,7 +893,7 @@ export async function scrapeVidlinkStream(
   }
 
   if (sources.length === 0) {
-    throw new Error("No qualities found in VidLink response");
+    throw new Error("No HLS (m3u8) streams found in VidLink response");
   }
 
   return { sources, subtitles };
