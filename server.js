@@ -1270,8 +1270,8 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
         ? `https://player.vidzee.wtf/embed/tv/${tmdbId}/${season}/${episode}`
         : `https://player.vidzee.wtf/embed/movie/${tmdbId}`;
       const sources = [];
-      // Only test server 3 (Nflix) as others (Drag, Viet, Hindi) often serve incorrect movies
-      const serversToTest = [3];
+      // Test all working servers to give users fallback options (0=Tcloud, 1=IpCloud, 3=Nflix, 4=Drag, 5=Viet, 7=Hindi_v2)
+      const serversToTest = [0, 1, 3, 4, 5, 7];
       
       for (const sr of serversToTest) {
         let url = `https://player.vidzee.wtf/api/server?id=${tmdbId}&sr=${sr}`;

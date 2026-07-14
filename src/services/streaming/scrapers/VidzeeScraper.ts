@@ -124,8 +124,8 @@ export async function scrapeVidzeeStream(
     const sources: any[] = [];
     const errors: string[] = [];
 
-    // Only test server 3 (Nflix) as others (Drag, Viet, Hindi) often serve incorrect movies
-    const serversToTest = [3];
+    // Test all working servers to give users fallback options (0=Tcloud, 1=IpCloud, 3=Nflix, 4=Drag, 5=Viet, 7=Hindi_v2)
+    const serversToTest = [0, 1, 3, 4, 5, 7];
     const promises = serversToTest.map(async (sr) => {
       let url = `${playerBase}/api/server?id=${tmdbId}&sr=${sr}`;
       if (type === 'tv') {
