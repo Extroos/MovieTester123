@@ -1360,7 +1360,9 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
         }
       } catch (e) {
         console.warn("[Server] Failed to fetch TMDB details for 2Embed:", e.message);
-         const mirrorEndpoints = [
+      }
+
+      const mirrorEndpoints = [
         '/neon2/sources-with-title',
         '/cdn/sources-with-title',
         '/ym/sources-with-title',
