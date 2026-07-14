@@ -1219,23 +1219,41 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
       });
 
       const sources = [];
-      if (apiRes.data.stream && apiRes.data.stream.playlist) {
+      
+      // 1. Primary HLS Playlist
+      if (apiRes.data.stream && apiRes.data.stream.playlist && apiRes.data.stream.playlist.includes('.m3u8')) {
         sources.push({
           url: apiRes.data.stream.playlist,
           quality: 'auto',
-          isM3U8: apiRes.data.stream.playlist.includes('.m3u8')
+          isM3U8: true
         });
       }
-      if (sources.length === 0 && apiRes.data.stream && apiRes.data.stream.qualities) {
+
+      // 2. Alternate HLS Playlists
+      const alts = apiRes.data.alternates || apiRes.data.stream?.alternates;
+      if (alts && alts.hls && alts.hls.playlist && alts.hls.playlist.includes('.m3u8')) {
+        sources.push({
+          url: alts.hls.playlist,
+          quality: 'auto',
+          isM3U8: true
+        });
+      }
+
+      // 3. HLS Qualities (only if they contain .m3u8)
+      if (apiRes.data.stream && apiRes.data.stream.qualities) {
         for (const [quality, fileObj] of Object.entries(apiRes.data.stream.qualities)) {
-          if (fileObj && fileObj.url) {
+          if (fileObj && fileObj.url && fileObj.url.includes('.m3u8')) {
             sources.push({
               url: fileObj.url,
               quality: `${quality}p`,
-              isM3U8: fileObj.url.includes('.m3u8')
+              isM3U8: true
             });
           }
         }
+      }
+
+      if (sources.length === 0) {
+        throw new Error("No HLS (m3u8) streams found in VidLink response");
       }
 
       const subtitles = [];
