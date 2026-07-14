@@ -327,7 +327,64 @@ app.get('/local-proxy', async (req, res) => {
   if (!targetUrl) {
     return res.status(400).send('Missing url parameter');
   }
-  
+
+  const isStream = targetUrl.includes('.m3u8') || 
+                   targetUrl.includes('.ts') || 
+                   targetUrl.includes('.mp4') || 
+                   targetUrl.includes('workers.dev') || 
+                   targetUrl.includes('valorpath') || 
+                   targetUrl.includes('fvcwo') || 
+                   targetUrl.includes('flocw') || 
+                   targetUrl.includes('scalablecontentengine');
+
+  if (isStream) {
+    // Direct Node-side stream proxying to bypass Python and avoid thread deadlocks
+    console.log(`[Express Proxy] Direct fetch for stream: ${targetUrl}`);
+    try {
+      const headers = {
+        'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Referer': referer,
+        'Origin': origin,
+        'Accept': '*/*'
+      };
+      if (req.headers.range) {
+        headers['Range'] = req.headers.range;
+      }
+      
+      const response = await axios({
+        method: 'get',
+        url: targetUrl,
+        headers: headers,
+        responseType: 'stream',
+        timeout: 5000, // 5 seconds strict timeout
+        validateStatus: () => true
+      });
+
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', '*');
+      if (response.headers['content-type']) {
+        res.setHeader('Content-Type', response.headers['content-type']);
+      }
+      if (response.headers['content-length']) {
+        res.setHeader('Content-Length', response.headers['content-length']);
+      }
+      if (response.headers['content-range']) {
+        res.setHeader('Content-Range', response.headers['content-range']);
+      }
+      if (response.headers['accept-ranges']) {
+        res.setHeader('Accept-Ranges', response.headers['accept-ranges']);
+      }
+
+      res.status(response.status);
+      response.data.pipe(res);
+      return;
+    } catch (e) {
+      console.warn(`[Express Proxy] Direct stream fetch failed: ${e.message}, falling back to Python`);
+    }
+  }
+
+  // Fallback path: forward to Python local proxy on port 8000
   try {
     const pythonProxyUrl = `http://localhost:8000/local-proxy?url=${encodeURIComponent(targetUrl)}&referer=${encodeURIComponent(referer)}&origin=${encodeURIComponent(origin)}`;
     console.log(`[Express Proxy] Forwarding request to Python: ${targetUrl}`);
@@ -338,9 +395,7 @@ app.get('/local-proxy', async (req, res) => {
       'user-agent': req.headers['user-agent'] || ''
     };
     if (req.headers.range) {
-      headers['range'] = req.headers.range;
       headers['Range'] = req.headers.range;
-      console.log(`[Express Proxy] Forwarding client Range: ${req.headers.range}`);
     }
     
     const response = await axios({
@@ -348,15 +403,16 @@ app.get('/local-proxy', async (req, res) => {
       url: pythonProxyUrl,
       headers: headers,
       responseType: 'stream',
-      timeout: 45000, // Slightly higher timeout for large video range handshakes
+      timeout: 10000, // 10 seconds timeout for python API requests
       validateStatus: () => true
     });
     
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', '*');
-    res.setHeader('Content-Type', response.headers['content-type'] || 'application/octet-stream');
-    
+    if (response.headers['content-type']) {
+      res.setHeader('Content-Type', response.headers['content-type']);
+    }
     if (response.headers['content-length']) {
       res.setHeader('Content-Length', response.headers['content-length']);
     }
@@ -372,43 +428,6 @@ app.get('/local-proxy', async (req, res) => {
   } catch (e) {
     console.error(`[Express Proxy] Proxy error:`, e.message);
     res.status(500).send(e.message);
-  }
-});
-
-app.get('/local-proxy', async (req, res) => {
-  const { url, referer, origin } = req.query;
-  if (!url) return res.status(400).send("Missing url parameter");
-  
-  console.log(`[Express Proxy] Proxying URL: ${url}`);
-  
-  try {
-    const headers = {};
-    const clientUa = req.headers['user-agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
-    headers['user-agent'] = clientUa;
-    headers['User-Agent'] = clientUa;
-    if (referer) headers['Referer'] = referer;
-    if (origin) headers['Origin'] = origin;
-    
-    const pythonProxyUrl = `http://localhost:8000/local-proxy?url=${encodeURIComponent(url)}` + 
-      (referer ? `&referer=${encodeURIComponent(referer)}` : '') +
-      (origin ? `&origin=${encodeURIComponent(origin)}` : '');
-      
-    const targetRes = await axios.get(pythonProxyUrl, {
-      headers,
-      responseType: 'stream',
-      timeout: 25000,
-      validateStatus: () => true
-    });
-    
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    if (targetRes.headers['content-type']) {
-      res.setHeader('Content-Type', targetRes.headers['content-type']);
-    }
-    
-    targetRes.data.pipe(res);
-  } catch (err) {
-    console.error(`[Express Proxy] Error proxying ${url}:`, err.message);
-    res.status(500).send(err.message);
   }
 });
 
