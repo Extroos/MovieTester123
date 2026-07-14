@@ -21,7 +21,6 @@ const DEFAULT_CONFIG_URL = 'https://raw.githubusercontent.com/Extroos/MovieTeste
 export const ENABLE_REMOTE_OTA = true;
 
 interface GatewayConfig {
-  vidlink?: string;
   cloudnestra: string;
   vidsrc_wtf: string;
   vidsrc_sbs: string;
@@ -44,9 +43,7 @@ const DEFAULT_GATEWAYS: GatewayConfig = {
   vidsrc_sbs: 'https://vidsrc.sbs',
   vidsrc_pk: 'https://embed.vidsrc.pk',
   vidsrc_fyi: 'https://vidsrc.fyi',
-  vidlink: 'https://vidlink.pro',
   vixsrc: 'https://vixsrc.to',
-  videasy: 'https://player.videasy.to',
   enc_dec: 'https://enc-dec.app',
   vidzee: 'https://player.vidzee.wtf',
   vidzee_core: 'https://core.vidzee.wtf'
@@ -148,6 +145,16 @@ export async function getGateway(key: keyof GatewayConfig): Promise<string> {
 }
 
 /**
+ * Returns an array of mirror gateways for failover.
+ */
+export async function getGatewayList(key: string): Promise<string[]> {
+  const config = await getRemoteConfig();
+  const list = config?.gateways?.[key];
+  if (Array.isArray(list)) return list;
+  return [];
+}
+
+/**
  * Returns the domain hostname for a given server key (strips protocol/path).
  * 
  * @example
@@ -204,7 +211,7 @@ export async function getRemoteServers(): Promise<RemoteServerOption[] | null> {
  *
  * @example
  * const enabled = await getEnabledServers();
- * // ["vidlink-pro", "vidsrc-wtf-2", "vidsrc-sbs"]
+ * // ["vidsrc-pm", "vidsrc-wtf-2", "vidsrc-sbs"]
  */
 export async function getEnabledServers(): Promise<string[] | null> {
   const config = await getRemoteConfig();

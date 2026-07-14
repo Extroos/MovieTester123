@@ -70,12 +70,12 @@ export const VidSrcService = {
 
   // Generate embed URL for Movie
   getMovieEmbed: async (tmdbId: number | string) => {
-    return `https://vidlink.pro/movie/${tmdbId}?primaryColor=ffffff`;
+    return `https://vidsrc.me/embed/movie/${tmdbId}`;
   },
 
   // Generate embed URL for TV Show
   getTVEmbed: async (tmdbId: number | string, season: number, episode: number) => {
-    return `https://vidlink.pro/tv/${tmdbId}/${season}/${episode}?primaryColor=ffffff&nextbutton=true`;
+    return `https://vidsrc.me/embed/tv/${tmdbId}/${season}/${episode}`;
   }
 };
 

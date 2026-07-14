@@ -13,7 +13,7 @@ import { PlayerSettings, ALL_SERVERS } from './PlayerSettings';
 import { PlayerControls } from './PlayerControls';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 const NativeStreamingEngine = registerPlugin<any>('NativeStreamingEngine');
-import { scrapeVidsrcFallback, scrapeVidifyStream, scrapeVidsrcPmStream, scrapeWtfStream, scrapeVidzeeStream, scrapeVidlinkStream, scrapeVixsrcStream, scrape2EmbedStream } from '../../../../services/ClientScraperService';
+import { scrapeVidsrcFallback, scrapeVidifyStream, scrapeVidsrcPmStream, scrapeWtfStream, scrapeVidzeeStream, scrapeVixsrcStream } from '../../../../services/ClientScraperService';
 import { getGateway, getRemoteServers } from '../../../../services/streaming/RemoteConfigService';
 import { WatchTogetherService, type PartyParticipant, type PartySyncEvent } from '../../../../services/watchTogether';
 import { supabase } from '../../../../services/supabase';
@@ -55,9 +55,9 @@ const getSubtitleProxyUrl = (trackUrl: string): string => {
     return trackUrl;
   }
   if (localServer && localServer.trim() && localServer !== 'null' && localServer !== 'undefined') {
-    return `${localServer}/local-proxy?url=${encodeURIComponent(trackUrl)}&referer=${encodeURIComponent('https://vidlink.pro/')}&origin=${encodeURIComponent('https://vidlink.pro')}`;
+    return `${localServer}/local-proxy?url=${encodeURIComponent(trackUrl)}&referer=${encodeURIComponent('https://vidsrc.me/')}&origin=${encodeURIComponent('https://vidsrc.me')}`;
   }
-  return `/proxy?url=${encodeURIComponent(trackUrl)}&referer=${encodeURIComponent('https://vidlink.pro/')}`;
+  return `/proxy?url=${encodeURIComponent(trackUrl)}&referer=${encodeURIComponent('https://vidsrc.me/')}`;
 };
 
 const getStandardResolutionHeight = (height: number): number => {
@@ -650,7 +650,6 @@ export default function LocalVideoPlayer({
     }
     setConnectingServerName(SERVER_DISPLAY_NAMES[serverId] || serverId);
     setServerError(null);
-    setVidlinkDiagnostics(null);
     setVidsrcPmDiagnostics(null);
     setTestServerDiagnostics(null);
     setShowSettings(false);
@@ -703,7 +702,7 @@ export default function LocalVideoPlayer({
       // On native mobile, dispatch to the correct native resolver
       if (Capacitor.isNativePlatform()) {
         const srv = (remoteServers.length > 0 ? remoteServers : ALL_SERVERS).find(s => s.id === serverId);
-        const isIframeSrv = srv ? !srv.isAdFree : (serverId !== 'vidlink-pro' && serverId !== 'vidsrc-pm' && serverId !== 'vidsrc-sbs' && serverId !== 'vidzee' && serverId !== '2embed' && serverId !== 'vixsrc');
+        const isIframeSrv = srv ? !srv.isAdFree : (serverId !== 'vidsrc-pm' && serverId !== 'vidsrc-sbs' && serverId !== 'vidzee' && serverId !== 'vixsrc');
         if (isIframeSrv) {
           setIframeFallback(true);
           setEmbedServer(serverId);
@@ -763,17 +762,13 @@ export default function LocalVideoPlayer({
           } else {
             throw new Error("No streams found in Multi Language response");
           }
-        } else if (serverId === 'vidzee' || serverId === 'vidlink-pro' || serverId === 'vixsrc' || serverId === '2embed') {
+        } else if (serverId === 'vidzee' || serverId === 'vixsrc') {
           console.log(`[LocalVideoPlayer] Resolving ${serverId} natively on mobile...`);
           let res;
           if (serverId === 'vidzee') {
             res = await scrapeVidzeeStream(String(tmdbId), type, season, episode);
-          } else if (serverId === 'vidlink-pro') {
-            res = await scrapeVidlinkStream(String(tmdbId), type, season, episode);
-          } else if (serverId === 'vixsrc') {
-            res = await scrapeVixsrcStream(String(tmdbId), type, season, episode);
           } else {
-            res = await scrape2EmbedStream(String(tmdbId), type, season, episode);
+            res = await scrapeVixsrcStream(String(tmdbId), type, season, episode);
           }
           data = {
             sources: res.sources,
@@ -810,7 +805,7 @@ export default function LocalVideoPlayer({
         }
       } else {
         const srv = (remoteServers.length > 0 ? remoteServers : ALL_SERVERS).find(s => s.id === serverId);
-        const isIframeSrv = srv ? !srv.isAdFree : (serverId !== 'vidlink-pro' && serverId !== 'vidsrc-pm' && serverId !== 'vidsrc-sbs' && serverId !== 'vidzee' && serverId !== '2embed' && serverId !== 'vixsrc');
+        const isIframeSrv = srv ? !srv.isAdFree : (serverId !== 'vidsrc-pm' && serverId !== 'vidsrc-sbs' && serverId !== 'vidzee' && serverId !== 'vixsrc');
         if (isIframeSrv) {
           setIframeFallback(true);
           setEmbedServer(serverId);
@@ -821,18 +816,14 @@ export default function LocalVideoPlayer({
           return;
         }
         // On web/desktop, resolve via client-side scrapers first for custom servers to bypass Express backend 404
-        if (serverId === 'vidzee' || serverId === 'vidlink-pro' || serverId === 'vixsrc' || serverId === '2embed') {
+        if (serverId === 'vidzee' || serverId === 'vixsrc') {
           console.log(`[LocalVideoPlayer] Resolving ${serverId} client-side in browser...`);
           try {
             let res;
             if (serverId === 'vidzee') {
               res = await scrapeVidzeeStream(String(tmdbId), type, season, episode);
-            } else if (serverId === 'vidlink-pro') {
-              res = await scrapeVidlinkStream(String(tmdbId), type, season, episode);
-            } else if (serverId === 'vixsrc') {
-              res = await scrapeVixsrcStream(String(tmdbId), type, season, episode);
             } else {
-              res = await scrape2EmbedStream(String(tmdbId), type, season, episode);
+              res = await scrapeVixsrcStream(String(tmdbId), type, season, episode);
             }
             data = {
               sources: res.sources,
@@ -859,17 +850,14 @@ export default function LocalVideoPlayer({
           try {
             res = await fetch(watchUrl, { signal: controller.signal });
           } catch (fetchErr: any) {
-          setVidlinkDiagnostics(`Failed to connect to local server: ${fetchErr.message}`);
-          throw fetchErr;
-        }
-  
-        if (res.ok) {
+            throw fetchErr;
+          }
+
+          if (res.ok) {
           data = await res.json();
           bestSource = data.sources?.[0]?.url;
           if (serverId === 'vidsrc-pm') {
             setVidsrcPmDiagnostics('Success: Resolved stream sources via localized server.');
-          } else {
-            setVidlinkDiagnostics('Success: Resolved stream sources via localized server.');
           }
 
           if (data.sources && Array.isArray(data.sources) && data.sources.length > 0) {
@@ -933,8 +921,6 @@ export default function LocalVideoPlayer({
           const finalErrMsg = parsedMsg ? `Server HTTP ${res.status}: ${parsedMsg}` : `Server HTTP ${res.status}`;
           if (serverId === 'vidsrc-pm') {
             setVidsrcPmDiagnostics(finalErrMsg);
-          } else {
-            setVidlinkDiagnostics(finalErrMsg);
           }
           throw new Error(finalErrMsg);
         }
@@ -1017,8 +1003,8 @@ export default function LocalVideoPlayer({
       const isExternal = bestSource.startsWith('http') && !bestSource.includes('localhost') && !bestSource.includes('127.0.0.1') && !bestSource.includes('local-proxy');
       
       if (isExternal) {
-        let refToUse = 'https://vidlink.pro/';
-        let origToUse = 'https://vidlink.pro';
+        let refToUse = 'https://vidsrc.me/';
+        let origToUse = 'https://vidsrc.me';
         try {
           const parsed = new URL(bestSource);
           const origRef = parsed.searchParams.get('origin_referer') || parsed.searchParams.get('referer');
@@ -1165,12 +1151,12 @@ export default function LocalVideoPlayer({
         if (!isInitialMount) {
           const msg = 'Connection timed out. The streaming server is taking too long to respond.';
           setServerError(msg);
-          if (serverId === 'vidsrc-pm') setVidsrcPmDiagnostics(msg); else setVidlinkDiagnostics(msg);
+          if (serverId === 'vidsrc-pm') setVidsrcPmDiagnostics(msg);
         }
       } else {
         console.error('[LocalVideoPlayer] Failed to switch server:', err);
         setServerError(err.message || 'Resolution failed. Please try again.');
-        if (serverId === 'vidsrc-pm') setVidsrcPmDiagnostics(err.message || 'Resolution failed.'); else setVidlinkDiagnostics(err.message || 'Resolution failed.');
+        if (serverId === 'vidsrc-pm') setVidsrcPmDiagnostics(err.message || 'Resolution failed.');
       }
       setSettingsTab('servers');
       setShowSettings(true);
@@ -1192,22 +1178,13 @@ export default function LocalVideoPlayer({
       return;
     }
     
-    if (selectedServer === 'vidlink-pro') {
-      setPlayerToast({
-        message: 'Vidlink stream failed. Switching to VidSrc PM automatically...',
-        isError: false
-      });
-      console.log('[LocalVideoPlayer] Direct stream load failed. Performing auto-failover to VidSrc PM...');
-      handleServerChange('vidsrc-pm');
-    } else {
-      setPlayerToast({
-        message: 'Stream failed to load. Please try another server.',
-        isError: true
-      });
-      setServerError('Stream failed to load. Please try again.');
-      setShowSettings(true);
-      setSettingsTab('servers');
-    }
+    setPlayerToast({
+      message: 'Stream failed to load. Please try another server.',
+      isError: true
+    });
+    setServerError('Stream failed to load. Please try again.');
+    setShowSettings(true);
+    setSettingsTab('servers');
   };
 
   const [qualities, setQualities] = useState<{height: number, index: number}[]>([]);
@@ -1220,7 +1197,6 @@ export default function LocalVideoPlayer({
   const [loadingSubtitleIndex, setLoadingSubtitleIndex] = useState<number | null>(null);
   const [subtitleError, setSubtitleError] = useState<string | null>(null);
   const [lastAttemptedTrack, setLastAttemptedTrack] = useState<{ file: string; label: string; kind: string; default?: boolean; isBackup?: boolean } | null>(null);
-  const [vidlinkDiagnostics, setVidlinkDiagnostics] = useState<string | null>(null);
   const [vidsrcPmDiagnostics, setVidsrcPmDiagnostics] = useState<string | null>(null);
   const [testServerDiagnostics, setTestServerDiagnostics] = useState<string | null>(null);
 
@@ -2054,10 +2030,10 @@ export default function LocalVideoPlayer({
   const durationRef = useRef(duration);
   const isHls = currentSrc.includes('.m3u8') || 
                 currentSrc.includes('type=m3u8') || 
-                ((selectedServer === 'vidlink-pro' || selectedServer === 'vidsrc-pm' || selectedServer === 'test-server' || selectedServer === 'vidsrc-sbs' || selectedServer === 'vidsrc-wtf-2' || selectedServer === 'vidsrc-pk' || selectedServer === 'vidsrc-fyi' || selectedServer === 'vidzee' || selectedServer === 'vidsrc-top' || selectedServer === '2embed' || selectedServer === 'vixsrc') && 
+                ((selectedServer === 'vidsrc-pm' || selectedServer === 'test-server' || selectedServer === 'vidsrc-sbs' || selectedServer === 'vidsrc-wtf-2' || selectedServer === 'vidsrc-pk' || selectedServer === 'vidsrc-fyi' || selectedServer === 'vidzee' || selectedServer === 'vidsrc-top' || selectedServer === 'vixsrc') && 
                   !currentSrc.includes('type=mp4') && 
                   !currentSrc.includes('.mp4')) || 
-                ((currentSrc.includes('vodvidl.site') || currentSrc.includes('vidlink') || currentSrc.includes('vidsrc') || currentSrc.includes('cloudnestra') || currentSrc.includes('brightpath') || currentSrc.includes('yonderunyielding') || currentSrc.includes('unctuousundertow') || currentSrc.includes('conversionfocusedstudio') || currentSrc.includes('onlinevisibilitysystem') || currentSrc.includes('quietmidnightgardeningideas') || currentSrc.includes('visionaryfounderslab')) && 
+                ((currentSrc.includes('vidsrc') || currentSrc.includes('cloudnestra') || currentSrc.includes('brightpath') || currentSrc.includes('yonderunyielding') || currentSrc.includes('unctuousundertow') || currentSrc.includes('conversionfocusedstudio') || currentSrc.includes('onlinevisibilitysystem') || currentSrc.includes('quietmidnightgardeningideas') || currentSrc.includes('visionaryfounderslab')) && 
                   !currentSrc.includes('type=mp4') && 
                   !currentSrc.includes('.mp4')) || 
                 (isOfflineMode && !currentSrc.includes('type=mp4') && !currentSrc.startsWith('blob:') && !currentSrc.includes('.mp4'));
@@ -2396,7 +2372,6 @@ export default function LocalVideoPlayer({
       `- Native HLS: ${canPlayNatively}\n` +
       `- Server: ${selectedServer}\n` +
       `- User Agent: ${navigator.userAgent}`;
-    setVidlinkDiagnostics(diagMsg);
     console.log('[LocalVideoPlayer] Diagnostics updated:', diagMsg);
   }, [currentSrc, isHls, selectedServer]);
 
@@ -2441,23 +2416,15 @@ export default function LocalVideoPlayer({
       const type = isTV ? 'tv' : 'movie';
       const tmdbId = item.id;
       
-      if (Capacitor.isNativePlatform() && (selectedServer === 'vidlink-pro' || selectedServer === 'vidsrc-pm')) {
+      if (Capacitor.isNativePlatform() && selectedServer === 'vidsrc-pm') {
         console.log(`[LocalVideoPlayer] Pre-fetching native qualities for ${selectedServer}...`);
-        const resolvePromise = selectedServer === 'vidsrc-pm'
-          ? NativeStreamingEngine.resolveVidsrcPm({
-              tmdbId: String(tmdbId),
-              imdbId: (item as any)?.imdbId || (item as any)?.imdb_id || '',
-              type: type,
-              season: season || 1,
-              episode: episode || 1
-            })
-          : NativeStreamingEngine.resolveVidlink({
-              tmdbId: String(tmdbId),
-              imdbId: (item as any)?.imdbId || (item as any)?.imdb_id || '',
-              type: type,
-              season: season || 1,
-              episode: episode || 1
-            });
+        const resolvePromise = NativeStreamingEngine.resolveVidsrcPm({
+          tmdbId: String(tmdbId),
+          imdbId: (item as any)?.imdbId || (item as any)?.imdb_id || '',
+          type: type,
+          season: season || 1,
+          episode: episode || 1
+        });
 
         resolvePromise.then((nativeRes: any) => {
           if (nativeRes && nativeRes.sources && nativeRes.sources.length > 0) {
@@ -2755,9 +2722,6 @@ export default function LocalVideoPlayer({
                         (data.response ? `Response Code: ${data.response.code}. ` : "") +
                         "This generally happens when the video hosting server blocks the request.";
                       console.error('[LocalVideoPlayer]', hlsErrorMsg);
-                      if (selectedServer === 'vidlink-pro') {
-                        setVidlinkDiagnostics(hlsErrorMsg);
-                      }
                       setServerError(hlsErrorMsg);
                       setIsInitialLoading(false);
                       setIsSwitchingServer(false);
@@ -2800,7 +2764,7 @@ export default function LocalVideoPlayer({
                           break;
                        default:
                            const srv = (remoteServers.length > 0 ? remoteServers : ALL_SERVERS).find(s => s.id === selectedServer);
-                           const isAdFree = srv ? srv.isAdFree : (selectedServer === 'vidlink-pro' || selectedServer === 'vidsrc-pm' || selectedServer === 'vidsrc-wtf-2');
+                           const isAdFree = srv ? srv.isAdFree : (selectedServer === 'vidsrc-pm' || selectedServer === 'vidsrc-wtf-2');
                            if (Capacitor.isNativePlatform() && !isOfflineMode && !isAdFree) {
                               console.warn('[LocalVideoPlayer] Unrecoverable HLS error on native mobile, falling back to official iframe player embed...');
                               setIframeFallback(true);
@@ -2810,9 +2774,6 @@ export default function LocalVideoPlayer({
                               return;
                           }
                           const unrecoverableMsg = `Fatal Playback Error [${data.type} / ${data.details}].`;
-                          if (selectedServer === 'vidlink-pro') {
-                            setVidlinkDiagnostics(unrecoverableMsg);
-                          }
                           setServerError(unrecoverableMsg);
                           setIsInitialLoading(false);
                           setIsSwitchingServer(false);
@@ -2952,7 +2913,6 @@ export default function LocalVideoPlayer({
                   }
                   const msg = `Native HLS playback error: ${err?.message || 'Video segment download failed.'} (Code ${err?.code || 'unknown'})`;
                   setServerError(msg);
-                  if (selectedServer === 'vidlink-pro') setVidlinkDiagnostics(msg);
                   setIsInitialLoading(false);
                   if (!isOfflineMode) {
                       triggerAutoFailover();
@@ -3030,7 +2990,6 @@ export default function LocalVideoPlayer({
               }
               const msg = `Native MP4 playback error: ${err?.message || 'Video stream could not be decoded.'} (Code ${err?.code || 'unknown'})`;
               setServerError(msg);
-              if (selectedServer === 'vidlink-pro') setVidlinkDiagnostics(msg);
               setShowSettings(true);
               setSettingsTab('servers');
               setIsInitialLoading(false);
@@ -3776,34 +3735,17 @@ export default function LocalVideoPlayer({
                   ? `https://vidsrc.fyi/embed/tv/${idToUse}/${season}/${episode}`
                   : `https://vidsrc.fyi/embed/movie/${idToUse}`;
               }
-              if (currentSrv === '2embed') {
-                // 2embed.cc uses IMDB ID
-                const embedId = imdbId || idToUse;
-                return season || episode
-                  ? `https://www.2embed.cc/embedtv/${embedId}&s=${season}&e=${episode}`
-                  : `https://www.2embed.cc/embed/${embedId}`;
-              }
               if (currentSrv === 'vixsrc') {
                 return season || episode
                   ? `https://vixsrc.to/tv/${item?.id}/${season}/${episode}`
                   : `https://vixsrc.to/movie/${item?.id}`;
-              }
-              if (currentSrv === 'vidlink-pro') {
-                return season || episode
-                  ? `https://vidlink.pro/tv/${item?.id}/${season}/${episode}?primaryColor=ffffff&nextbutton=true`
-                  : `https://vidlink.pro/movie/${item?.id}?primaryColor=ffffff`;
               }
               if (currentSrv === 'universal' || currentSrv === 'test-server') {
                 return season || episode
                   ? `https://vidsrc.to/embed/tv/${item?.id}/${season}/${episode}`
                   : `https://vidsrc.to/embed/movie/${item?.id}`;
               }
-              const gw = currentSrv === 'vidlink-me' 
-                ? 'https://vidlink.me' 
-                : 'https://vidlink.pro';
-              return season || episode
-                ? `${gw}/tv/${item?.id}/${season}/${episode}?primaryColor=ffffff&nextbutton=true`
-                : `${gw}/movie/${item?.id}?primaryColor=ffffff`;
+              return '';
             })()
           }
           style={{
@@ -4280,7 +4222,6 @@ export default function LocalVideoPlayer({
         handleCancelDownload={handleCancelDownload}
         setOnlineSearchError={setOnlineSearchError}
         setOnlineSubs={setOnlineSubs}
-        vidlinkDiagnostics={vidlinkDiagnostics}
         vidsrcPmDiagnostics={vidsrcPmDiagnostics}
         testServerDiagnostics={testServerDiagnostics}
         currentSrc={currentSrc}

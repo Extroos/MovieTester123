@@ -294,32 +294,36 @@ export default function AccountSubPage({
         </button>
       </SettingRow>
 
-      <div style={sectionHeaderStyle()}>{t('danger_zone')}</div>
-      <SettingRow 
-        label={`${t('delete_profile_label')}: ${activeProfile?.name}`}
-        sub={t('delete_profile_desc')} 
-        isMobile={isMobile}
-      >
-        <button 
-          onClick={handleDeleteProfile}
-          tabIndex={0}
-          className="tv-focusable"
-          style={{
-            background: 'rgba(239, 68, 68, 0.08)',
-            border: '1px solid rgba(239, 68, 68, 0.2)',
-            color: '#ef4444',
-            cursor: 'pointer',
-            padding: '8px 14px',
-            borderRadius: '8px',
-            fontWeight: 700,
-            fontSize: '0.75rem',
-            whiteSpace: 'nowrap',
-            outline: 'none'
-          }}
-        >
-          {t('delete_btn')}
-        </button>
-      </SettingRow>
+      {!isGuest && (
+        <>
+          <div style={sectionHeaderStyle()}>{t('danger_zone')}</div>
+          <SettingRow 
+            label={`${t('delete_profile_label')}: ${activeProfile?.name}`}
+            sub={t('delete_profile_desc')} 
+            isMobile={isMobile}
+          >
+            <button 
+              onClick={handleDeleteProfile}
+              tabIndex={0}
+              className="tv-focusable"
+              style={{
+                background: 'rgba(239, 68, 68, 0.08)',
+                border: '1px solid rgba(239, 68, 68, 0.2)',
+                color: '#ef4444',
+                cursor: 'pointer',
+                padding: '8px 14px',
+                borderRadius: '8px',
+                fontWeight: 700,
+                fontSize: '0.75rem',
+                whiteSpace: 'nowrap',
+                outline: 'none'
+              }}
+            >
+              {t('delete_btn')}
+            </button>
+          </SettingRow>
+        </>
+      )}
 
     </>
   );

@@ -19,9 +19,7 @@ class JsPluginEngine(private val context: Context) {
             // Eagerly instantiate QuickJS to trigger native library unpacking/loading (.so)
             val quickJs = QuickJs.create()
             quickJs.close()
-            // Eagerly pre-read the vidlink_encrypt script to cache class/asset loading
-            context.assets.open("plugins/vidlink_encrypt.js").close()
-            Log.d("JsPluginEngine", "QuickJS and encrypt assets successfully warmed up on load")
+            Log.d("JsPluginEngine", "QuickJS engine successfully warmed up on load")
         } catch (e: Exception) {
             Log.e("JsPluginEngine", "Failed to warm up QuickJS: ${e.message}", e)
         }

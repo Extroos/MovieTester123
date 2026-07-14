@@ -190,7 +190,13 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
 
   const [logoUrl, setLogoUrl] = useState<string | null>(() => {
     if ((show as any).logoUrl) return (show as any).logoUrl;
-    return null;
+    try {
+      const cacheKey = CacheService.generateKey(`/tv/${show.id}/images/logo`, {});
+      const cached = CacheService.get<string | null>(cacheKey);
+      return (cached && !cached.isStale) ? (cached as any).data : null;
+    } catch {
+      return null;
+    }
   });
   const [logoLoading, setLogoLoading] = useState(() => !logoUrl);
 
@@ -1048,15 +1054,36 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
   const renderMetadataAndActions = () => (
     <>
       {/* Title block */}
-      <h1 className="details-title" style={{
-        fontSize: 'clamp(2rem, 5vw, 3rem)',
-        fontWeight: 800,
-        margin: '0 0 6px',
-        letterSpacing: '-0.03em',
-        lineHeight: 1.1,
-      }}>
-        {fullShow.name}
-      </h1>
+      {logoLoading ? (
+        <div style={{ height: '50px' }} />
+      ) : logoUrl ? (
+        <img
+          src={logoUrl}
+          alt={fullShow.name}
+          onError={() => setLogoUrl(null)}
+          style={{
+            maxWidth: '70%',
+            maxHeight: '90px',
+            objectFit: 'contain',
+            marginBottom: '8px',
+            filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.5))',
+            display: 'block',
+            marginRight: 'auto',
+            marginLeft: '0',
+          }}
+        />
+      ) : (
+        <h1 className="details-title" style={{
+          fontSize: 'clamp(2rem, 5vw, 3rem)',
+          fontWeight: 800,
+          margin: '0 0 6px',
+          letterSpacing: '-0.03em',
+          lineHeight: 1.1,
+          textAlign: 'left',
+        }}>
+          {fullShow.name}
+        </h1>
+      )}
 
       {/* Premium Metadata Badges */}
       <div className="details-meta-row" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '14px', fontSize: '0.9rem', color: '#a1a1aa' }}>

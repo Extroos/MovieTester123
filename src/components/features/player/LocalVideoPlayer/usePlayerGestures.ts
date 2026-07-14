@@ -131,6 +131,16 @@ export function usePlayerGestures({
   }, []);
   // No dependency array → runs after every render but as a single cheap sync (no cleanup, no scheduling overhead).
 
+  // Auto-hide the zoom/aspect-ratio badge after 1.5 seconds to prevent it from getting stuck
+  useEffect(() => {
+    if (showZoomBadge) {
+      const timer = setTimeout(() => {
+        setShowZoomBadge(false);
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [showZoomBadge]);
+
   // Sync volume display state from actual video element when src changes
   useEffect(() => {
     if (videoRef.current) {
@@ -180,8 +190,12 @@ export function usePlayerGestures({
     const handleNativeTouchStart = async (e: TouchEvent) => {
       lastTouchTimeRef.current = Date.now();
 
+      if (showSettingsRef.current) {
+        return;
+      }
+
       const target = e.target as HTMLElement;
-      if (showSettingsRef.current || (target && (
+      if (target && (
         target.tagName === 'INPUT' || 
         target.tagName === 'BUTTON' || 
         target.tagName === 'SELECT' || 
@@ -189,7 +203,7 @@ export function usePlayerGestures({
         target.closest('input') || 
         target.closest('select') ||
         target.closest('[data-scrubber]')
-      ))) {
+      )) {
         return;
       }
 
@@ -256,8 +270,12 @@ export function usePlayerGestures({
     };
 
     const handleNativeTouchMove = (e: TouchEvent) => {
+      if (showSettingsRef.current) {
+        return;
+      }
+
       const target = e.target as HTMLElement;
-      if (showSettingsRef.current || (target && (
+      if (target && (
         target.tagName === 'INPUT' || 
         target.tagName === 'BUTTON' || 
         target.tagName === 'SELECT' || 
@@ -265,7 +283,7 @@ export function usePlayerGestures({
         target.closest('input') || 
         target.closest('select') ||
         target.closest('[data-scrubber]')
-      ))) {
+      )) {
         return;
       }
 
@@ -372,8 +390,19 @@ export function usePlayerGestures({
         return;
       }
 
+
+
+      if (showSettingsRef.current) {
+        touchTypeRef.current = 'none';
+        return;
+      }
+
+      if (isLockedRef.current) return;
+
+      // Prevent simulated mouse click events on touch devices for general gestures,
+      // but let them pass through for buttons and interactive controls
       const target = e.target as HTMLElement;
-      if (showSettingsRef.current || (target && (
+      if (target && (
         target.tagName === 'INPUT' || 
         target.tagName === 'BUTTON' || 
         target.tagName === 'SELECT' || 
@@ -381,18 +410,15 @@ export function usePlayerGestures({
         target.closest('input') || 
         target.closest('select') ||
         target.closest('[data-scrubber]')
-      ))) {
+      )) {
         touchTypeRef.current = 'none';
         return;
       }
 
-      if (isLockedRef.current) return;
-
-      // Prevent simulated mouse click events on touch devices for general gestures
       if (e.cancelable) e.preventDefault();
 
       if (touchTypeRef.current === 'pinch') {
-        setTimeout(() => setShowZoomBadge(false), 1500);
+        setShowZoomBadge(false);
         touchTypeRef.current = 'none';
         return;
       }
@@ -448,11 +474,13 @@ export function usePlayerGestures({
     container.addEventListener('touchstart', handleNativeTouchStart, { passive: false });
     container.addEventListener('touchmove', handleNativeTouchMove, { passive: false });
     container.addEventListener('touchend', handleNativeTouchEnd, { passive: false });
+    container.addEventListener('touchcancel', handleNativeTouchEnd, { passive: false });
 
     return () => {
       container.removeEventListener('touchstart', handleNativeTouchStart);
       container.removeEventListener('touchmove', handleNativeTouchMove);
       container.removeEventListener('touchend', handleNativeTouchEnd);
+      container.removeEventListener('touchcancel', handleNativeTouchEnd);
     };
   }, []);
 

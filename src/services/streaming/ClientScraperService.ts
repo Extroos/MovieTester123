@@ -96,8 +96,8 @@ export function encryptToken(mediaId: string): string {
 
 const DEFAULT_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
-  'Origin': 'https://vidlink.pro',
-  'Referer': 'https://vidlink.pro/'
+  'Origin': 'https://vidsrc.me',
+  'Referer': 'https://vidsrc.me/'
 };
 
 async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 8000): Promise<any> {
@@ -114,8 +114,8 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 8
       if (!capRes.ok) {
         console.warn(`[ClientScraper] Native direct fetch failed. Retrying via Cloud proxy...`);
         const cloudProxy = 'https://cinemovie-proxy.abderrahmanchakkouri.workers.dev';
-        const referer = (options.headers as any)?.['Referer'] || (options.headers as any)?.['referer'] || 'https://vidlink.pro/';
-        const origin = (options.headers as any)?.['Origin'] || (options.headers as any)?.['origin'] || 'https://vidlink.pro';
+        const referer = (options.headers as any)?.['Referer'] || (options.headers as any)?.['referer'] || 'https://vidsrc.me/';
+        const origin = (options.headers as any)?.['Origin'] || (options.headers as any)?.['origin'] || 'https://vidsrc.me';
         const fallbackUrl = `${cloudProxy}/local-proxy?url=${encodeURIComponent(url)}&referer=${encodeURIComponent(referer)}&origin=${encodeURIComponent(origin)}`;
         
         capRes = await fetchWithCapacitor(fallbackUrl, 'text');
@@ -136,8 +136,8 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 8
   let fetchUrl = url;
   const isWeb = true; // Web fallback
   const localServer = getLocalServerUrl() || 'http://localhost:3001';
-  const referer = (options.headers as any)?.['Referer'] || (options.headers as any)?.['referer'] || 'https://vidlink.pro/';
-  const origin = (options.headers as any)?.['Origin'] || (options.headers as any)?.['origin'] || 'https://vidlink.pro';
+  const referer = (options.headers as any)?.['Referer'] || (options.headers as any)?.['referer'] || 'https://vidsrc.me/';
+  const origin = (options.headers as any)?.['Origin'] || (options.headers as any)?.['origin'] || 'https://vidsrc.me';
   fetchUrl = `${localServer}/local-proxy?url=${encodeURIComponent(url)}&referer=${encodeURIComponent(referer)}&origin=${encodeURIComponent(origin)}`;
 
   try {
@@ -148,8 +148,8 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 8
       if (fetchUrl.includes('localhost')) {
         console.warn(`[ClientScraper] Local proxy failed, falling back to Cloud proxy...`);
         const cloudProxy = 'https://cinemovie-proxy.abderrahmanchakkouri.workers.dev';
-        const referer = (options.headers as any)?.['Referer'] || (options.headers as any)?.['referer'] || 'https://vidlink.pro/';
-        const origin = (options.headers as any)?.['Origin'] || (options.headers as any)?.['origin'] || 'https://vidlink.pro';
+        const referer = (options.headers as any)?.['Referer'] || (options.headers as any)?.['referer'] || 'https://vidsrc.me/';
+        const origin = (options.headers as any)?.['Origin'] || (options.headers as any)?.['origin'] || 'https://vidsrc.me';
         const fallbackUrl = `${cloudProxy}/local-proxy?url=${encodeURIComponent(url)}&referer=${encodeURIComponent(referer)}&origin=${encodeURIComponent(origin)}`;
         res = await fetch(fallbackUrl, { ...options, signal: controller.signal });
       } else {
@@ -765,162 +765,7 @@ export async function scrapeVidzeeStream(
   }
 }
 
-export async function scrapeVidlinkStream(
-  tmdbId: string,
-  type: 'movie' | 'tv',
-  season = 1,
-  episode = 1
-): Promise<any> {
-  const primaryEncDec = await getGateway('enc_dec') || 'https://enc-dec.app';
-  const primaryVidlink = await getGateway('vidlink') || 'https://vidlink.pro';
-  
-  const encDecMirrors = await getGatewayList('enc_dec_mirrors');
-  const encDecHosts = [primaryEncDec, ...encDecMirrors].filter(Boolean);
 
-  const vidlinkMirrors = await getGatewayList('vidlink_mirrors');
-  const vidlinkHosts = [primaryVidlink, ...vidlinkMirrors].filter(Boolean);
-
-  let encodedTmdb = '';
-  let lastEncError = '';
-
-  // 1. Try resolving encryption on available enc_dec hosts
-  for (const encDecBase of encDecHosts) {
-    try {
-      console.log(`[Client VidLink] Trying encryption via host: ${encDecBase}`);
-      const encUrl = `${encDecBase}/api/enc-vidlink?text=${encodeURIComponent(String(tmdbId))}`;
-      let encRes;
-      if (Capacitor.isNativePlatform()) {
-        const { fetchWithCapacitor } = await import('../../utils/nativeFetch');
-        const capRes = await fetchWithCapacitor(encUrl, 'text');
-        encRes = JSON.parse(await capRes.text());
-      } else {
-        const localServer = getLocalServerUrl() || 'http://localhost:3001';
-        const proxied = `${localServer}/local-proxy?url=${encodeURIComponent(encUrl)}`;
-        const res = await fetch(proxied);
-        encRes = await res.json();
-      }
-      encodedTmdb = encRes && encRes.result;
-      if (encodedTmdb) break;
-    } catch (e: any) {
-      lastEncError = e.message;
-    }
-  }
-
-  if (!encodedTmdb) {
-    throw new Error(`VidLink Encryption failed on all mirror hosts. Last error: ${lastEncError}`);
-  }
-
-  // 2. Try fetching stream playlist on available vidlink hosts
-  let apiRes = null;
-  let lastFetchError = '';
-  for (const vidlinkBase of vidlinkHosts) {
-    try {
-      const apiUrl = type === 'tv'
-        ? `${vidlinkBase}/api/b/tv/${encodedTmdb}/${season}/${episode}?multiLang=0`
-        : `${vidlinkBase}/api/b/movie/${encodedTmdb}?multiLang=0`;
-
-      console.log(`[Client VidLink] Fetching stream API via host: ${vidlinkBase}`);
-      const headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-        'Referer': vidlinkBase
-      };
-
-      if (Capacitor.isNativePlatform()) {
-        const { fetchWithCapacitor } = await import('../../utils/nativeFetch');
-        const capRes = await fetchWithCapacitor(apiUrl, 'text', headers);
-        apiRes = JSON.parse(await capRes.text());
-      } else {
-        const localServer = getLocalServerUrl() || 'http://localhost:3001';
-        const proxied = `${localServer}/local-proxy?url=${encodeURIComponent(apiUrl)}&referer=${encodeURIComponent(vidlinkBase)}`;
-        const res = await fetch(proxied);
-        apiRes = await res.json();
-      }
-      if (apiRes && apiRes.stream) break;
-    } catch (e: any) {
-      lastFetchError = e.message;
-    }
-  }
-
-  if (!apiRes || !apiRes.stream) {
-    throw new Error(`VidLink API retrieval failed on all mirror hosts. Last error: ${lastFetchError}`);
-  }
-
-  const sources: any[] = [];
-  
-  // 1. Primary HLS Playlist
-  if (apiRes.stream && apiRes.stream.playlist && apiRes.stream.playlist.includes('.m3u8')) {
-    sources.push({
-      url: apiRes.stream.playlist,
-      quality: 'auto',
-      isM3U8: true
-    });
-  }
-
-  // 2. Alternate HLS Playlists
-  const alts = apiRes.alternates || apiRes.stream?.alternates;
-  if (alts && alts.hls && alts.hls.playlist && alts.hls.playlist.includes('.m3u8')) {
-    sources.push({
-      url: alts.hls.playlist,
-      quality: 'auto',
-      isM3U8: true
-    });
-  }
-
-  // 3. HLS Qualities (only if they contain .m3u8)
-  if (apiRes.stream && apiRes.stream.qualities) {
-    for (const [quality, fileObj] of Object.entries(apiRes.stream.qualities)) {
-      const item: any = fileObj;
-      if (item && item.url && item.url.includes('.m3u8')) {
-        sources.push({
-          url: item.url,
-          quality: `${quality}p`,
-          isM3U8: true
-        });
-      }
-    }
-  }
-
-  // 4. Fallback to DASH/MPD alternate playlist if no HLS found
-  if (sources.length === 0 && alts && alts.dash && alts.dash.playlist) {
-    sources.push({
-      url: alts.dash.playlist,
-      quality: 'auto',
-      isM3U8: false
-    });
-  }
-
-  // 5. Fallback to progressive MP4 qualities if no HLS/DASH found
-  if (sources.length === 0 && apiRes.stream && apiRes.stream.qualities) {
-    for (const [quality, fileObj] of Object.entries(apiRes.stream.qualities)) {
-      const item: any = fileObj;
-      if (item && item.url) {
-        sources.push({
-          url: item.url,
-          quality: `${quality}p`,
-          isM3U8: false
-        });
-      }
-    }
-  }
-
-  const subtitles: any[] = [];
-  if (apiRes.subtitles && Array.isArray(apiRes.subtitles)) {
-    for (const sub of apiRes.subtitles) {
-      if (sub.url) {
-        subtitles.push({
-          url: sub.url,
-          lang: sub.language || 'Unknown'
-        });
-      }
-    }
-  }
-
-  if (sources.length === 0) {
-    throw new Error("No qualities found in VidLink response");
-  }
-
-  return { sources, subtitles };
-}
 
 export async function scrapeVixsrcStream(
   tmdbId: string,
@@ -1004,265 +849,7 @@ export async function scrapeVixsrcStream(
   throw new Error(`VixSrc resolution failed on all mirror hosts. Last error: ${lastError}`);
 }
 
-export async function scrape2EmbedStream(
-  tmdbId: string,
-  type: 'movie' | 'tv',
-  season = 1,
-  episode = 1
-): Promise<any> {
-  const wingsBase = 'https://api.wingsdatabase.com';
-  const tmdbIdNum = parseInt(tmdbId);
-  const isTv = type === 'tv';
 
-  try {
-    console.log(`[Client 2Embed/Videasy] Fetching seed for TMDB: ${tmdbId}`);
-    const seedUrl = `${wingsBase}/seed?mediaId=${tmdbId}`;
-    let seedData: any;
-    if (Capacitor.isNativePlatform()) {
-      const { fetchWithCapacitor } = await import('../../utils/nativeFetch');
-      const capRes = await fetchWithCapacitor(seedUrl, 'text', {
-        'Referer': 'https://player.videasy.to/',
-        'Origin': 'https://player.videasy.to'
-      });
-      seedData = JSON.parse(await capRes.text());
-    } else {
-      const localServer = getLocalServerUrl() || 'http://localhost:3001';
-      const proxied = `${localServer}/local-proxy?url=${encodeURIComponent(seedUrl)}&referer=${encodeURIComponent('https://player.videasy.to/')}&origin=${encodeURIComponent('https://player.videasy.to')}`;
-      const res = await fetch(proxied);
-      seedData = await res.json();
-    }
-
-    const seed = seedData.seed;
-    if (!seed) throw new Error("Failed to retrieve seed from wingsdatabase");
-
-    console.log(`[Client 2Embed/Videasy] Fetching sources-with-title using seed: ${seed}`);
-    let movieTitle = 'Movie';
-    let releaseYear = '2024';
-    let imdbId = '';
-
-    try {
-      const tmdbApiKey = '8265bd1679663a7ea12ac168da84d2e8';
-      const tmdbUrl = isTv
-        ? `https://api.themoviedb.org/3/tv/${tmdbId}/external_ids?api_key=${tmdbApiKey}`
-        : `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${tmdbApiKey}`;
-      
-      let resDetails;
-      if (Capacitor.isNativePlatform()) {
-        const { fetchWithCapacitor } = await import('../../utils/nativeFetch');
-        const capRes = await fetchWithCapacitor(tmdbUrl, 'text');
-        resDetails = JSON.parse(await capRes.text());
-      } else {
-        const localServer = getLocalServerUrl() || 'http://localhost:3001';
-        const proxied = `${localServer}/local-proxy?url=${encodeURIComponent(tmdbUrl)}`;
-        const res = await fetch(proxied);
-        resDetails = await res.json();
-      }
-      
-      if (resDetails) {
-        imdbId = resDetails.imdb_id || '';
-        movieTitle = resDetails.title || resDetails.name || movieTitle;
-        const dateStr = resDetails.release_date || resDetails.first_air_date || '';
-        if (dateStr) releaseYear = dateStr.split('-')[0];
-      }
-
-      // If TV show details don't have name/title, fetch the main tv info as fallback
-      if (isTv && !imdbId) {
-        const infoUrl = `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${tmdbApiKey}`;
-        let mainDetails;
-        if (Capacitor.isNativePlatform()) {
-          const { fetchWithCapacitor } = await import('../../utils/nativeFetch');
-          const capRes = await fetchWithCapacitor(infoUrl, 'text');
-          mainDetails = JSON.parse(await capRes.text());
-        } else {
-          const localServer = getLocalServerUrl() || 'http://localhost:3001';
-          const proxied = `${localServer}/local-proxy?url=${encodeURIComponent(infoUrl)}`;
-          const res = await fetch(proxied);
-          mainDetails = await res.json();
-        }
-        if (mainDetails) {
-          movieTitle = mainDetails.name || movieTitle;
-          const dateStr = mainDetails.first_air_date || '';
-          if (dateStr) releaseYear = dateStr.split('-')[0];
-        }
-      }
-    } catch (e: any) {
-      console.warn("[Client 2Embed] Failed to fetch TMDB details:", e.message);
-    }
-
-    const mirrorEndpoints = [
-      '/neon2/sources-with-title',
-      '/cdn/sources-with-title',
-      '/ym/sources-with-title',
-      '/jett/sources-with-title',
-      '/m4uhd/sources-with-title',
-      '/hdmovie/sources-with-title'
-    ];
-
-    let resultObj: any = null;
-    let lastError: any = null;
-
-    for (const endpoint of mirrorEndpoints) {
-      try {
-        console.log(`[Client 2Embed] Trying mirror endpoint: ${endpoint}`);
-        const query = `?title=${encodeURIComponent(movieTitle)}&mediaType=${isTv ? 'TV Series' : 'Movie'}&year=${releaseYear}&tmdbId=${tmdbId}&imdbId=${imdbId}&enc=2&seed=${seed}${isTv ? `&seasonId=${season}&episodeId=${episode}` : ''}`;
-        const sourcesUrl = `${wingsBase}${endpoint}${query}`;
-
-        let encryptedText = '';
-        if (Capacitor.isNativePlatform()) {
-          const { fetchWithCapacitor } = await import('../../utils/nativeFetch');
-          const capRes = await fetchWithCapacitor(sourcesUrl, 'text', {
-            'Referer': 'https://player.videasy.to/',
-            'Origin': 'https://player.videasy.to'
-          });
-          encryptedText = await capRes.text();
-        } else {
-          const localServer = getLocalServerUrl() || 'http://localhost:3001';
-          const proxied = `${localServer}/local-proxy?url=${encodeURIComponent(sourcesUrl)}&referer=${encodeURIComponent('https://player.videasy.to/')}&origin=${encodeURIComponent('https://player.videasy.to')}`;
-          const res = await fetch(proxied);
-          encryptedText = await res.text();
-        }
-
-        if (!encryptedText || encryptedText.includes("Attention Required") || encryptedText.includes("502 Bad Gateway") || encryptedText.includes("503 Service Unavailable") || encryptedText.includes("Cloudflare")) {
-          throw new Error("Cloudflare block or bad gateway");
-        }
-
-        // XOR Decryption Algorithm
-        const f = [1116352408, 1899447441, 3049323471, 3921009573, 961987163, 1508970993, 2453635748, 2870763221, 3624381080, 310598401, 607225278, 1426881987, 1925078388, 2162078206, 2614888103, 3248222580];
-        const b = [109, 118, 109, 49]; // "mvm1"
-        const h = (e: number) => (e * (e + 1) & 1) === 0;
-        const I = (e: number) => (e * (e + 1) & 1) === 1;
-
-        const w = (e: number) => {
-          e >>>= 0;
-          e ^= e >>> 16;
-          e = Math.imul(e, 2246822507) >>> 0;
-          e ^= e >>> 13;
-          e = Math.imul(e, 3266489909) >>> 0;
-          return (e ^= e >>> 16) >>> 0;
-        };
-
-        const v = (e: number, t: number) => {
-          e >>>= 0;
-          t &= 31;
-          return t === 0 ? e >>> 0 : (e << t | e >>> 32 - t) >>> 0;
-        };
-
-        const o = (() => {
-          const pad = encryptedText.replace(/-/g, "+").replace(/_/g, "/").padEnd(4 * Math.ceil(encryptedText.length / 4), "=");
-          const binary = atob(pad);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-          return bytes;
-        })();
-
-        const getSAndAcc = (e: string, t: number) => {
-          if (I(e.length)) {
-            const S = (() => {
-              const t = Array(256);
-              for (let e = 0; e < 256; e++) t[e] = e;
-              let s = 0;
-              for (let a = 0; a < 256; a++) {
-                s = (s + t[a] + e.charCodeAt(a % e.length)) & 255;
-                const o = t[a];
-                t[a] = t[s];
-                t[s] = o;
-              }
-              return t;
-            })();
-            const acc = (() => {
-              let t = 1732584193;
-              for (let s = 0; s < e.length; s++) t = v((t ^ Math.imul(e.charCodeAt(s), f[15 & s])) >>> 0, 5);
-              return (w(t) ^ 0) >>> 0;
-            })();
-            return { S, acc };
-          }
-
-          const s = Array(61);
-          let a = w((() => {
-            let t = 2166136261;
-            for (let s = 0; s < e.length; s++) t = Math.imul(t ^ e.charCodeAt(s), 16777619) >>> 0;
-            return w(t);
-          })() ^ w(t >>> 0 ^ 2654435769)) >>> 0;
-
-          for (let e = 0; e < 8; e++) {
-            if (h(e)) {
-              const t = a % 61;
-              a = v((a + 2654435769) >>> 0, 7 + (7 & e));
-              s[t] = (a ^ w(a)) >>> 0;
-              a = w((a + t) >>> 0);
-            } else {
-              s[e] = f[15 & e];
-            }
-          }
-          return {
-            S: s,
-            acc: w(2779096485 ^ a) >>> 0
-          };
-        };
-
-        const r = (() => {
-          const a = getSAndAcc(seed, tmdbIdNum);
-          const prng = new Uint8Array(o.length);
-          let idx = 0;
-          for (let e = 0; e < o.length; ) {
-            const t = ((eStore: any, tVal: number) => {
-              let sVal, aVal, lVal;
-              const oArr = eStore.S;
-              let rVal = eStore.acc;
-              const nVal = rVal % 61;
-              const iVal = 0 - Number(nVal in oArr);
-              const dVal = oArr[nVal] >>> 0;
-              lVal = (((sVal = rVal) ^ (aVal = (dVal ^ Math.imul(2654435769, tVal + 1) >>> 0) >>> 0)) >>> 0 | (sVal & aVal & iVal) >>> 0) >>> 0;
-              rVal = w((lVal = (v((lVal + rVal) >>> 0, 31 & nVal) ^ v(rVal, 31 & Math.imul(nVal, 7))) >>> 0) + 2654435769 >>> 0);
-              oArr[nVal] = rVal >>> 0;
-              eStore.acc = rVal;
-              return rVal >>> 0;
-            })(a, idx++);
-            prng[e++] = 255 & t;
-            e < o.length && (prng[e++] = (t >>> 8) & 255);
-            e < o.length && (prng[e++] = (t >>> 16) & 255);
-            e < o.length && (prng[e++] = (t >>> 24) & 255);
-          }
-          return prng;
-        })();
-
-        for (let e = 0; e < o.length; e++) o[e] ^= r[e];
-        for (let e = 0; e < b.length; e++) {
-          if (o[e] !== b[e]) throw Error("decrypt failed: bad seed or tampered payload");
-        }
-
-        const payload = o.subarray(b.length);
-        const decryptedJson = new TextDecoder("utf-8").decode(payload);
-        resultObj = JSON.parse(decryptedJson);
-        console.log(`[Client 2Embed] Mirror ${endpoint} resolved successfully!`);
-        break;
-      } catch (err: any) {
-        console.warn(`[Client 2Embed] Mirror ${endpoint} failed:`, err.message);
-        lastError = err;
-      }
-    }
-
-    if (!resultObj) {
-      throw lastError || new Error("All 2Embed mirrors failed to resolve");
-    }
-
-    const sources = (resultObj.sources || []).map((s: any) => ({
-      url: s.url,
-      quality: s.name || s.quality || 'Server',
-      isM3U8: s.url.includes('.m3u8') || s.type === 'm3u8'
-    }));
-
-    const subtitles = (resultObj.subtitles || []).map((sub: any) => ({
-      url: sub.url,
-      lang: sub.label || sub.lang || 'English'
-    }));
-
-    return { sources, subtitles };
-  } catch (e: any) {
-    console.error(`[Client 2Embed/Videasy] Decryption failed:`, e.message);
-    throw new Error(`2Embed/Videasy resolution failed: ${e.message}`);
-  }
-}
 
 
 

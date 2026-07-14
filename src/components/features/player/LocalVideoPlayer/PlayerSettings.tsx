@@ -15,8 +15,6 @@ export const ALL_SERVERS: ServerOption[] = [
   { id: 'vidsrc-pm', name: 'VidSrc PM', description: 'Adaptive HLS via VidSrc PM — multi-CDN mirrors', badge: 'Recommended', isAdFree: true },
   { id: 'vidsrc-wtf-2', name: 'VidSrc Multi-Lang', description: 'Multi-language HLS via native decryption engine', badge: 'Multi', isAdFree: true },
   { id: 'vidzee', name: 'Nflix Multi', description: 'Multi-language HLS — Nflix, Drag, Viet & Hindi CDN mirrors', badge: 'Multi', isAdFree: true },
-  { id: 'vidlink-pro', name: 'VidLink Pro', description: 'Clean ad-light embed — fast CDN, subtitle support', badge: 'HD', isAdFree: true },
-  { id: '2embed', name: '2Embed', description: 'Multi-source embed aggregator via 2embed.cc', badge: 'FREE', isAdFree: true },
   { id: 'vixsrc', name: 'VixSrc', description: 'Multi-language embed via vixsrc.to — dark theme', badge: 'MULTI', isAdFree: true },
   { id: 'universal', name: 'Vidsrc.to (Universal)', description: 'Third-party embed — supports multi-language subtitles', badge: 'ADS', isAdFree: false },
   { id: 'vidsrc-sbs', name: 'Vidsrc SBS', description: 'Third-party mirror — alternative content hosting', badge: '', isAdFree: false },
@@ -101,7 +99,6 @@ interface PlayerSettingsProps {
   handleCancelDownload: () => void;
   setOnlineSearchError: React.Dispatch<React.SetStateAction<string | null>>;
   setOnlineSubs: React.Dispatch<React.SetStateAction<any[]>>;
-  vidlinkDiagnostics?: string | null;
   vidsrcPmDiagnostics?: string | null;
   testServerDiagnostics?: string | null;
   currentSrc?: string;
@@ -182,7 +179,6 @@ export const PlayerSettings = React.memo(function PlayerSettings({
   downloadStatus,
   setOnlineSearchError,
   setOnlineSubs,
-  vidlinkDiagnostics,
   vidsrcPmDiagnostics,
   testServerDiagnostics,
   currentSrc
@@ -442,7 +438,6 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                     `Season/Episode: ${season !== undefined ? `S${season}E${episode}` : 'N/A'}`,
                     "",
                     "--- PLAYER DIAGNOSTICS ---",
-                    `Vidlink Info: ${vidlinkDiagnostics || 'None'}`,
                     `VidSrc PM Info: ${vidsrcPmDiagnostics || 'None'}`,
                     "",
                     "--- CONSOLE LOGS ---",
@@ -497,7 +492,6 @@ export const PlayerSettings = React.memo(function PlayerSettings({
         {/* Player Errors / Diagnostics */}
         <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px', fontSize: '0.78rem' }}>
           <div style={{ color: '#fbbf24', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: '0.82rem', marginBottom: '4px' }}>⚠️ Playback Decryption & Failures</div>
-          <div>• <strong>Vidlink Diagnostics:</strong> <pre style={{ margin: '4px 0 0', whiteSpace: 'pre-wrap', color: 'rgba(255,255,255,0.7)', fontSize: '0.74rem', fontFamily: 'monospace' }}>{vidlinkDiagnostics || 'No errors registered.'}</pre></div>
           <div>• <strong>VidSrc PM Diagnostics:</strong> <pre style={{ margin: '4px 0 0', whiteSpace: 'pre-wrap', color: 'rgba(255,255,255,0.7)', fontSize: '0.74rem', fontFamily: 'monospace' }}>{vidsrcPmDiagnostics || 'No errors registered.'}</pre></div>
         </div>
 
@@ -934,10 +928,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                 fontSize: '0.78rem' 
               }}>
                 <div style={{ color: '#fbbf24', fontWeight: 800, fontSize: '0.8rem' }}>⚠️ Player Warnings</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <span style={{ color: '#a78bfa', fontWeight: 700 }}>Vidlink:</span>
-                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', color: 'rgba(255,255,255,0.7)', fontSize: '0.74rem', fontFamily: 'monospace', lineHeight: 1.3 }}>{vidlinkDiagnostics || 'No issues reported.'}</pre>
-                </div>
+
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '6px' }}>
                   <span style={{ color: '#a78bfa', fontWeight: 700 }}>VidSrc PM:</span>
                   <pre style={{ margin: 0, whiteSpace: 'pre-wrap', color: 'rgba(255,255,255,0.7)', fontSize: '0.74rem', fontFamily: 'monospace', lineHeight: 1.3 }}>{vidsrcPmDiagnostics || 'No issues reported.'}</pre>

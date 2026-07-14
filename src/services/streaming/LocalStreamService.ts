@@ -1,5 +1,4 @@
-import { Capacitor } from '@capacitor/core';
-import { scrapeVidsrcPmStream, scrapeVidzeeStream, scrapeVidlinkStream, scrapeVixsrcStream, scrape2EmbedStream } from './ClientScraperService';
+import { scrapeVidsrcPmStream, scrapeVidzeeStream, scrapeVixsrcStream } from './ClientScraperService';
 import { NativeStreamingEngine } from '../native/NativeStreamingEngine';
 
 
@@ -215,31 +214,7 @@ export async function resolveMovieStream(
       };
     }
 
-    if (selectedServer === 'vidlink-pro') {
-      try {
-        console.log(`[LocalStream] Resolving via VidLink Pro client scraper...`);
-        const result = await scrapeVidlinkStream(String(tmdbId), 'movie');
-        if (result && result.sources && result.sources.length > 0) {
-          const bestSource = result.sources[0];
-          const subs = (result.subtitles || []).map((s: any) => ({
-            file: s.url,
-            label: s.lang || 'Unknown',
-            kind: 'subtitles',
-            default: (s.lang || '').toLowerCase().includes('english')
-          }));
-          return {
-            streamUrl: bestSource.url,
-            type: bestSource.isM3U8 ? 'm3u8' : 'mp4',
-            quality: bestSource.quality || 'auto',
-            subtitles: subs,
-            provider: 'client/vidlink-pro',
-            sources: result.sources
-          } as any;
-        }
-      } catch (e: any) {
-        console.warn(`[LocalStream] Client-side VidLink Pro movie resolution failed: ${e.message}`);
-      }
-    }
+
 
     if (selectedServer === 'vixsrc') {
       try {
@@ -261,25 +236,7 @@ export async function resolveMovieStream(
       }
     }
 
-    if (selectedServer === '2embed') {
-      try {
-        console.log(`[LocalStream] Resolving via 2Embed client scraper...`);
-        const result = await scrape2EmbedStream(String(tmdbId), 'movie');
-        if (result && result.sources && result.sources.length > 0) {
-          const bestSource = result.sources[0];
-          return {
-            streamUrl: bestSource.url,
-            type: bestSource.isM3U8 ? 'm3u8' : 'mp4',
-            quality: bestSource.quality || 'auto',
-            subtitles: result.subtitles || [],
-            provider: 'client/2embed',
-            sources: result.sources
-          } as any;
-        }
-      } catch (e: any) {
-        console.warn(`[LocalStream] Client-side 2Embed movie resolution failed: ${e.message}`);
-      }
-    }
+
 
     // Attempt 2: VidSrc PM Fallback
     try {
@@ -428,31 +385,7 @@ export async function resolveTVStream(
       }
     }
 
-    if (selectedServer === 'vidlink-pro') {
-      try {
-        console.log(`[LocalStream] Resolving TV S${season}E${episode} via VidLink Pro client scraper...`);
-        const result = await scrapeVidlinkStream(String(tmdbId), 'tv', season, episode);
-        if (result && result.sources && result.sources.length > 0) {
-          const bestSource = result.sources[0];
-          const subs = (result.subtitles || []).map((s: any) => ({
-            file: s.url,
-            label: s.lang || 'Unknown',
-            kind: 'subtitles',
-            default: (s.lang || '').toLowerCase().includes('english')
-          }));
-          return {
-            streamUrl: bestSource.url,
-            type: bestSource.isM3U8 ? 'm3u8' : 'mp4',
-            quality: bestSource.quality || 'auto',
-            subtitles: subs,
-            provider: 'client/vidlink-pro',
-            sources: result.sources
-          } as any;
-        }
-      } catch (e: any) {
-        console.warn(`[LocalStream] Client-side VidLink Pro TV resolution failed: ${e.message}`);
-      }
-    }
+
 
     if (selectedServer === 'vixsrc') {
       try {
@@ -474,25 +407,7 @@ export async function resolveTVStream(
       }
     }
 
-    if (selectedServer === '2embed') {
-      try {
-        console.log(`[LocalStream] Resolving TV S${season}E${episode} via 2Embed client scraper...`);
-        const result = await scrape2EmbedStream(String(tmdbId), 'tv', season, episode);
-        if (result && result.sources && result.sources.length > 0) {
-          const bestSource = result.sources[0];
-          return {
-            streamUrl: bestSource.url,
-            type: bestSource.isM3U8 ? 'm3u8' : 'mp4',
-            quality: bestSource.quality || 'auto',
-            subtitles: result.subtitles || [],
-            provider: 'client/2embed',
-            sources: result.sources
-          } as any;
-        }
-      } catch (e: any) {
-        console.warn(`[LocalStream] Client-side 2Embed TV resolution failed: ${e.message}`);
-      }
-    }
+
 
     // Attempt 2: VidSrc PM Fallback
     try {

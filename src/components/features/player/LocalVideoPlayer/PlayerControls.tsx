@@ -197,6 +197,7 @@ export const PlayerControls = React.memo(function PlayerControls({
 
 
           <button 
+            id="settings-button-trigger"
             onClick={(e) => {
               e.stopPropagation();
               import('../../../../utils/haptics').then(m => m.triggerHaptic('light'));

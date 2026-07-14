@@ -9,10 +9,8 @@ const config: CapacitorConfig = {
     allowNavigation: [
       '*.vidsrc.to',
       '*.vidsrc.me',
-      '*.vidlink.pro',
       '*.vidsrc.cc',
       '*.vsembed.cc',
-      '*.2embed.cc',
       '*.superembed.cc'
     ]
   },

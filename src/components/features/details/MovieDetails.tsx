@@ -2093,7 +2093,7 @@ function MovieDetails({ movie, onClose, onListUpdate, onActorClick }: MovieDetai
         {/* Video Player overlay */}
         {showPlayer && (
           <VideoPlayer
-            src={streamUrl || `https://vidlink.pro/movie/${fullMovie.id}?primaryColor=ffffff`}
+            src={streamUrl || `https://vidsrc.me/embed/movie/${fullMovie.id}`}
             title={fullMovie.title}
             onClose={() => { setShowPlayer(false); setIsPartyMode(false); }}
             item={fullMovie}
@@ -2739,7 +2739,7 @@ function MovieDetails({ movie, onClose, onListUpdate, onActorClick }: MovieDetai
 
       {showPlayer && (
         <VideoPlayer
-          src={streamUrl || `https://vidlink.pro/movie/${fullMovie.id}?primaryColor=ffffff`}
+          src={streamUrl || `https://vidsrc.me/embed/movie/${fullMovie.id}`}
           title={fullMovie.title}
           onClose={() => { setShowPlayer(false); setIsPartyMode(false); }}
           item={fullMovie}

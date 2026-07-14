@@ -62,11 +62,15 @@ public class MainActivity extends BridgeActivity {
             webView.setVerticalScrollBarEnabled(false);
             webView.setHorizontalScrollBarEnabled(false);
 
+            // Set background color to prevent white flash on app launch or resume/redraw
+            webView.setBackgroundColor(android.graphics.Color.parseColor("#141414"));
+
             // Allow mixed content for HTTP streaming APIs (e.g. VidSrc)
             WebSettings settings = webView.getSettings();
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
                 settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
             }
+            settings.setMediaPlaybackRequiresUserGesture(false);
         }
 
         // Listen for system UI changes to re-enforce immersive mode

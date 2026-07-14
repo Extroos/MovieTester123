@@ -63,16 +63,7 @@ function getHeadersForUrl(url: string): Record<string, string> {
     }
   }
 
-  if (url.includes('vodvidl.site') || url.includes('vidlink')) {
-    lastReferer = 'https://vidlink.pro/';
-    lastOrigin = 'https://vidlink.pro';
-    return {
-      'User-Agent': ua,
-      'Referer': 'https://vidlink.pro/',
-      'Origin': 'https://vidlink.pro',
-      'Accept': '*/*',
-    };
-  }
+
   if (
     url.includes('cloudnestra') ||
     url.includes('yonderunyielding') ||
@@ -228,12 +219,7 @@ export function buildNativeHlsLoader(defaultLoader: any) {
         return;
       }
       
-      if (url.includes('vodvidl.site') || url.includes('vidlink')) {
-        const cloudProxy = 'https://cinemovie-proxy.abderrahmanchakkouri.workers.dev';
-        const referer = 'https://vidlink.pro/';
-        const origin = 'https://vidlink.pro';
-        requestUrl = `${cloudProxy}/local-proxy?url=${encodeURIComponent(url)}&referer=${encodeURIComponent(referer)}&origin=${encodeURIComponent(origin)}`;
-      }
+
 
       const headers = getHeadersForUrl(url);
 

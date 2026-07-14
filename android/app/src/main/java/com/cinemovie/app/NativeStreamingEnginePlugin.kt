@@ -42,8 +42,8 @@ class NativeStreamingEnginePlugin : Plugin() {
     }
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+        .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
         .build()
 
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -70,9 +70,7 @@ class NativeStreamingEnginePlugin : Plugin() {
       },
       "embed_urls": {
         "vidsrc_pm_gateways": [
-          "https://streamdata.vaplayer.ru",
-          "https://api.vaplayer.ru",
-          "https://data.vaplayer.ru"
+          "https://streamdata.vaplayer.ru"
         ],
         "vidsrc_pm_fallback": "https://streamdata.vaplayer.ru/api.php?tmdb={id}&type={type}{tv_params}",
         "vidsrc_pm_movie": "https://streamdata.vaplayer.ru/api.php?tmdb={id}&type=movie",
@@ -89,7 +87,8 @@ class NativeStreamingEnginePlugin : Plugin() {
       },
       "subtitles": {
         "yts_subtitles_url": "https://yifysubtitles.org/movie-imdb/",
-        "yts_subtitles_ch": "https://yifysubtitles.ch"
+        "yts_subtitles_ch": "https://yifysubtitles.ch",
+        "opensubtitles_api_key": "JkKADcTEWRQzVl95qI2UtAXbMgJhH44R"
       },
       "headers": {
         "vidsrc_pm_referer": "https://nextgencloudfabric.com/",
@@ -417,41 +416,82 @@ class NativeStreamingEnginePlugin : Plugin() {
 
                 val out = java.io.BufferedOutputStream(socket.getOutputStream())
                 try {
-                    // Build OpenSubtitles REST API URL
-                    val osApiBase = "https://rest.opensubtitles.com/api/v1"
-                    val apiKey = "JkKADcTEWRQzVl95qI2UtAXbMgJhH44R" // public demo key
-                    var osUrl = "$osApiBase/subtitles?tmdb_id=$tmdbId&languages=$lang"
-                    if (type == "tv" && season.isNotEmpty() && episode.isNotEmpty()) {
-                        osUrl += "&season_number=$season&episode_number=$episode"
+                    // 1. Resolve TMDB ID to IMDB ID if needed
+                    var imdbId = tmdbId
+                    val tmdbApiKey = "8265bd1679663a7ea12ac168da84d2e8"
+                    if (!tmdbId.startsWith("tt")) {
+                        val tmdbType = if (type == "tv") "tv" else "movie"
+                        val tmdbUrl = if (tmdbType == "tv") {
+                            "https://api.themoviedb.org/3/tv/$tmdbId/external_ids?api_key=$tmdbApiKey"
+                        } else {
+                            "https://api.themoviedb.org/3/movie/$tmdbId?api_key=$tmdbApiKey"
+                        }
+                        addLog("[Proxy] Resolving TMDB ID to IMDB: $tmdbUrl")
+                        val tmdbReq = okhttp3.Request.Builder().url(tmdbUrl).get().build()
+                        val tmdbResp = client.newCall(tmdbReq).execute()
+                        if (tmdbResp.isSuccessful) {
+                            val tmdbHtml = tmdbResp.body?.string() ?: "{}"
+                            val tmdbJson = org.json.JSONObject(tmdbHtml)
+                            imdbId = tmdbJson.optString("imdb_id", tmdbId)
+                        }
                     }
-                    addLog("[Proxy] OpenSubtitles search: $osUrl")
+
+                    if (!imdbId.startsWith("tt")) {
+                        throw Exception("Could not resolve IMDB ID for TMDB: $tmdbId")
+                    }
+
+                    // 2. Build Stremio OpenSubtitles v3 Proxy URL
+                    val stremioUrl = if (type == "tv" || season.isNotEmpty() || episode.isNotEmpty()) {
+                        val sNum = if (season.isEmpty()) "1" else season
+                        val eNum = if (episode.isEmpty()) "1" else episode
+                        "https://opensubtitles-v3.strem.io/subtitles/series/$imdbId:$sNum:$eNum.json"
+                    } else {
+                        "https://opensubtitles-v3.strem.io/subtitles/movie/$imdbId.json"
+                    }
+                    addLog("[Proxy] Fetching subtitles from Stremio proxy: $stremioUrl")
+
                     val osReq = okhttp3.Request.Builder()
-                        .url(osUrl)
-                        .header("Api-Key", apiKey)
+                        .url(stremioUrl)
                         .header("User-Agent", "CineMovie/1.0")
                         .header("Content-Type", "application/json")
                         .get()
                         .build()
                     val osResp = client.newCall(osReq).execute()
+                    if (!osResp.isSuccessful) {
+                        throw Exception("Stremio proxy returned status ${osResp.code}")
+                    }
+
                     val osHtml = osResp.body?.string() ?: "{}"
                     val json = org.json.JSONObject(osHtml)
-                    val data = json.optJSONArray("data") ?: org.json.JSONArray()
+                    val subtitles = json.optJSONArray("subtitles") ?: org.json.JSONArray()
                     val result = org.json.JSONArray()
-                    for (i in 0 until minOf(data.length(), 100)) {
-                        val item = data.getJSONObject(i)
-                        val attrs = item.optJSONObject("attributes") ?: continue
-                        val files = attrs.optJSONArray("files") ?: continue
-                        if (files.length() == 0) continue
-                        val fileId = files.getJSONObject(0).optInt("file_id", 0)
-                        val langCode = attrs.optString("language", lang)
-                        val release = attrs.optString("release", "")
-                        val dlUrl = "http://localhost:$proxyPort/movies/opensubtitles/download?fileId=$fileId"
+                    
+                    val threeToTwoMap = mapOf(
+                        "eng" to "en", "ara" to "ar", "spa" to "es", "por" to "pt", "kor" to "ko", "hin" to "hi", "ger" to "de", "fre" to "fr", "ita" to "it", "chi" to "zh", "tur" to "tr", "rus" to "ru",
+                        "en" to "en", "ar" to "ar", "es" to "es", "pt" to "pt", "ko" to "ko", "hi" to "hi", "de" to "de", "fr" to "fr", "it" to "it", "zh" to "zh", "tr" to "tr", "ru" to "ru"
+                    )
+
+                    val targetLangs = lang.split(",").map { it.trim().lowercase() }
+
+                    for (i in 0 until subtitles.length()) {
+                        val sub = subtitles.getJSONObject(i)
+                        val subUrl = sub.optString("url", "")
+                        val subId = sub.optString("id", "")
+                        val subLang3 = sub.optString("lang", "").lowercase()
+                        val subLang2 = threeToTwoMap[subLang3] ?: (if (subLang3.length >= 2) subLang3.substring(0, 2) else subLang3)
+
+                        if (targetLangs.isNotEmpty() && !targetLangs.contains(subLang2) && !targetLangs.contains(subLang3)) {
+                            continue
+                        }
+
+                        val dlUrl = "http://localhost:$proxyPort/convert-to-vtt?url=${java.net.URLEncoder.encode(subUrl, "UTF-8")}"
                         result.put(org.json.JSONObject().apply {
                             put("link", dlUrl)
-                            put("language", langCode)
-                            put("name", release)
+                            put("language", subLang2)
+                            put("name", "${subLang3.uppercase()} - Release $subId")
                         })
                     }
+
                     val body = result.toString().toByteArray(Charsets.UTF_8)
                     val headers = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${body.size}\r\n\r\n"
                     out.write(headers.toByteArray(Charsets.UTF_8))
@@ -488,7 +528,7 @@ class NativeStreamingEnginePlugin : Plugin() {
                     val reqBody = body.toRequestBody("application/json".toMediaTypeOrNull())
                     val req = okhttp3.Request.Builder()
                         .url(dlApiUrl)
-                        .header("Api-Key", "JkKADcTEWRQzVl95qI2UtAXbMgJhH44R")
+                        .header("Api-Key", remoteConfig.optJSONObject("subtitles")?.optString("opensubtitles_api_key", "JkKADcTEWRQzVl95qI2UtAXbMgJhH44R") ?: "JkKADcTEWRQzVl95qI2UtAXbMgJhH44R")
                         .header("Content-Type", "application/json")
                         .post(reqBody)
                         .build()
@@ -582,64 +622,66 @@ class NativeStreamingEnginePlugin : Plugin() {
 
             var refToUse = referer
             var origToUse = origin
-
-            if (refToUse.isEmpty()) {
-                refToUse = if (targetUrlStr.contains("cloudnestra") || targetUrlStr.contains("yonderunyielding")) {
-                    "https://cloudnestra.com/"
-                } else if (targetUrlStr.contains("vidsrc.wtf")) {
-                    "https://vidsrc.wtf/"
-                } else if (targetUrlStr.contains("vidsrc.sbs")) {
-                    "https://vidsrc.sbs/"
-                } else if (targetUrlStr.contains("vidsrc.pk")) {
-                    "https://embed.vidsrc.pk/"
-                } else if (targetUrlStr.contains("creativeautomationlab.site") || targetUrlStr.contains("brightpathsignals.com")) {
-                    "https://brightpathsignals.com/"
-                } else if (targetUrlStr.contains("vidsrc")) {
-                    "https://vidsrc.me/"
-                } else {
-                    "https://brightpathsignals.com/"
-                }
-            }
-
-            if (origToUse.isEmpty()) {
-                origToUse = if (targetUrlStr.contains("cloudnestra") || targetUrlStr.contains("yonderunyielding")) {
-                    "https://cloudnestra.com"
-                } else if (targetUrlStr.contains("vidsrc.wtf")) {
-                    "https://vidsrc.wtf"
-                } else if (targetUrlStr.contains("vidsrc.sbs")) {
-                    "https://vidsrc.sbs"
-                } else if (targetUrlStr.contains("vidsrc.pk")) {
-                    "https://embed.vidsrc.pk"
-                } else if (targetUrlStr.contains("creativeautomationlab.site") || targetUrlStr.contains("brightpathsignals.com")) {
-                    "https://brightpathsignals.com"
-                } else if (targetUrlStr.contains("vidsrc")) {
-                    "https://vidsrc.me"
-                } else {
-                    "https://brightpathsignals.com"
-                }
-            }
-
+            val lowTargetUrl = targetUrlStr.lowercase(java.util.Locale.ROOT)
             val isVidsrcPmCdn = (
-                targetUrlStr.contains("smartbusinessframework.site") ||
-                targetUrlStr.contains("lifestylefreedomlab.site") ||
-                targetUrlStr.contains("highperformancebrands.site") ||
-                targetUrlStr.contains("quietmidnightgardeningideas") ||
-                targetUrlStr.contains("creativeautomationlab.site") ||
-                targetUrlStr.contains("brightpathsignals.com") ||
-                targetUrlStr.contains("smartincomeplaybook.site") ||
-                targetUrlStr.contains("/mbzqN9iiy/") ||
-                targetUrlStr.contains("/content/") ||
-                targetUrlStr.contains("/pl/") ||
-                targetUrlStr.contains("/playlist/") ||
-                targetUrlStr.contains("/WnVM9YFN1/")
+                lowTargetUrl.contains("smartbusinessframework.site") ||
+                lowTargetUrl.contains("lifestylefreedomlab.site") ||
+                lowTargetUrl.contains("highperformancebrands.site") ||
+                lowTargetUrl.contains("quietmidnightgardeningideas") ||
+                lowTargetUrl.contains("creativeautomationlab.site") ||
+                lowTargetUrl.contains("brightpathsignals.com") ||
+                lowTargetUrl.contains("smartincomeplaybook.site") ||
+                lowTargetUrl.contains("premiumbrandingstudio.site") ||
+                lowTargetUrl.contains("premiumcontentengine.site") ||
+                lowTargetUrl.contains("/mbzqn9iiy/") ||
+                lowTargetUrl.contains("/content/") ||
+                lowTargetUrl.contains("/pl/") ||
+                lowTargetUrl.contains("/playlist/") ||
+                lowTargetUrl.contains("/wnvm9yfn1/")
             )
 
-            // CRITICAL: Strip Referer & Origin for VidSrc PM CDN domains — they reject any
-            // cross-origin headers with 403. The flag was previously computed but never applied.
             if (isVidsrcPmCdn) {
                 refToUse = ""
                 origToUse = ""
+                referer = ""
+                origin = ""
                 addLog("[Proxy] VidSrc PM CDN detected — stripping Referer/Origin headers for $targetUrlStr")
+            } else {
+                if (refToUse.isEmpty()) {
+                    refToUse = if (targetUrlStr.contains("cloudnestra") || targetUrlStr.contains("yonderunyielding")) {
+                        "https://cloudnestra.com/"
+                    } else if (targetUrlStr.contains("vidsrc.wtf")) {
+                        "https://vidsrc.wtf/"
+                    } else if (targetUrlStr.contains("vidsrc.sbs")) {
+                        "https://vidsrc.sbs/"
+                    } else if (targetUrlStr.contains("vidsrc.pk")) {
+                        "https://embed.vidsrc.pk/"
+                    } else if (targetUrlStr.contains("creativeautomationlab.site") || targetUrlStr.contains("brightpathsignals.com")) {
+                        "https://brightpathsignals.com/"
+                    } else if (targetUrlStr.contains("vidsrc")) {
+                        "https://vidsrc.me/"
+                    } else {
+                        "https://brightpathsignals.com/"
+                    }
+                }
+
+                if (origToUse.isEmpty()) {
+                    origToUse = if (targetUrlStr.contains("cloudnestra") || targetUrlStr.contains("yonderunyielding")) {
+                        "https://cloudnestra.com"
+                    } else if (targetUrlStr.contains("vidsrc.wtf")) {
+                        "https://vidsrc.wtf"
+                    } else if (targetUrlStr.contains("vidsrc.sbs")) {
+                        "https://vidsrc.sbs"
+                    } else if (targetUrlStr.contains("vidsrc.pk")) {
+                        "https://embed.vidsrc.pk"
+                    } else if (targetUrlStr.contains("creativeautomationlab.site") || targetUrlStr.contains("brightpathsignals.com")) {
+                        "https://brightpathsignals.com"
+                    } else if (targetUrlStr.contains("vidsrc")) {
+                        "https://vidsrc.me"
+                    } else {
+                        "https://brightpathsignals.com"
+                    }
+                }
             }
 
             var rangeHeader: String? = null
@@ -867,7 +909,7 @@ class NativeStreamingEnginePlugin : Plugin() {
 
     @PluginMethod
     fun resolveStreams(call: PluginCall) {
-        call.reject("Sniffing is disabled. Only Vidlink and VidSrc PM are supported.")
+        call.reject("Sniffing is disabled. Only VidSrc PM is supported.")
     }
 
     @PluginMethod
@@ -1324,16 +1366,22 @@ class NativeStreamingEnginePlugin : Plugin() {
             }
         }
 
+        val lowTarget = targetUrl.lowercase(java.util.Locale.ROOT)
         val isVidsrcPmCdn = (
-            targetUrl.contains("smartbusinessframework.site") ||
-            targetUrl.contains("lifestylefreedomlab.site") ||
-            targetUrl.contains("highperformancebrands.site") ||
-            targetUrl.contains("quietmidnightgardeningideas") ||
-            targetUrl.contains("creativeautomationlab.site") ||
-            targetUrl.contains("brightpathsignals.com") ||
-            targetUrl.contains("smartincomeplaybook.site") ||
-            targetUrl.contains("/mbzqN9iiy/") ||
-            targetUrl.contains("/WnVM9YFN1/")
+            lowTarget.contains("smartbusinessframework.site") ||
+            lowTarget.contains("lifestylefreedomlab.site") ||
+            lowTarget.contains("highperformancebrands.site") ||
+            lowTarget.contains("quietmidnightgardeningideas") ||
+            lowTarget.contains("creativeautomationlab.site") ||
+            lowTarget.contains("brightpathsignals.com") ||
+            lowTarget.contains("smartincomeplaybook.site") ||
+            lowTarget.contains("premiumbrandingstudio.site") ||
+            lowTarget.contains("premiumcontentengine.site") ||
+            lowTarget.contains("/mbzqn9iiy/") ||
+            lowTarget.contains("/content/") ||
+            lowTarget.contains("/pl/") ||
+            lowTarget.contains("/playlist/") ||
+            lowTarget.contains("/wnvm9yfn1/")
         )
 
         // Only inject headers if it's not a token-authed CDN segment (CDNs reject custom referer headers)

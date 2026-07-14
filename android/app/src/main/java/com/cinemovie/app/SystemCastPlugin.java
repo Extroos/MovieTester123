@@ -561,8 +561,8 @@ public class SystemCastPlugin extends Plugin {
                 conn.setUseCaches(false);
                 conn.setInstanceFollowRedirects(false); // Follow manually
 
-                String refererToUse = (originReferer != null && !originReferer.isEmpty()) ? originReferer : "https://vidlink.pro/";
-                String originToUse = "https://vidlink.pro";
+                String refererToUse = (originReferer != null && !originReferer.isEmpty()) ? originReferer : "https://vidsrc.me/";
+                String originToUse = "https://vidsrc.me";
                 if (originReferer != null && !originReferer.isEmpty()) {
                     try {
                         URL refUrl = new URL(originReferer);

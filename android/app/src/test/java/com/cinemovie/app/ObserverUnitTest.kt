@@ -48,15 +48,4 @@ class ObserverUnitTest {
         assertEquals(false, interceptedTriggered.get())
         assertEquals(true, timeoutTriggered.get())
     }
-    @Test
-    fun testVidlinkRouting() {
-        val tmdbId = "912649"
-        val gateway = "https://vidlink.pro"
-        val token = "dummyToken123"
-        val movieUrl = "$gateway/api/b/movie/$token?multiLang=1"
-        val tvUrl = "$gateway/api/b/tv/$token/1/1?multiLang=1"
-        assertEquals("https://vidlink.pro/api/b/movie/dummyToken123?multiLang=1", movieUrl)
-        assertEquals("https://vidlink.pro/api/b/tv/dummyToken123/1/1?multiLang=1", tvUrl)
-    }
-
 }
