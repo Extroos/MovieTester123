@@ -1252,8 +1252,30 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
         }
       }
 
+      // 4. Fallback to DASH/MPD alternate playlist if no HLS found
+      if (sources.length === 0 && alts && alts.dash && alts.dash.playlist) {
+        sources.push({
+          url: alts.dash.playlist,
+          quality: 'auto',
+          isM3U8: false
+        });
+      }
+
+      // 5. Fallback to progressive MP4 qualities if no HLS/DASH found
+      if (sources.length === 0 && apiRes.data.stream && apiRes.data.stream.qualities) {
+        for (const [quality, fileObj] of Object.entries(apiRes.data.stream.qualities)) {
+          if (fileObj && fileObj.url) {
+            sources.push({
+              url: fileObj.url,
+              quality: `${quality}p`,
+              isM3U8: false
+            });
+          }
+        }
+      }
+
       if (sources.length === 0) {
-        throw new Error("No HLS (m3u8) streams found in VidLink response");
+        throw new Error("No qualities found in VidLink response");
       }
 
       const subtitles = [];

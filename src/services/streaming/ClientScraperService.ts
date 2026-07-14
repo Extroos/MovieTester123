@@ -880,6 +880,29 @@ export async function scrapeVidlinkStream(
     }
   }
 
+  // 4. Fallback to DASH/MPD alternate playlist if no HLS found
+  if (sources.length === 0 && alts && alts.dash && alts.dash.playlist) {
+    sources.push({
+      url: alts.dash.playlist,
+      quality: 'auto',
+      isM3U8: false
+    });
+  }
+
+  // 5. Fallback to progressive MP4 qualities if no HLS/DASH found
+  if (sources.length === 0 && apiRes.stream && apiRes.stream.qualities) {
+    for (const [quality, fileObj] of Object.entries(apiRes.stream.qualities)) {
+      const item: any = fileObj;
+      if (item && item.url) {
+        sources.push({
+          url: item.url,
+          quality: `${quality}p`,
+          isM3U8: false
+        });
+      }
+    }
+  }
+
   const subtitles: any[] = [];
   if (apiRes.subtitles && Array.isArray(apiRes.subtitles)) {
     for (const sub of apiRes.subtitles) {
@@ -893,7 +916,7 @@ export async function scrapeVidlinkStream(
   }
 
   if (sources.length === 0) {
-    throw new Error("No HLS (m3u8) streams found in VidLink response");
+    throw new Error("No qualities found in VidLink response");
   }
 
   return { sources, subtitles };
