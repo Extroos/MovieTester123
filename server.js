@@ -1273,7 +1273,7 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
       // Test all working servers to give users fallback options (0=Tcloud, 1=IpCloud, 3=Nflix, 4=Drag, 5=Viet, 7=Hindi_v2)
       const serversToTest = [0, 1, 3, 4, 5, 7];
       
-      for (const sr of serversToTest) {
+      const promises = serversToTest.map(async (sr) => {
         let url = `https://player.vidzee.wtf/api/server?id=${tmdbId}&sr=${sr}`;
         if (type === 'tv') {
           url += `&ss=${season}&ep=${episode}`;
@@ -1285,7 +1285,7 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
               'Referer': referer,
               'Accept': 'application/json'
             },
-            timeout: 8000
+            timeout: 5000 // 5 seconds strict timeout
           });
           if (resSrv.data && resSrv.data.url && resSrv.data.url.length > 0) {
             for (const item of resSrv.data.url) {
@@ -1315,7 +1315,9 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
         } catch (errSrv) {
           console.warn(`[Server] Vidzee server ${sr} fetch failed:`, errSrv.message);
         }
-      }
+      });
+
+      await Promise.allSettled(promises);
 
       if (sources.length === 0) throw new Error("No streams resolved");
       return res.json(rewriteLocalhostUrls({ sources, subtitles: [] }, req));

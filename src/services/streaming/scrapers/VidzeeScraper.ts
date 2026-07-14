@@ -138,7 +138,7 @@ export async function scrapeVidzeeStream(
             'Referer': referer,
             'Accept': 'application/json'
           }
-        }, 8000);
+        }, 5000);
         
         if (res && res.url && res.url.length > 0) {
           for (const item of res.url) {
