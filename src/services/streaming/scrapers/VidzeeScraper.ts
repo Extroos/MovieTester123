@@ -124,9 +124,8 @@ export async function scrapeVidzeeStream(
     const sources: any[] = [];
     const errors: string[] = [];
 
-    // Servers 0 (Tcloud), 1 (IpCloud), 2 (Achilles) are dead.
-    // Working servers as of 2026-07: 3=Nflix (EN), 4=Drag (EN), 5=Viet (VI), 7=Hindi_v2 (HI)
-    const serversToTest = [3, 4, 5, 7];
+    // Only test server 3 (Nflix) as others (Drag, Viet, Hindi) often serve incorrect movies
+    const serversToTest = [3];
     const promises = serversToTest.map(async (sr) => {
       let url = `${playerBase}/api/server?id=${tmdbId}&sr=${sr}`;
       if (type === 'tv') {
