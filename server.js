@@ -321,12 +321,24 @@ async function resolveFallbackStream(tmdbId, type, season = 1, episode = 1) {
 // Local Residential CORS Proxy (Delegates to Python curl_cffi proxy on port 8000, or directly proxies video streams)
 app.get('/local-proxy', async (req, res) => {
   const targetUrl = req.query.url;
-  const referer = req.query.referer || 'https://vidsrc.me/';
-  const origin = req.query.origin || 'https://vidsrc.me';
-  
+  let referer = req.query.referer || 'https://vidsrc.me/';
+  let origin = req.query.origin || 'https://vidsrc.me';
+
   if (!targetUrl) {
     return res.status(400).send('Missing url parameter');
   }
+
+  // Extract origin_referer embedded in the target URL by the scraper and use it as
+  // the Referer/Origin header override. This is how Vidzee CDN domains (which rotate
+  // constantly) always get the correct Referer without needing a hardcoded domain list.
+  try {
+    const parsedTarget = new URL(targetUrl);
+    const embeddedRef = parsedTarget.searchParams.get('origin_referer');
+    if (embeddedRef) {
+      referer = embeddedRef;
+      try { origin = new URL(embeddedRef).origin; } catch (_) {}
+    }
+  } catch (_) {}
 
   try {
     const pythonProxyUrl = `http://localhost:8000/local-proxy?url=${encodeURIComponent(targetUrl)}&referer=${encodeURIComponent(referer)}&origin=${encodeURIComponent(origin)}`;
