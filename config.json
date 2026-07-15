@@ -1,5 +1,5 @@
 {
-  "last_updated": "07/12/2026",
+  "last_updated": "07/15/2026",
   "servers": [
     {
       "id": "vidsrc-pm",
@@ -16,9 +16,9 @@
       "isAdFree": true
     },
     {
-      "id": "vidzee",
-      "name": "Nflix Multi",
-      "description": "Multi-language HLS — Nflix, Drag, Viet & Hindi CDN mirrors",
+      "id": "vidsrc-top-new",
+      "name": "VidSrc Top",
+      "description": "Direct HLS via vid-src.top — multi-CDN mirrors",
       "badge": "Multi",
       "isAdFree": true
     },
@@ -52,7 +52,7 @@
     },
     {
       "id": "vidsrc-top",
-      "name": "VidSrc Top",
+      "name": "VidSrc Top (Legacy)",
       "description": "Third-party mirror — supports IMDB/TMDB inputs",
       "badge": "ADS",
       "isAdFree": false
@@ -68,12 +68,10 @@
     "vidsrc_fyi": "https://vidsrc.fyi",
     "vixsrc": "https://vixsrc.to",
     "enc_dec": "https://enc-dec.app",
-    "vidzee": "https://player.vidzee.wtf",
-    "vidzee_core": "https://core.vidzee.wtf",
+    "vidsrc_top_new": "https://vid-src.top",
     "vidsrc_top": "https://vid-src.top",
     "vidsrc_pm_mirrors": ["https://streamdata.vaplayer.ru", "https://stream.vaplayer.ru"],
     "vixsrc_mirrors": ["https://vixsrc.to", "https://vixsrc.cc", "https://vixsrc.xyz"],
-    "vidzee_mirrors": ["https://player.vidzee.wtf", "https://player.vidzee.cc"],
     "enc_dec_mirrors": ["https://enc-dec.app", "https://enc-dec.app/api"]
   },
   "embed_urls": {
