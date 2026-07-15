@@ -1,4 +1,4 @@
-import { scrapeVidsrcPmStream, scrapeVidzeeStream, scrapeVixsrcStream } from './ClientScraperService';
+import { scrapeVidsrcPmStream, scrapeVidSrcTopStream, scrapeVixsrcStream } from './ClientScraperService';
 import { NativeStreamingEngine } from '../native/NativeStreamingEngine';
 
 
@@ -194,10 +194,10 @@ export async function resolveMovieStream(
       }
     }
 
-    if (selectedServer === 'vidzee') {
+    if (selectedServer === 'vidsrc-top-new') {
       try {
-        console.log(`[LocalStream] Resolving via Vidzee client scraper...`);
-        const result = await scrapeVidzeeStream(String(tmdbId), 'movie');
+        console.log(`[LocalStream] Resolving via VidSrcTop client scraper...`);
+        const result = await scrapeVidSrcTopStream(String(tmdbId), 'movie');
         if (result && result.sources && result.sources.length > 0) {
           const bestSource = result.sources[0];
           return {
@@ -205,15 +205,14 @@ export async function resolveMovieStream(
             type: bestSource.isM3U8 ? 'm3u8' : 'mp4',
             quality: bestSource.quality || 'auto',
             subtitles: result.subtitles || [],
-            provider: 'client/vidzee',
+            provider: 'client/vidsrc-top-new',
             sources: result.sources
           } as any;
         }
       } catch (e: any) {
-        console.warn(`[LocalStream] Client-side Vidzee movie resolution failed: ${e.message}`);
+        console.warn(`[LocalStream] Client-side VidSrcTop movie resolution failed: ${e.message}`);
       };
     }
-
 
 
     if (selectedServer === 'vixsrc') {
@@ -365,10 +364,10 @@ export async function resolveTVStream(
       }
     }
 
-    if (selectedServer === 'vidzee') {
+    if (selectedServer === 'vidsrc-top-new') {
       try {
-        console.log(`[LocalStream] Resolving TV S${season}E${episode} via Vidzee client scraper...`);
-        const result = await scrapeVidzeeStream(String(tmdbId), 'tv', season, episode);
+        console.log(`[LocalStream] Resolving TV S${season}E${episode} via VidSrcTop client scraper...`);
+        const result = await scrapeVidSrcTopStream(String(tmdbId), 'tv', season, episode);
         if (result && result.sources && result.sources.length > 0) {
           const bestSource = result.sources[0];
           return {
@@ -376,12 +375,12 @@ export async function resolveTVStream(
             type: bestSource.isM3U8 ? 'm3u8' : 'mp4',
             quality: bestSource.quality || 'auto',
             subtitles: result.subtitles || [],
-            provider: 'client/vidzee',
+            provider: 'client/vidsrc-top-new',
             sources: result.sources
           } as any;
         }
       } catch (e: any) {
-        console.warn(`[LocalStream] Client-side Vidzee TV resolution failed: ${e.message}`);
+        console.warn(`[LocalStream] Client-side VidSrcTop TV resolution failed: ${e.message}`);
       }
     }
 

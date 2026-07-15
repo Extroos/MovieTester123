@@ -45,8 +45,7 @@ const DEFAULT_GATEWAYS: GatewayConfig = {
   vidsrc_fyi: 'https://vidsrc.fyi',
   vixsrc: 'https://vixsrc.to',
   enc_dec: 'https://enc-dec.app',
-  vidzee: 'https://player.vidzee.wtf',
-  vidzee_core: 'https://core.vidzee.wtf'
+  vidsrc_top_new: 'https://vid-src.top'
 };
 
 let _cachedConfig: RemoteConfig | null = null;

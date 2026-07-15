@@ -1222,92 +1222,61 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
     }
   }
 
-  if (activeServer === 'vidzee') {
+  if (activeServer === 'vidsrc-top-new') {
     try {
-      console.log(`[Server] Resolving Vidzee for TMDB-${tmdbId}...`);
-      
-      const keyRes = await axios.get('https://core.vidzee.wtf/api-key', { timeout: 8000 });
-      const encryptedKey = keyRes.data;
-      
-      const HARDCODED_KEY_HEX = "c4a8f1d7e2b9a6c3d0f5e8a1b7c4d9e2";
-      const keyHash = crypto.createHash('sha256').update(HARDCODED_KEY_HEX).digest();
-      const binaryKey = Buffer.from(encryptedKey, 'base64');
-      const iv = binaryKey.subarray(0, 12);
-      const tag = binaryKey.subarray(12, 28);
-      const ciphertext = binaryKey.subarray(28);
-      
-      const decipher = crypto.createDecipheriv('aes-256-gcm', keyHash, iv);
-      decipher.setAuthTag(tag);
-      const decryptedKey = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+      const embedUrl = type === 'tv'
+        ? `https://vid-src.top/embed/tv/${tmdbId}/${season}/${episode}`
+        : `https://vid-src.top/embed/movie/${tmdbId}`;
 
-      const referer = type === 'tv'
-        ? `https://player.vidzee.wtf/embed/tv/${tmdbId}/${season}/${episode}`
-        : `https://player.vidzee.wtf/embed/movie/${tmdbId}`;
+      console.log(`[Server] Resolving vid-src.top for TMDB-${tmdbId}: ${embedUrl}`);
+
+      // Fetch the embed page through the Python curl_cffi proxy so we bypass TLS fingerprinting
+      const proxyUrl = `http://localhost:8000/local-proxy?url=${encodeURIComponent(embedUrl)}&referer=${encodeURIComponent('https://vid-src.top/')}&origin=${encodeURIComponent('https://vid-src.top')}`;
+      const pageRes = await axios.get(proxyUrl, { timeout: 15000, responseType: 'text' });
+      const html = pageRes.data || '';
+
+      if (!html || html.length < 100) throw new Error('vid-src.top returned empty page');
+
       const sources = [];
-      // Test all working servers to give users fallback options (0=Tcloud, 1=IpCloud, 3=Nflix, 4=Drag, 5=Viet, 7=Hindi_v2)
-      const serversToTest = [0, 1, 3, 4, 5, 7];
-      
-      const promises = serversToTest.map(async (sr) => {
-        let url = `https://player.vidzee.wtf/api/server?id=${tmdbId}&sr=${sr}`;
-        if (type === 'tv') {
-          url += `&ss=${season}&ep=${episode}`;
-        }
-        try {
-          const resSrv = await axios.get(url, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-              'Referer': referer,
-              'Accept': 'application/json'
-            },
-            timeout: 5000 // 5 seconds strict timeout
+      const seen = new Set();
+
+      function tryAdd(url, quality) {
+        const clean = url.replace(/\\u002F/g, '/').replace(/\\\//g, '/').trim();
+        if (!seen.has(clean) && clean.startsWith('http') && !clean.includes('beacon') && !clean.includes('analytics')) {
+          seen.add(clean);
+          sources.push({
+            url: clean,
+            quality,
+            isM3U8: clean.includes('.m3u8') || clean.includes('master') || clean.includes('playlist')
           });
-          if (resSrv.data && resSrv.data.url && resSrv.data.url.length > 0) {
-            for (const item of resSrv.data.url) {
-              const decoded = Buffer.from(item.link, 'base64').toString('binary');
-              const parts = decoded.split(':');
-              if (parts.length === 2) {
-                const linkIv = Buffer.from(parts[0], 'base64');
-                const linkCiphertext = Buffer.from(parts[1], 'base64');
-                const paddedKey = Buffer.alloc(32);
-                Buffer.from(decryptedKey).copy(paddedKey, 0, 0, 32);
-                
-                const linkDecipher = crypto.createDecipheriv('aes-256-cbc', paddedKey, linkIv);
-                const decryptedStream = Buffer.concat([linkDecipher.update(linkCiphertext), linkDecipher.final()]).toString('utf8');
-                
-                if (decryptedStream && decryptedStream.startsWith('http')) {
-                  const langLabel = item.lang ? ` [${item.lang}]` : '';
-                  const providerLabel = resSrv.data.provider || item.name || `Server ${sr}`;
-                  // Append origin_referer so the local proxy sends the correct Referer header
-                  // regardless of what CDN domain Vidzee rotates to.
-                  const sep = decryptedStream.includes('?') ? '&' : '?';
-                  const streamWithRef = `${decryptedStream}${sep}origin_referer=${encodeURIComponent('https://player.vidzee.wtf/')}`;
-                  sources.push({
-                    url: streamWithRef,
-                    quality: `${providerLabel}${langLabel}`,
-                    isM3U8: decryptedStream.includes('.m3u8') || decryptedStream.includes('.txt')
-                  });
-                }
-              }
-            }
-          }
-        } catch (errSrv) {
-          console.warn(`[Server] Vidzee server ${sr} fetch failed:`, errSrv.message);
         }
-      });
+      }
 
-      await Promise.allSettled(promises);
+      // Pattern 1: JWPlayer {file:"...m3u8"}
+      let m;
+      const jwFileRe = /['"`]?file['"`]?\s*:\s*['"`](https?:\/\/[^'"`\s]+\.m3u8[^'"`\s]*)/gi;
+      while ((m = jwFileRe.exec(html)) !== null) tryAdd(m[1], 'JW Auto');
 
-      if (sources.length === 0) throw new Error("No streams resolved");
+      // Pattern 2: raw .m3u8 URLs
+      const rawM3u8Re = /https?:\/\/[a-zA-Z0-9.\-_]+(?:\/[^'"`\s\\<>(){}[\]]{5,200})?\.m3u8(?:\?[^'"`\s\\<>(){}[\]]{0,200})?/gi;
+      while ((m = rawM3u8Re.exec(html)) !== null) tryAdd(m[0], 'Direct M3U8');
+
+      // Pattern 3: video.js {src:"...m3u8"}
+      const vjsSrcRe = /['"`]src['"`]\s*:\s*['"`](https?:\/\/[^'"`\s]+\.m3u8[^'"`\s]*)/gi;
+      while ((m = vjsSrcRe.exec(html)) !== null) tryAdd(m[1], 'VideoJS Auto');
+
+      if (sources.length === 0) throw new Error('No stream URLs found in vid-src.top embed page');
+
+      console.log(`[Server] vid-src.top resolved ${sources.length} stream(s) for TMDB-${tmdbId}`);
       return res.json(rewriteLocalhostUrls({ sources, subtitles: [] }, req));
     } catch (err) {
-      console.error(`[Server] Vidzee resolution failed:`, err.message);
-      return res.status(500).json({ error: `vidzee failed: ${err.message}` });
+      console.error(`[Server] vid-src.top resolution failed:`, err.message);
+      return res.status(500).json({ error: `vidsrc-top-new failed: ${err.message}` });
     }
   }
 
   return res.status(404).json({ error: 'Unknown server option.' });
 });
-
 
 
 // Subtitles Integration Routes

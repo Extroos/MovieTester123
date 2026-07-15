@@ -699,7 +699,7 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
             const allServers = [
               { id: 'vidsrc-pm', isAdFree: true },
               { id: 'vidsrc-wtf-2', isAdFree: true },
-              { id: 'vidzee', isAdFree: true },
+              { id: 'vidsrc-top-new', isAdFree: true },
               { id: 'vixsrc', isAdFree: true },
               { id: 'universal', isAdFree: false },
               { id: 'vidsrc-sbs', isAdFree: false },

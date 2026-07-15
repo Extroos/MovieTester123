@@ -13,7 +13,7 @@ import { PlayerSettings, ALL_SERVERS } from './PlayerSettings';
 import { PlayerControls } from './PlayerControls';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 const NativeStreamingEngine = registerPlugin<any>('NativeStreamingEngine');
-import { scrapeVidsrcFallback, scrapeVidifyStream, scrapeVidsrcPmStream, scrapeWtfStream, scrapeVidzeeStream, scrapeVixsrcStream } from '../../../../services/ClientScraperService';
+import { scrapeVidsrcFallback, scrapeVidifyStream, scrapeVidsrcPmStream, scrapeWtfStream, scrapeVidSrcTopStream, scrapeVixsrcStream } from '../../../../services/ClientScraperService';
 import { getGateway, getRemoteServers } from '../../../../services/streaming/RemoteConfigService';
 import { WatchTogetherService, type PartyParticipant, type PartySyncEvent } from '../../../../services/watchTogether';
 import { supabase } from '../../../../services/supabase';
@@ -702,7 +702,7 @@ export default function LocalVideoPlayer({
       // On native mobile, dispatch to the correct native resolver
       if (Capacitor.isNativePlatform()) {
         const srv = (remoteServers.length > 0 ? remoteServers : ALL_SERVERS).find(s => s.id === serverId);
-        const isIframeSrv = srv ? !srv.isAdFree : (serverId !== 'vidsrc-pm' && serverId !== 'vidsrc-sbs' && serverId !== 'vidzee' && serverId !== 'vixsrc');
+        const isIframeSrv = srv ? !srv.isAdFree : (serverId !== 'vidsrc-pm' && serverId !== 'vidsrc-sbs' && serverId !== 'vidsrc-top-new' && serverId !== 'vixsrc');
         if (isIframeSrv) {
           setIframeFallback(true);
           setEmbedServer(serverId);
@@ -762,11 +762,11 @@ export default function LocalVideoPlayer({
           } else {
             throw new Error("No streams found in Multi Language response");
           }
-        } else if (serverId === 'vidzee' || serverId === 'vixsrc') {
+        } else if (serverId === 'vidsrc-top-new' || serverId === 'vixsrc') {
           console.log(`[LocalVideoPlayer] Resolving ${serverId} natively on mobile...`);
           let res;
-          if (serverId === 'vidzee') {
-            res = await scrapeVidzeeStream(String(tmdbId), type, season, episode);
+          if (serverId === 'vidsrc-top-new') {
+            res = await scrapeVidSrcTopStream(String(tmdbId), type, season, episode);
           } else {
             res = await scrapeVixsrcStream(String(tmdbId), type, season, episode);
           }
@@ -805,7 +805,7 @@ export default function LocalVideoPlayer({
         }
       } else {
         const srv = (remoteServers.length > 0 ? remoteServers : ALL_SERVERS).find(s => s.id === serverId);
-        const isIframeSrv = srv ? !srv.isAdFree : (serverId !== 'vidsrc-pm' && serverId !== 'vidsrc-sbs' && serverId !== 'vidzee' && serverId !== 'vixsrc');
+        const isIframeSrv = srv ? !srv.isAdFree : (serverId !== 'vidsrc-pm' && serverId !== 'vidsrc-sbs' && serverId !== 'vidsrc-top-new' && serverId !== 'vixsrc');
         if (isIframeSrv) {
           setIframeFallback(true);
           setEmbedServer(serverId);
@@ -816,12 +816,12 @@ export default function LocalVideoPlayer({
           return;
         }
         // On web/desktop, resolve via client-side scrapers first for custom servers to bypass Express backend 404
-        if (serverId === 'vidzee' || serverId === 'vixsrc') {
+        if (serverId === 'vidsrc-top-new' || serverId === 'vixsrc') {
           console.log(`[LocalVideoPlayer] Resolving ${serverId} client-side in browser...`);
           try {
             let res;
-            if (serverId === 'vidzee') {
-              res = await scrapeVidzeeStream(String(tmdbId), type, season, episode);
+            if (serverId === 'vidsrc-top-new') {
+              res = await scrapeVidSrcTopStream(String(tmdbId), type, season, episode);
             } else {
               res = await scrapeVixsrcStream(String(tmdbId), type, season, episode);
             }

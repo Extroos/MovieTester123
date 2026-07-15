@@ -14,7 +14,7 @@ export interface ServerOption {
 export const ALL_SERVERS: ServerOption[] = [
   { id: 'vidsrc-pm', name: 'VidSrc PM', description: 'Adaptive HLS via VidSrc PM — multi-CDN mirrors', badge: 'Recommended', isAdFree: true },
   { id: 'vidsrc-wtf-2', name: 'VidSrc Multi-Lang', description: 'Multi-language HLS via native decryption engine', badge: 'Multi', isAdFree: true },
-  { id: 'vidzee', name: 'Nflix Multi', description: 'Multi-language HLS — Nflix, Drag, Viet & Hindi CDN mirrors', badge: 'Multi', isAdFree: true },
+  { id: 'vidsrc-top-new', name: 'VidSrc Top', description: 'Direct HLS via vid-src.top — multi-CDN mirrors', badge: 'Multi', isAdFree: true },
   { id: 'vixsrc', name: 'VixSrc', description: 'Multi-language embed via vixsrc.to — dark theme', badge: 'MULTI', isAdFree: true },
   { id: 'universal', name: 'Vidsrc.to (Universal)', description: 'Third-party embed — supports multi-language subtitles', badge: 'ADS', isAdFree: false },
   { id: 'vidsrc-sbs', name: 'Vidsrc SBS', description: 'Third-party mirror — alternative content hosting', badge: '', isAdFree: false },
