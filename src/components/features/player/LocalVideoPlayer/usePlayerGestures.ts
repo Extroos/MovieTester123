@@ -251,7 +251,7 @@ export function usePlayerGestures({
       touchTypeRef.current = 'tap';
 
       // Hold to speed up 2x on the right side of the screen (Mobile only, not TV mode)
-      const isTV = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+      const isTV = typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
       const containerWidth = container.clientWidth || window.innerWidth;
       const x = touch.clientX;
       const isRight = x > containerWidth * 0.6;

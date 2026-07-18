@@ -947,7 +947,7 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
   const creator = crew.find(c => c.job === 'Creator' || c.job === 'Executive Producer');
 
   if (loading) {
-    const isTV = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+    const isTV = typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
     if (isTV) {
       return (
         <div style={{
@@ -1769,7 +1769,7 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
     : 0;
   const isAnyEpisodeCompleted = Object.values(downloadedEpisodes).some(ep => ep.status === 'completed');
 
-  const isTV = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+  const isTV = typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
 
   if (isTV) {
     const isShowInList = inList;

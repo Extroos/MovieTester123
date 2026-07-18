@@ -19,7 +19,7 @@ function ActorPage({ personId, onClose, onMovieClick, onTVShowClick }: ActorPage
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [displayLimit, setDisplayLimit] = useState(24);
 
-  const isTV = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+  const isTV = typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);

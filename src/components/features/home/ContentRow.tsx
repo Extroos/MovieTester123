@@ -7,7 +7,7 @@ import { t } from '../../../utils/i18n';
 import { updateDynamicBackdropColor } from '../../../utils/tvColorHelper';
 
 // Cache the TV mode check at module level — no need to re-read localStorage per card focus
-const _isTVMode = () => typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+const _isTVMode = () => typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
 
 // Module-level deduplication for image recovery fetches.
 // If multiple cards show the same broken movie ID, only one TMDB fetch fires.
@@ -532,7 +532,7 @@ const ContentRow = React.memo(function ContentRow({
  }: ContentRowProps) {
   const rowRef = useRef<HTMLDivElement>(null);
 
-  const isTVMode = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+  const isTVMode = typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
 
   if ((!movies || movies.length === 0) && (!tabs || tabs.length === 0)) return null;
 

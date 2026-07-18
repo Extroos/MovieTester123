@@ -99,7 +99,7 @@ export default function MyListSubPage({ isMobile, sectionHeaderStyle, onMovieCli
     { id: 'completed' as const, label: t('tab_done'), count: countCompleted },
   ];
 
-  const isTV = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+  const isTV = typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
 
   if (isTV) {
     return (

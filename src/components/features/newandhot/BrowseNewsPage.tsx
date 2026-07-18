@@ -204,7 +204,7 @@ export default function BrowseNewsPage({ trending, upcoming, onItemClick, select
     );
   }
 
-  const isTVMode = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+  const isTVMode = typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
 
   // State to track currently focused item on TV mode so the right details pane updates live
   const [focusedItem, setFocusedItem] = useState<any>(null);

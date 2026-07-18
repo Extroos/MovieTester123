@@ -40,7 +40,7 @@ function Header({
   activeNewsGenre = null,
   onBackNewsGenre,
 }: HeaderProps) {
-  const isTVMode = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+  const isTVMode = typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [isScrolled, setIsScrolled] = useState(false);
   const headerRef = React.useRef<HTMLElement>(null);

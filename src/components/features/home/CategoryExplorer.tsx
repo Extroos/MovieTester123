@@ -85,7 +85,7 @@ const CategoryCard = React.memo(({ movie, onClick }: { movie: Movie | TVShow; on
     }
   };
 
-  const isTV = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+  const isTV = typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
 
   return (
     <div
@@ -189,7 +189,7 @@ const CategoryCard = React.memo(({ movie, onClick }: { movie: Movie | TVShow; on
 CategoryCard.displayName = 'CategoryCard';
 
 export default function CategoryExplorer({ title, movies, onClose, onMovieClick }: CategoryExplorerProps) {
-  const isTVMode = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+  const isTVMode = typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
   const [visibleCount, setVisibleCount] = useState(CHUNK_SIZE);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);

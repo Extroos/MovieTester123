@@ -38,7 +38,7 @@ export default function ProfileSelector({ onProfileSelected }: ProfileSelectorPr
   const [tempPin, setTempPin] = useState('');
 
   // TV Mode variables
-  const isTVMode = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+  const isTVMode = typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
   const [backgroundMediaList, setBackgroundMediaList] = useState<any[]>([]);
   const [currentMediaIdx, setCurrentMediaIdx] = useState<number>(0);
   const [activeProfileIdx, setActiveProfileIdx] = useState<number>(0);

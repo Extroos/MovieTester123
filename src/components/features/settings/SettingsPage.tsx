@@ -59,7 +59,7 @@ export default function SettingsPage({
   updateAvailable,
   onClearUpdate
 }: SettingsPageProps) {
-  const isTV = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+  const isTV = typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
   const isGuestMode = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_guest') === 'true';
   const [settings, setSettings] = useState<AppSettings>({ ...SettingsService.getAll() });
   const [isEditingName, setIsEditingName] = useState(false);

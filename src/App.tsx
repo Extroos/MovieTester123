@@ -1543,7 +1543,7 @@ export default function App() {
                             {!minimalHome && (
                               <>
                               {(trending.length > 0 || trendingTV.length > 0) && (() => {
-                                const isTVMode = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+                                const isTVMode = typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
                                 if (isTVMode) {
                                 // Merge movie and TV trends together in TV mode (interleave them nicely)
                                 const combinedTrending: (any)[] = [];
@@ -1727,7 +1727,7 @@ export default function App() {
               )}
  
               {currentView === 'newandhot' && (() => {
-                const isTV = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+                const isTV = typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
                 return (
                   <div style={{
                     width: '100%',

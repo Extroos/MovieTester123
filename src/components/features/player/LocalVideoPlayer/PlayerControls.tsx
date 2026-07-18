@@ -101,7 +101,7 @@ export const PlayerControls = React.memo(function PlayerControls({
   item,
   logoUrl
 }: PlayerControlsProps) {
-  const isTV = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+  const isTV = typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
   const [isScrubberHovered, setIsScrubberHovered] = useState(false);
   const [hoverPosition, setHoverPosition] = useState<{ x: number; time: number } | null>(null);
   const latestSeekTimeRef = React.useRef<number>(currentTime);

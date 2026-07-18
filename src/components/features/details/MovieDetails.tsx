@@ -737,7 +737,7 @@ function MovieDetails({ movie, onClose, onListUpdate, onActorClick }: MovieDetai
   const director = crew.find(c => c.job === 'Director');
 
   if (loading) {
-    const isTV = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+    const isTV = typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
     if (isTV) {
       return (
         <div style={{
@@ -1730,7 +1730,7 @@ function MovieDetails({ movie, onClose, onListUpdate, onActorClick }: MovieDetai
     </>
   );
 
-  const isTV = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+  const isTV = typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
 
   if (isTV) {
     const isMovieInList = inList;
