@@ -423,10 +423,18 @@ export default function App() {
     }
   }, []);
 
+  const selectedMovieRef = useRef(selectedMovie);
+  const selectedTVShowRef = useRef(selectedTVShow);
   useEffect(() => {
-    const isPlayerActive = !!selectedMovie || !!selectedTVShow;
-    
-    if (isAuthenticated && !isPlayerActive && !isGuest) {
+    selectedMovieRef.current = selectedMovie;
+    selectedTVShowRef.current = selectedTVShow;
+  }, [selectedMovie, selectedTVShow]);
+
+  useEffect(() => {
+    if (isAuthenticated && !isGuest) {
+      const isPlayerActive = !!selectedMovieRef.current || !!selectedTVShowRef.current;
+      if (isPlayerActive) return;
+
       fetchPartyInvites();
       const channel = supabase
         .channel('watch_party_invites')
@@ -434,6 +442,7 @@ export default function App() {
           'postgres_changes',
           { event: 'INSERT', schema: 'public', table: 'notifications' },
           (payload) => {
+            if (!!selectedMovieRef.current || !!selectedTVShowRef.current) return;
             fetchPartyInvites();
             const newRecord = payload.new;
             if (newRecord && newRecord.type === 'watch_party_invite' && !newRecord.data?.is_host) {
@@ -450,6 +459,7 @@ export default function App() {
           'postgres_changes',
           { event: 'DELETE', schema: 'public', table: 'notifications' },
           () => {
+            if (!!selectedMovieRef.current || !!selectedTVShowRef.current) return;
             fetchPartyInvites();
           }
         )
@@ -457,6 +467,7 @@ export default function App() {
  
       // Backup polling fallback every 60 seconds to load invites dynamically without needing database publications setup
       const pollInterval = setInterval(() => {
+        if (!!selectedMovieRef.current || !!selectedTVShowRef.current) return;
         fetchPartyInvites();
       }, 60000);
  
@@ -465,7 +476,7 @@ export default function App() {
         clearInterval(pollInterval);
       };
     }
-  }, [isAuthenticated, fetchPartyInvites, selectedMovie, selectedTVShow]);
+  }, [isAuthenticated, fetchPartyInvites]);
 
   const handleDeclineInvite = useCallback(async (invite: any) => {
     triggerHaptic('medium');
