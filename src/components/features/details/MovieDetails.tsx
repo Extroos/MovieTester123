@@ -110,7 +110,93 @@ interface MovieDetailsProps {
 type TabState = 'overview' | 'reviews';
 
 function MovieDetails({ movie, onClose, onListUpdate, onActorClick }: MovieDetailsProps) {
+  const isKids = (() => {
+    try {
+      const stored = localStorage.getItem('watchmovie_active_profile_cache');
+      return stored ? JSON.parse(stored)?.isKids === true : false;
+    } catch { return false; }
+  })();
+
+  const isRestrictedForKids = useMemo(() => {
+    if (!isKids) return false;
+    
+    // Check certification
+    const cert = (fullMovie.certification || movie.certification || '').toUpperCase();
+    if (['R', 'NC-17', 'TV-MA', 'TV-14', 'PG-13'].some(c => cert.includes(c))) return true;
+
+    // Check genres
+    const genreIds = fullMovie.genres?.map(g => g.id) || (movie as any).genre_ids || [];
+    const hasRestrictedGenre = genreIds.some((id: number) => [28, 27, 80, 53, 10752, 9648, 18].includes(id));
+    if (hasRestrictedGenre) return true;
+
+    // Check title/overview text
+    const titleText = (fullMovie.title || movie.title || '').toLowerCase();
+    const overviewText = (fullMovie.overview || movie.overview || '').toLowerCase();
+    const fullText = titleText + ' ' + overviewText;
+    const blacklist = ['blood', 'gore', 'combat', 'kill', 'murder', 'obsession', 'desire', 'slasher', 'fight', 'mortal'];
+    if (blacklist.some(word => fullText.includes(word))) return true;
+
+    return false;
+  }, [isKids, fullMovie, movie]);
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+
+  if (isRestrictedForKids) {
+    return (
+      <div style={{
+        position: 'fixed',
+        inset: 0,
+        background: '#070708',
+        zIndex: 9999,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '24px',
+        color: '#ffffff',
+        textAlign: 'center',
+        fontFamily: 'Inter, sans-serif'
+      }}>
+        <div style={{
+          background: 'rgba(239, 68, 68, 0.1)',
+          border: '1px solid rgba(239, 68, 68, 0.2)',
+          borderRadius: '50%',
+          padding: '24px',
+          marginBottom: '20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: '0 0 40px rgba(239, 68, 68, 0.15)',
+        }}>
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+        </div>
+        <h2 style={{ fontSize: '1.6rem', fontWeight: 950, marginBottom: '10px', letterSpacing: '-0.03em' }}>
+          Kids Profile Blocked
+        </h2>
+        <p style={{ fontSize: '0.9rem', color: 'rgba(255, 255, 255, 0.6)', maxWidth: '300px', lineHeight: '1.5', marginBottom: '30px' }}>
+          This title is not available in Kids Mode due to parental rating guidelines.
+        </p>
+        <button
+          onClick={onClose}
+          style={{
+            background: '#ffffff',
+            color: '#000000',
+            border: 'none',
+            borderRadius: '12px',
+            padding: '14px 28px',
+            fontWeight: 850,
+            fontSize: '0.9rem',
+            cursor: 'pointer',
+            boxShadow: '0 4px 15px rgba(255,255,255,0.2)'
+          }}
+        >
+          Go Back
+        </button>
+      </div>
+    );
+  }
 
   const playBtnRef = React.useRef<HTMLButtonElement>(null);
   const [activeTab, setActiveTab] = useState<TabState>('overview');
