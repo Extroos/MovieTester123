@@ -2086,32 +2086,109 @@ const StaticStyles = React.memo(() => (
     /* Mobile overrides */
     @media (max-width: 400px), (max-height: 800px) {
       .profile-selector-container {
-        padding: 1rem !important;
+        padding: 0.75rem !important;
       }
       .profile-selector-title {
-        font-size: 1.8rem !important;
-        margin-bottom: 1.8rem !important;
+        font-size: 1.6rem !important;
+        margin-bottom: 1rem !important;
       }
       .profiles-grid {
-        gap: 1.2rem !important;
+        gap: 1rem !important;
         margin-bottom: 0.5rem !important;
       }
       .profile-avatar-img-container {
-        width: 75px !important;
-        height: 75px !important;
-        border-radius: 18px !important;
+        width: 70px !important;
+        height: 70px !important;
+        border-radius: 16px !important;
       }
       .profile-avatar-name {
-        gap: 0.6rem !important;
+        gap: 0.5rem !important;
       }
       .profile-avatar-name span {
-        font-size: 0.88rem !important;
+        font-size: 0.85rem !important;
       }
       .profile-manage-btn {
-        margin-top: 2rem !important;
-        padding: 10px 24px !important;
+        margin-top: 1.5rem !important;
+        padding: 8px 20px !important;
+        font-size: 0.75rem !important;
+        border-radius: 8px !important;
+      }
+      
+      /* Add/Edit Profile Mobile Viewport Compactor */
+      .add-profile-container {
+        gap: 0.75rem !important;
+      }
+      .add-profile-title {
+        font-size: 1.8rem !important;
+      }
+      .add-profile-row {
+        gap: 0.75rem !important;
+      }
+      .add-profile-left-col {
+        padding: 1rem !important;
+        gap: 1rem !important;
+        border-radius: 16px !important;
+      }
+      .add-profile-avatar-preview {
+        width: 80px !important;
+        height: 80px !important;
+        border-radius: 18px !important;
+        border-width: 2.5px !important;
+      }
+      .profile-input-tv {
+        padding: 10px 14px !important;
+        font-size: 0.95rem !important;
+        border-radius: 12px !important;
+      }
+      .options-row-grid {
+        gap: 8px !important;
+      }
+      .options-row-grid > div {
+        padding: 10px 8px !important;
+        border-radius: 12px !important;
+        gap: 4px !important;
+      }
+      .options-row-grid span {
         font-size: 0.78rem !important;
-        border-radius: 10px !important;
+      }
+      .options-row-grid span:last-child {
+        font-size: 0.65rem !important;
+      }
+      
+      /* Avatar Choice Grid Compactor */
+      .add-profile-right-col {
+        gap: 0.5rem !important;
+      }
+      .add-profile-right-col span {
+        font-size: 0.9rem !important;
+      }
+      .add-profile-right-col button {
+        padding: 6px 12px !important;
+        font-size: 0.75rem !important;
+        border-radius: 8px !important;
+      }
+      .add-profile-avatar-grid {
+        gap: 8px !important;
+      }
+      .avatar-choice-item {
+        border-radius: 12px !important;
+      }
+      
+      /* Action Buttons Compactor */
+      .add-profile-actions {
+        margin-top: 0.25rem !important;
+        gap: 8px !important;
+      }
+      .add-profile-actions button {
+        padding: 10px !important;
+        font-size: 0.85rem !important;
+        border-radius: 12px !important;
+      }
+      .add-profile-container > button {
+        padding: 10px !important;
+        font-size: 0.85rem !important;
+        border-radius: 12px !important;
+        margin-top: -0.5rem !important;
       }
     }
     
