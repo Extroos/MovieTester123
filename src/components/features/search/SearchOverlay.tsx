@@ -23,6 +23,32 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
   const [filterType, setFilterType] = useState<'all' | 'movie' | 'tv' | 'anime'>('all');
   const [highRatingOnly, setHighRatingOnly] = useState(false);
 
+  const isKids = (() => {
+    try {
+      const stored = localStorage.getItem('watchmovie_active_profile_cache');
+      return stored ? JSON.parse(stored)?.isKids === true : false;
+    } catch { return false; }
+  })();
+
+  const filterKids = (items: Movie[]): Movie[] => {
+    if (!isKids) return items;
+    return items.filter(item => {
+      if (!item) return false;
+      const title = (item.title || (item as any).name || '').toLowerCase();
+      const overview = (item.overview || '').toLowerCase();
+      const text = title + ' ' + overview;
+      
+      const blacklist = ['blood', 'gore', 'combat', 'kill', 'murder', 'obsession', 'desire', 'slasher', 'fight', 'mortal', 'odyssey'];
+      if (blacklist.some(word => text.includes(word))) return false;
+      
+      const genreIds = item.genre_ids || (item as any).genreIds || item.genres?.map((g: any) => g.id) || [];
+      const hasRestricted = genreIds.some((id: number) => [28, 27, 80, 53, 10752, 9648, 18].includes(id));
+      if (hasRestricted) return false;
+
+      return genreIds.some((id: number) => [16, 10751, 35].includes(id));
+    });
+  };
+
   const inputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastSearchQuery = useRef<string>('');
@@ -345,7 +371,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
     });
   };
 
-  const filteredSuggestions = applyFilters(suggestions);
+  const filteredSuggestions = filterKids(applyFilters(suggestions));
 
   // Compute layout dimensions optimized to match Header.tsx spacing
   const headerOffset = showFilters ? 146 : 92;
@@ -541,7 +567,9 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
           </select>
           <select className="tv-focusable" tabIndex={0} value={selectedGenre || ''} onChange={(e) => setSelectedGenre(Number(e.target.value) || null)} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', padding: '6px 10px', borderRadius: '8px', outline: 'none', fontSize: '12px', fontWeight: 600 }}>
             <option value="">{t('all_genres')}</option>
-            {Object.entries(GENRES).map(([name, id]) => <option key={id} value={id}>{name.replace(/_/g, ' ')}</option>)}
+            {Object.entries(GENRES)
+              .filter(([name, id]) => !isKids || [16, 10751, 35].includes(id))
+              .map(([name, id]) => <option key={id} value={id}>{name.replace(/_/g, ' ')}</option>)}
           </select>
         </div>
       )}
@@ -652,7 +680,10 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
             
             <p style={{ fontSize: '11px', fontWeight: 800, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>{t('vibes')}</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '20px' }}>
-              {['Atmospheric', 'Intense', 'Light-hearted', 'Dark', 'Hopeful', 'Crime', 'Horror', 'Mystery', 'Romance', 'Comedy', 'Sci-Fi', 'Action', 'Adventure', 'Fantasy', 'Family', 'Animation'].map((vibe, index) => (
+              {(isKids
+                ? ['Atmospheric', 'Light-hearted', 'Hopeful', 'Comedy', 'Fantasy', 'Family', 'Animation']
+                : ['Atmospheric', 'Intense', 'Light-hearted', 'Dark', 'Hopeful', 'Crime', 'Horror', 'Mystery', 'Romance', 'Comedy', 'Sci-Fi', 'Action', 'Adventure', 'Fantasy', 'Family', 'Animation']
+              ).map((vibe, index) => (
                 <button 
                   key={vibe} 
                   onClick={() => handleVibeClick(vibe)} 
