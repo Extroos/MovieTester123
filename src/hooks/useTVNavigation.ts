@@ -87,7 +87,9 @@ export function useTVNavigation() {
   }, []);
 
   useEffect(() => {
-    if (!tvMode) return;
+    // Enable D-pad navigation if tvMode is active OR if the first-run Display Experience Selector is active
+    const isFirstRunSelectorActive = typeof document !== 'undefined' && !!document.querySelector('button.tv-focusable');
+    if (!tvMode && !isFirstRunSelectorActive) return;
 
     rebuildCache();
 
