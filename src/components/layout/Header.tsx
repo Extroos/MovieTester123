@@ -40,10 +40,27 @@ function Header({
   activeNewsGenre = null,
   onBackNewsGenre,
 }: HeaderProps) {
-  const isTVMode = typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
+  const [isTVMode, setIsTVMode] = useState(() => {
+    if (typeof document !== 'undefined') {
+      return document.body.classList.contains('tv-mode');
+    }
+    return false;
+  });
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [isScrolled, setIsScrolled] = useState(false);
   const headerRef = React.useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      if (typeof document !== 'undefined') {
+        setIsTVMode(document.body.classList.contains('tv-mode'));
+      }
+    });
+    if (typeof document !== 'undefined') {
+      observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    }
+    return () => observer.disconnect();
+  }, []);
 
   const [downloadState, setDownloadState] = useState<DownloadState>(() => GlobalDownloader.getState());
 
