@@ -17,6 +17,17 @@ export interface Profile {
 
 const ACTIVE_PROFILE_KEY = 'watchmovie_active_profile_id';
 const DEFAULT_AVATAR = 'https://upload.wikimedia.org/wikipedia/commons/0/0b/Netflix-avatar.png'; // Fallback
+// Dynamic column cache to inspect schema layout and prevent console 400 Bad Request messages
+const ProfileColumnsCache = {
+  columns: new Set<string>(['id', 'user_id', 'name', 'avatar', 'is_kids']),
+  set(keys: string[]) {
+    this.columns = new Set(keys);
+  },
+  has(column: string): boolean {
+    return this.columns.has(column);
+  }
+};
+
 const TOTAL_LOCAL_AVATARS = 201;
 
 const getLocalGuestProfiles = (): Profile[] => {
