@@ -3,10 +3,10 @@ import { isTVMode } from '../utils/tv';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Focusable element cache — rebuilt by MutationObserver, NOT on every keypress.
-// This eliminates the critical O(N²) DOM scan that was firing on every D-pad event.
 // ─────────────────────────────────────────────────────────────────────────────
 let cachedFocusables: HTMLElement[] = [];
 let rebuildTimeout: any = null;
+let activeScrollAnimationId: number | null = null;
 
 function isElementFocusable(el: HTMLElement): boolean {
   if (el.closest('.login-preview-panel') || el.tagName.toLowerCase() === 'iframe') return false;
@@ -27,14 +27,56 @@ function scheduleRebuild() {
   rebuildTimeout = setTimeout(() => {
     rebuildCache();
     rebuildTimeout = null;
-  }, 150); // Debounce updates to batch multiple rapid DOM changes together
+  }, 40); // 40ms debounce to track style visibility swaps dynamically without lagging the D-pad
+}
+
+function findScrollContainer(el: HTMLElement): HTMLElement {
+  let parent = el.parentElement;
+  while (parent) {
+    if (
+      parent.classList.contains('home-container') ||
+      parent.classList.contains('tv-scroll-container') ||
+      parent.classList.contains('settings-container') ||
+      parent.classList.contains('profile-selector-container') ||
+      parent.classList.contains('downloads-container') ||
+      parent.style.overflowY === 'auto' ||
+      parent.style.overflowY === 'scroll'
+    ) {
+      return parent;
+    }
+    parent = parent.parentElement;
+  }
+  return document.documentElement;
+}
+
+function smoothScrollTo(container: HTMLElement, targetScrollTop: number, duration: number = 220) {
+  if (activeScrollAnimationId !== null) {
+    cancelAnimationFrame(activeScrollAnimationId);
+  }
+  
+  const start = container.scrollTop;
+  const change = targetScrollTop - start;
+  const startTime = performance.now();
+  
+  function animate(currentTime: number) {
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const ease = progress * (2 - progress); // EaseOutQuad
+    container.scrollTop = start + change * ease;
+    
+    if (progress < 1) {
+      activeScrollAnimationId = requestAnimationFrame(animate);
+    } else {
+      activeScrollAnimationId = null;
+    }
+  }
+  activeScrollAnimationId = requestAnimationFrame(animate);
 }
 
 export function useTVNavigation() {
   const [tvMode, setTvMode] = useState(() => isTVMode());
 
   useEffect(() => {
-    // Monitor document body changes to dynamically enable/disable TV D-pad mode
     const observer = new MutationObserver(() => {
       setTvMode(isTVMode());
     });
@@ -47,7 +89,6 @@ export function useTVNavigation() {
   useEffect(() => {
     if (!tvMode) return;
 
-    // Build initial focusable cache
     rebuildCache();
 
     const domObserver = new MutationObserver(() => scheduleRebuild());
@@ -55,11 +96,7 @@ export function useTVNavigation() {
       childList: true,
       subtree: true,
       attributes: true,
-      // NOTE: 'style' intentionally excluded — React updates inline styles on almost every
-      // render (dynamic colors, scroll positions, focus indicators), causing the cache to
-      // rebuild hundreds of times per second. Structural changes (class, tabindex, disabled)
-      // are sufficient to detect focusability changes.
-      attributeFilter: ['tabindex', 'disabled', 'class'],
+      attributeFilter: ['tabindex', 'disabled', 'class', 'style'],
     });
 
     const getActiveOverlay = (): Element | null => {
@@ -82,7 +119,6 @@ export function useTVNavigation() {
       const keys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
       if (!keys.includes(e.key)) return;
 
-      // When an overlay is active, restrict scope to elements inside it — rebuild synchronously
       const activeOverlay = getActiveOverlay();
       let focusableElements: HTMLElement[];
       if (activeOverlay) {
@@ -149,7 +185,6 @@ export function useTVNavigation() {
         const hasYOverlap = (rect.top <= activeRect.bottom && rect.bottom >= activeRect.top) ||
                             (activeRect.top <= rect.bottom && activeRect.bottom >= rect.top);
 
-        // Prevent moving into the header from body cards via left/right
         if (isHeaderEl(el) && !isActiveHeader && e.key !== 'ArrowUp') continue;
 
         const isTargetContentCard = el.classList.contains('movie-card') ||
@@ -203,38 +238,56 @@ export function useTVNavigation() {
           bestElement.classList.contains('cinemovie-header-search-btn');
 
         if (isHeroOrHeader) {
-          const scrollContainer = bestElement.closest('[style*="overflow-y: auto"]') || document.documentElement;
-          const startScrollTop = scrollContainer.scrollTop;
-          if (startScrollTop > 0) {
-            const duration = 250;
-            const startTime = performance.now();
-            const animateScroll = (currentTime: number) => {
-              const elapsed = currentTime - startTime;
-              const progress = Math.min(elapsed / duration, 1);
-              const easeProgress = progress * (2 - progress);
-              scrollContainer.scrollTop = startScrollTop * (1 - easeProgress);
-              if (progress < 1) requestAnimationFrame(animateScroll);
-            };
-            requestAnimationFrame(animateScroll);
-          }
+          const scrollContainer = findScrollContainer(bestElement);
+          smoothScrollTo(scrollContainer, 0, 200);
         } else {
-          // Defer to next frame — avoids blocking the current paint
-          requestAnimationFrame(() => {
-            bestElement!.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'auto' });
-          });
+          // Premium centered vertical scrolling at 42% viewport height for film rows/cards
+          const container = findScrollContainer(bestElement);
+          const containerRect = container.getBoundingClientRect();
+          const elRect = bestElement.getBoundingClientRect();
+          
+          const containerTop = container === document.documentElement ? 0 : containerRect.top;
+          const elOffsetTop = elRect.top - containerTop + container.scrollTop;
+          
+          const targetScrollTop = elOffsetTop - (container.clientHeight * 0.42) + (elRect.height / 2);
+          const maxScroll = container.scrollHeight - container.clientHeight;
+          const boundedTarget = Math.max(0, Math.min(maxScroll, targetScrollTop));
+          
+          smoothScrollTo(container, boundedTarget, 220);
         }
         e.preventDefault();
       }
     };
 
+    // Remote Click Safety Net: simulates .click() on focused element on Enter/Space
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        const activeEl = document.activeElement as HTMLElement | null;
+        if (activeEl && activeEl.classList.contains('tv-focusable')) {
+          const isButtonOrInput = activeEl.tagName === 'BUTTON' || activeEl.tagName === 'INPUT' || activeEl.tagName === 'A';
+          if (!isButtonOrInput) {
+            e.preventDefault();
+            e.stopPropagation();
+            activeEl.click();
+          }
+        }
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keypress', handleKeyPress);
+    
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keypress', handleKeyPress);
       domObserver.disconnect();
       cachedFocusables = [];
+      if (activeScrollAnimationId !== null) {
+        cancelAnimationFrame(activeScrollAnimationId);
+        activeScrollAnimationId = null;
+      }
     };
   }, [tvMode]);
 
   return { isTVMode: tvMode };
 }
-
