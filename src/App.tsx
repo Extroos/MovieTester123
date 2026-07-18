@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import Header from './components/layout/Header';
 import Hero from './components/features/home/Hero';
