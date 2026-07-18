@@ -214,7 +214,7 @@ export default function CategoryExplorer({ title, movies, onClose, onMovieClick 
 
   return (
     <motion.div
-      className="no-scrollbar"
+      className="no-scrollbar category-explorer-overlay"
       initial={{ y: '100%' }}
       animate={{ y: 0 }}
       exit={{ y: '100%' }}

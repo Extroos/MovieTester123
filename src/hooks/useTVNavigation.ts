@@ -104,6 +104,7 @@ export function useTVNavigation() {
     const getActiveOverlay = (): Element | null => {
       const activeDetails = document.querySelector('.movie-details-overlay, .tvshow-details-overlay');
       const activeSearch = document.querySelector('.search-overlay-container, .search-results-container');
+      const activeCategoryExplorer = document.querySelector('.category-explorer-overlay');
       const activeSettings = document.querySelector('.player-settings-overlay');
       const activeVideoPlayer = document.querySelector('.video-player-overlay');
       const activeSettingsContainer = document.querySelector('.tv-settings-container');
@@ -113,7 +114,7 @@ export function useTVNavigation() {
                           document.querySelector('[style*="z-index: 6000"]') ||
                           document.querySelector('[style*="z-index: 6001"]');
       return activeModal || activeSettings || activeVideoPlayer || activeActor ||
-             activeDetails || activeSearch || activeSettingsContainer ||
+             activeDetails || activeSearch || activeSettingsContainer || activeCategoryExplorer ||
              document.querySelector('[style*="z-index: 200000"], [style*="z-index: 100000"]');
     };
 
