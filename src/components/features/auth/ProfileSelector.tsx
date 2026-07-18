@@ -1436,158 +1436,130 @@ alter table profiles add column if not exists pin text check (pin ~ '^[0-9]{4}$'
                         }}
                       />
 
-                      {/* Kids Mode Checkbox Option */}
-                      <label style={{
+                      {/* Side-by-Side Premium Config Grid */}
+                      <div className="options-row-grid" style={{
                         display: 'flex',
-                        alignItems: 'center',
+                        flexDirection: 'row',
                         gap: '12px',
-                        cursor: 'pointer',
-                        padding: '12px 16px',
-                        background: 'rgba(255,255,255,0.03)',
-                        border: '1px solid rgba(255,255,255,0.05)',
-                        borderRadius: '14px',
-                        userSelect: 'none'
+                        width: '100%',
+                        flexWrap: 'wrap'
                       }}>
-                        <input
-                          type="checkbox"
-                          checked={newProfileIsKids}
-                          onChange={(e) => setNewProfileIsKids(e.target.checked)}
-                          style={{
-                            width: '20px',
-                            height: '20px',
-                            accentColor: '#ffffff',
-                            cursor: 'pointer'
-                          }}
-                        />
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                          <span style={{ color: '#fff', fontSize: '0.95rem', fontWeight: 700 }}>Kids Profile</span>
-                          <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.78rem' }}>Restrict this profile to family safe content</span>
-                        </div>
-                      </label>
-
-                      {/* Profile Lock Option */}
-                      <div style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '12px',
-                        background: 'rgba(255,255,255,0.03)',
-                        border: '1px solid rgba(255,255,255,0.05)',
-                        borderRadius: '14px',
-                        padding: '12px 16px'
-                      }}>
+                        {/* Kids Mode Config Block */}
                         <label style={{
+                          flex: '1 1 140px',
                           display: 'flex',
-                          alignItems: 'center',
-                          gap: '12px',
+                          flexDirection: 'column',
+                          gap: '10px',
                           cursor: 'pointer',
-                          userSelect: 'none'
+                          padding: '14px',
+                          background: newProfileIsKids ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.02)',
+                          border: newProfileIsKids ? '1.5px solid rgba(255,255,255,0.2)' : '1.5px solid rgba(255,255,255,0.05)',
+                          borderRadius: '16px',
+                          userSelect: 'none',
+                          transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                          boxShadow: newProfileIsKids ? '0 8px 20px rgba(255,255,255,0.03)' : 'none'
                         }}>
-                          <input
-                            type="checkbox"
-                            checked={newProfileHasPin}
-                            onChange={(e) => setNewProfileHasPin(e.target.checked)}
-                            style={{
-                              width: '20px',
-                              height: '20px',
-                              accentColor: '#ffffff',
-                              cursor: 'pointer'
-                            }}
-                          />
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                            <span style={{ color: '#fff', fontSize: '0.95rem', fontWeight: 700 }}>Profile Lock</span>
-                            <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.78rem' }}>Require a 4-digit PIN to access this profile</span>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                            <span style={{ color: '#fff', fontSize: '0.92rem', fontWeight: 800 }}>Kids Mode</span>
+                            <input
+                              type="checkbox"
+                              checked={newProfileIsKids}
+                              onChange={(e) => setNewProfileIsKids(e.target.checked)}
+                              style={{
+                                width: '18px',
+                                height: '18px',
+                                accentColor: '#ffffff',
+                                cursor: 'pointer',
+                                margin: 0
+                              }}
+                            />
                           </div>
+                          <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', lineHeight: '1.3' }}>
+                            Restrict content to safe family titles
+                          </span>
                         </label>
 
-                        {newProfileHasPin && (
-                          <div style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            gap: '12px',
-                            marginTop: '8px',
-                            paddingTop: '12px',
-                            borderTop: '1px solid rgba(255,255,255,0.06)'
-                          }}>
-                            {/* PIN Display indicators */}
-                            <div style={{ display: 'flex', gap: '12px' }}>
-                              {[0, 1, 2, 3].map((i) => (
-                                <div
-                                  key={i}
-                                  style={{
-                                    width: '12px',
-                                    height: '12px',
-                                    borderRadius: '50%',
-                                    border: '1.5px solid rgba(255,255,255,0.4)',
-                                    background: newProfilePin.length > i ? '#ffffff' : 'transparent',
-                                    boxShadow: newProfilePin.length > i ? '0 0 6px #fff' : 'none',
-                                    transition: 'all 0.1s ease'
-                                  }}
-                                />
-                              ))}
-                            </div>
+                        {/* Profile PIN Lock Config Block */}
+                        <div style={{
+                          flex: '1 1 140px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '10px',
+                          padding: '14px',
+                          background: newProfileHasPin ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.02)',
+                          border: newProfileHasPin ? '1.5px solid rgba(255,255,255,0.2)' : '1.5px solid rgba(255,255,255,0.05)',
+                          borderRadius: '16px',
+                          userSelect: 'none',
+                          transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                          boxShadow: newProfileHasPin ? '0 8px 20px rgba(255,255,255,0.03)' : 'none'
+                        }}>
+                          <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', cursor: 'pointer' }}>
+                            <span style={{ color: '#fff', fontSize: '0.92rem', fontWeight: 800 }}>Profile Lock</span>
+                            <input
+                              type="checkbox"
+                              checked={newProfileHasPin}
+                              onChange={(e) => setNewProfileHasPin(e.target.checked)}
+                              style={{
+                                width: '18px',
+                                height: '18px',
+                                accentColor: '#ffffff',
+                                cursor: 'pointer',
+                                margin: 0
+                              }}
+                            />
+                          </label>
+                          <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', lineHeight: '1.3' }}>
+                            Require 4-digit PIN on profile enter
+                          </span>
+                        </div>
+                      </div>
 
-                            {/* Custom 1-0 Numeric pad for setup without keyboard */}
-                            <div style={{
-                              display: 'grid',
-                              gridTemplateColumns: 'repeat(3, 1fr)',
-                              gap: '10px',
-                              maxWidth: '180px',
-                              width: '100%',
-                              marginTop: '8px'
-                            }}>
-                              {['1','2','3','4','5','6','7','8','9'].map((digit) => (
-                                <button
-                                  key={digit}
-                                  onClick={() => {
-                                    if (newProfilePin.length < 4) {
-                                      triggerHaptic('light');
-                                      setNewProfilePin(newProfilePin + digit);
-                                    }
-                                  }}
-                                  style={{
-                                    aspectRatio: '1/1',
-                                    borderRadius: '50%',
-                                    background: 'rgba(255,255,255,0.06)',
-                                    border: '1px solid rgba(255,255,255,0.08)',
-                                    color: '#fff',
-                                    fontSize: '1rem',
-                                    fontWeight: 700,
-                                    cursor: 'pointer',
-                                    outline: 'none',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center'
-                                  }}
-                                  className="pin-btn"
-                                >
-                                  {digit}
-                                </button>
-                              ))}
-                              
-                              <button
-                                onClick={() => {
-                                  triggerHaptic('medium');
-                                  setNewProfilePin('');
-                                }}
+                      {/* Expanded custom pin entry pad centered below if active */}
+                      {newProfileHasPin && (
+                        <div style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: '12px',
+                          width: '100%',
+                          background: 'rgba(255,255,255,0.02)',
+                          border: '1px solid rgba(255,255,255,0.06)',
+                          borderRadius: '16px',
+                          padding: '16px',
+                          boxSizing: 'border-box',
+                          animation: 'slideUpGlass 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+                        }}>
+                          <div style={{ display: 'flex', gap: '12px' }}>
+                            {[0, 1, 2, 3].map((i) => (
+                              <div
+                                key={i}
                                 style={{
-                                  background: 'transparent',
-                                  border: 'none',
-                                  color: 'rgba(255,255,255,0.4)',
-                                  fontSize: '0.72rem',
-                                  fontWeight: 800,
-                                  cursor: 'pointer',
-                                  outline: 'none'
+                                  width: '10px',
+                                  height: '10px',
+                                  borderRadius: '50%',
+                                  border: '1.5px solid rgba(255,255,255,0.4)',
+                                  background: newProfilePin.length > i ? '#ffffff' : 'transparent',
+                                  boxShadow: newProfilePin.length > i ? '0 0 6px #fff' : 'none',
+                                  transition: 'all 0.1s ease'
                                 }}
-                              >
-                                Clear
-                              </button>
+                              />
+                            ))}
+                          </div>
 
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(3, 1fr)',
+                            gap: '8px',
+                            maxWidth: '160px',
+                            width: '100%'
+                          }}>
+                            {['1','2','3','4','5','6','7','8','9'].map((digit) => (
                               <button
+                                key={digit}
                                 onClick={() => {
                                   if (newProfilePin.length < 4) {
                                     triggerHaptic('light');
-                                    setNewProfilePin(newProfilePin + '0');
+                                    setNewProfilePin(newProfilePin + digit);
                                   }
                                 }}
                                 style={{
@@ -1596,7 +1568,7 @@ alter table profiles add column if not exists pin text check (pin ~ '^[0-9]{4}$'
                                   background: 'rgba(255,255,255,0.06)',
                                   border: '1px solid rgba(255,255,255,0.08)',
                                   color: '#fff',
-                                  fontSize: '1rem',
+                                  fontSize: '0.9rem',
                                   fontWeight: 700,
                                   cursor: 'pointer',
                                   outline: 'none',
@@ -1606,39 +1578,83 @@ alter table profiles add column if not exists pin text check (pin ~ '^[0-9]{4}$'
                                 }}
                                 className="pin-btn"
                               >
-                                0
+                                {digit}
                               </button>
+                            ))}
+                            
+                            <button
+                              onClick={() => {
+                                triggerHaptic('medium');
+                                setNewProfilePin('');
+                              }}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'rgba(255,255,255,0.4)',
+                                fontSize: '0.65rem',
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                                outline: 'none'
+                              }}
+                            >
+                              Clear
+                            </button>
 
-                              <button
-                                onClick={() => {
-                                  if (newProfilePin.length > 0) {
-                                    triggerHaptic('medium');
-                                    setNewProfilePin(newProfilePin.slice(0, -1));
-                                  }
-                                }}
-                                style={{
-                                  background: 'transparent',
-                                  border: 'none',
-                                  color: '#fff',
-                                  cursor: 'pointer',
-                                  outline: 'none',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center'
-                                }}
-                              >
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                  <path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/>
-                                  <line x1="18" y1="9" x2="12" y2="15"/>
-                                  <line x1="12" y1="9" x2="18" y2="15"/>
-                                </svg>
-                              </button>
-                            </div>
+                            <button
+                              onClick={() => {
+                                if (newProfilePin.length < 4) {
+                                  triggerHaptic('light');
+                                  setNewProfilePin(newProfilePin + '0');
+                                }
+                              }}
+                              style={{
+                                aspectRatio: '1/1',
+                                borderRadius: '50%',
+                                background: 'rgba(255,255,255,0.06)',
+                                border: '1px solid rgba(255,255,255,0.08)',
+                                color: '#fff',
+                                fontSize: '0.9rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                outline: 'none',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}
+                              className="pin-btn"
+                            >
+                              0
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                if (newProfilePin.length > 0) {
+                                  triggerHaptic('medium');
+                                  setNewProfilePin(newProfilePin.slice(0, -1));
+                                }
+                              }}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: '#fff',
+                                cursor: 'pointer',
+                                outline: 'none',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                <path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/>
+                                <line x1="18" y1="9" x2="12" y2="15"/>
+                                <line x1="12" y1="9" x2="18" y2="15"/>
+                              </svg>
+                            </button>
                           </div>
-                        )}
+                        </div>
+                      )}
                       </div>
                     </div>
-                  </div>
 
                   {/* Right Column: Avatar Choices Grid */}
                   <div className="add-profile-right-col" style={{
