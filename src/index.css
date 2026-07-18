@@ -1819,9 +1819,9 @@ button.tv-focusable:focus-visible {
 }
 
 /* Disable focus scale, borders, and box shadow on TV search input */
-body.tv-mode input.tv-focusable:focus,
-body.tv-mode input.tv-focusable:focus-within,
-body.tv-mode input.tv-focusable:focus-visible {
+body.tv-mode input.tv-focusable:not(.login-input-optimized):focus,
+body.tv-mode input.tv-focusable:not(.login-input-optimized):focus-within,
+body.tv-mode input.tv-focusable:not(.login-input-optimized):focus-visible {
   transform: none !important;
   box-shadow: none !important;
   border-color: transparent !important;
