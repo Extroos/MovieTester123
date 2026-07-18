@@ -9,6 +9,16 @@ export interface MyListItem extends Movie, TVShow {
 
 const isGuest = () => localStorage.getItem('cinemovie_is_guest') === 'true';
 
+// Memory cache to avoid querying Supabase repeatedly
+const myListCache = new Map<string, MyListItem[]>();
+
+// Listen for profile changes to bust the cache when switching profiles
+if (typeof window !== 'undefined') {
+  window.addEventListener('profileChanged', () => {
+    myListCache.clear();
+  });
+}
+
 function getLocalMyList(profileId: string): MyListItem[] {
   try {
     const raw = localStorage.getItem(`cinemovie_guest_mylist_${profileId}`);
@@ -33,6 +43,11 @@ export async function getMyList(): Promise<MyListItem[]> {
       return getLocalMyList(profile.id);
     }
 
+    // Check memory cache first to eliminate DB reads
+    if (myListCache.has(profile.id)) {
+      return myListCache.get(profile.id) || [];
+    }
+
     const { data, error } = await supabase
       .from('my_list')
       .select('*')
@@ -44,7 +59,7 @@ export async function getMyList(): Promise<MyListItem[]> {
       return [];
     }
 
-    return data.map((item: any) => {
+    const mapped = data.map((item: any) => {
       const itemData = item.data || {};
       return {
         ...itemData,
@@ -52,6 +67,9 @@ export async function getMyList(): Promise<MyListItem[]> {
         status: itemData.status || item.status || 'plan_to_watch'
       };
     });
+
+    myListCache.set(profile.id, mapped);
+    return mapped;
   } catch (error) {
     console.error('Error reading My List:', error);
     return [];
@@ -68,11 +86,12 @@ export async function addToMyList(item: Movie | TVShow): Promise<boolean> {
     if (isGuest()) {
       const list = getLocalMyList(profile.id);
       if (list.some(i => i.id === item.id && i.mediaType === type)) return true;
-      list.push({
+      const newItem = {
         ...item,
         mediaType: type,
         status: 'plan_to_watch'
-      } as any);
+      } as any;
+      list.push(newItem);
       saveLocalMyList(profile.id, list);
       return true;
     }
@@ -93,9 +112,21 @@ export async function addToMyList(item: Movie | TVShow): Promise<boolean> {
       }, { onConflict: 'profile_id,movie_id,type' });
 
     if (error) {
-        console.error('Error adding to My List:', error);
-        return false;
+      console.error('Error adding to My List:', error);
+      return false;
     }
+
+    // Optimistically update cache
+    const cached = myListCache.get(profile.id) || [];
+    if (!cached.some(i => i.id === item.id && i.mediaType === type)) {
+      const newItem: MyListItem = {
+        ...item,
+        mediaType: type,
+        status: 'plan_to_watch'
+      } as any;
+      myListCache.set(profile.id, [newItem, ...cached]);
+    }
+
     return true;
   } catch (error) {
     console.error('Error adding to My List:', error);
@@ -175,6 +206,17 @@ export async function updateListItemStatus(itemId: number, type: 'movie' | 'tv',
       console.error('Error updating My List status via insert:', error);
       return false;
     }
+
+    // Update memory cache
+    const cached = myListCache.get(profile.id);
+    if (cached) {
+      const index = cached.findIndex(i => Number(i.id) === Number(itemId) && i.mediaType === actualType);
+      if (index !== -1) {
+        cached[index].status = status as any;
+        myListCache.set(profile.id, [...cached]);
+      }
+    }
+
     return true;
   } catch (error) {
     console.error('Error updating My List status:', error);
@@ -205,6 +247,14 @@ export async function removeFromMyList(itemId: number, type: 'movie' | 'tv'): Pr
       console.error('Error removing from My List:', error);
       return false;
     }
+
+    // Update cache
+    const cached = myListCache.get(profile.id);
+    if (cached) {
+      const filtered = cached.filter(i => !(Number(i.id) === Number(itemId) && i.mediaType === type));
+      myListCache.set(profile.id, filtered);
+    }
+
     return true;
   } catch (error) {
      console.error('Error removing from My List:', error);
@@ -222,19 +272,13 @@ export async function isInMyList(itemId: number, type: 'movie' | 'tv'): Promise<
       return list.some(i => Number(i.id) === Number(itemId) && i.mediaType === type);
     }
 
-    const { data, error } = await supabase
-      .from('my_list')
-      .select('id')
-      .eq('profile_id', profile.id)
-      .eq('movie_id', Number(itemId))
-      .eq('type', type)
-      .maybeSingle();
-
-    if (error && error.code !== 'PGRST116') { 
-        return false;
+    // Serve from cache if list has been loaded. If not loaded, fetch list to seed cache
+    if (!myListCache.has(profile.id)) {
+      await getMyList();
     }
-
-    return !!data;
+    
+    const cached = myListCache.get(profile.id) || [];
+    return cached.some(i => Number(i.id) === Number(itemId) && i.mediaType === type);
   } catch (error) {
     console.error('Error checking My List:', error);
     return false;
@@ -256,7 +300,11 @@ export async function clearMyList(): Promise<boolean> {
       .delete()
       .eq('profile_id', profile.id);
 
-    return !error;
+    if (!error) {
+      myListCache.set(profile.id, []);
+      return true;
+    }
+    return false;
   } catch (error) {
     console.error('Error clearing My List:', error);
     return false;

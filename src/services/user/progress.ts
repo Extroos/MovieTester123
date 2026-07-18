@@ -88,7 +88,7 @@ const enqueueProgress = (entry: OfflineProgressEntry) => {
   const queue = readOfflineQueue();
   queue.push(entry);
   writeOfflineQueue(queue);
-  if (DEBUG) console.log(`[Progress] Queued offline save for item ${entry.itemId} (queue size: ${queue.length + 1})`);
+  if (DEBUG) console.log(`[Progress] Queued offline save for item ${entry.itemId} (queue size: ${queue.length})`);
 };
 
 export interface WatchProgress {
@@ -103,6 +103,60 @@ export interface WatchProgress {
   episode?: number;
 }
 
+// ─── Watch Progress Memory Cache ──────────────────────────────────────────
+// Caches all progress entries for the active profile to reduce database reads to 0.
+const progressCache = new Map<string, WatchProgress>();
+const cacheLoadedProfiles = new Set<string>();
+
+// Bust progress cache on profile changes
+if (typeof window !== 'undefined') {
+  window.addEventListener('profileChanged', () => {
+    progressCache.clear();
+    cacheLoadedProfiles.clear();
+  });
+}
+
+// Pre-fetch all watch progress entries in a single select query for the active profile
+async function ensureProgressCacheLoaded(profileId: string) {
+  if (isGuest()) return;
+  if (cacheLoadedProfiles.has(profileId)) return;
+  
+  try {
+    if (DEBUG) console.log(`[Progress] Pre-fetching all progress rows for profile ${profileId}...`);
+    const { data, error } = await supabase
+      .from('watch_progress')
+      .select('*')
+      .eq('profile_id', profileId)
+      .neq('type', 'stats');
+
+    if (error) {
+      console.error('[Progress] Failed to prefetch watch progress:', error);
+      return;
+    }
+
+    if (data) {
+      data.forEach((row: any) => {
+        const key = `${profileId}::${row.item_id}::${row.type}`;
+        progressCache.set(key, {
+          id: row.id,
+          type: row.type,
+          itemId: row.item_id,
+          progress: row.progress,
+          duration: row.duration,
+          timestamp: new Date(row.last_watched).getTime(),
+          data: row.data,
+          season: row.season_number,
+          episode: row.episode_number
+        });
+      });
+    }
+    cacheLoadedProfiles.add(profileId);
+    if (DEBUG) console.log(`[Progress] Successfully cached ${data?.length || 0} entries for profile ${profileId}`);
+  } catch (e) {
+    console.error('[Progress] Prefetch error:', e);
+  }
+}
+
 export const WatchProgressService = {
   // In-flight dedup: prevents parallel Supabase upserts for the same (itemId, type)
   _inflight: new Set<string>(),
@@ -115,9 +169,7 @@ export const WatchProgressService = {
     }
 
     // Minimum threshold: Don't save if it's just the start (unless it is a resume update?)
-    // Note: If duration is 0 (unknown), we accept the heartbeat as valid only if it's not the initial 0-second save
-    if (duration > 0 && progress < 1) { // Lowered to 1s for testing
-        // console.log('[Progress] Skipping save: progress too small', progress);
+    if (duration > 0 && progress < 1) {
         return; 
     }
     
@@ -126,85 +178,14 @@ export const WatchProgressService = {
                          (item.origin_country?.includes('JP') || item.originCountry?.includes('JP')));
     const type = isAnimeShow ? 'anime' : ((item as any).name ? 'tv' : 'movie'); 
 
-    // Throttle: at most one save every 30 seconds per item (unless completion)
-    const throttleKey = `${item.id}::${type}`;
-    const now = Date.now();
-    const lastSaved = WatchProgressService._lastSaved.get(throttleKey) || 0;
-    const isComplete = duration > 0 && progress / duration > 0.90;
-    if (now - lastSaved < 30000 && progress > 0 && !isComplete) {
-      return;
-    }
-    WatchProgressService._lastSaved.set(throttleKey, now);
-
-    // In-flight deduplication: skip if a save for this exact item is already in progress
-    const flightKey = `${item.id}::${type}`;
-    if (WatchProgressService._inflight.has(flightKey)) return;
-    WatchProgressService._inflight.add(flightKey);
-
-    try {
-      // If watched > 90%, remove from continue watching
-      if (duration > 0 && progress / duration > 0.90) {
-        if (type === 'tv' && season !== undefined && episode !== undefined && episode < 99) {
-          if (DEBUG) console.log(`[Progress] TV Episode S${season}:E${episode} completed (>90%). Advancing to E${episode + 1}`);
-          const profile = ProfileService.getActiveProfile();
-          if (profile) {
-            if (isGuest()) {
-              const list = getLocalProgress(profile.id);
-              const filtered = list.filter(i => !(i.item_id === item.id.toString() && i.type === type));
-              filtered.push({
-                profile_id: profile.id,
-                item_id: item.id.toString(),
-                type,
-                progress: 0,
-                duration: 0,
-                season_number: season,
-                episode_number: episode + 1,
-                last_watched: new Date().toISOString(),
-                data: item
-              });
-              saveLocalProgress(profile.id, filtered);
-            } else {
-              try {
-                await supabase
-                  .from('watch_progress')
-                  .upsert({
-                    profile_id: profile.id,
-                    item_id: item.id.toString(),
-                    type,
-                    progress: 0,
-                    duration: 0,
-                    season_number: season,
-                    episode_number: episode + 1,
-                    last_watched: new Date().toISOString(),
-                    data: item
-                  }, { onConflict: 'profile_id,item_id,type' });
-              } catch (e) {
-                console.error('[Progress] Exception advancing TV show:', e);
-              }
-            }
-          }
-          return;
-        } else {
-          console.log('[Progress] Removing finished item:', item.id);
-          await WatchProgressService.removeProgress(item.id, type);
-          return;
-        }
-      }
-    } catch (e) {
-      console.error('[Progress] Exception in saveProgress:', e);
-    } finally {
-      WatchProgressService._inflight.delete(flightKey);
-    }
-
     const profile = ProfileService.getActiveProfile();
     if (!profile) {
       console.error('[Progress] No active profile for saving');
       return;
     }
 
-    await StatsService.trackProgressUpdate(profile.id, item, progress, duration, season, episode);
-
     const itemType = type as 'movie' | 'tv' | 'anime';
+    const cacheKey = `${profile.id}::${item.id}::${itemType}`;
     const payload = {
       profile_id: profile.id,
       item_id: item.id.toString(),
@@ -217,6 +198,19 @@ export const WatchProgressService = {
       data: item
     };
 
+    // 1. Update memory cache immediately so UI gets updated instantly
+    progressCache.set(cacheKey, {
+      id: cacheKey,
+      type: itemType,
+      itemId: item.id.toString(),
+      progress: Math.round(progress),
+      duration: Math.round(duration),
+      timestamp: Date.now(),
+      data: item,
+      season,
+      episode
+    });
+
     if (isGuest()) {
       const list = getLocalProgress(profile.id);
       const filtered = list.filter(i => !(i.item_id === item.id.toString() && i.type === itemType));
@@ -225,24 +219,72 @@ export const WatchProgressService = {
       return;
     }
 
-    // If device is offline, queue immediately without attempting Supabase
-    if (!navigator.onLine) {
-      enqueueProgress({
-        profileId: profile.id,
-        itemId: item.id.toString(),
-        type: itemType,
-        progress: Math.round(progress),
-        duration: Math.round(duration),
-        seasonNumber: season,
-        episodeNumber: episode,
-        lastWatched: payload.last_watched,
-        data: item,
-        queuedAt: Date.now()
-      });
+    // Throttle checks: save to DB at most once every 60 seconds (instead of 30)
+    const throttleKey = `${item.id}::${type}`;
+    const now = Date.now();
+    const lastSaved = WatchProgressService._lastSaved.get(throttleKey) || 0;
+    const isComplete = duration > 0 && progress / duration > 0.90;
+    const isForceSave = isComplete || (progress === 0 && duration === 0); // e.g. pause or stop heartbeat
+
+    if (now - lastSaved < 60000 && !isForceSave) {
+      // Skips Supabase REST payload, serving from local cache only
       return;
     }
+    WatchProgressService._lastSaved.set(throttleKey, now);
+
+    // In-flight deduplication: skip if a save for this exact item is already in progress
+    const flightKey = `${item.id}::${type}`;
+    if (WatchProgressService._inflight.has(flightKey)) return;
+    WatchProgressService._inflight.add(flightKey);
 
     try {
+      // If watched > 90%, remove from continue watching
+      if (duration > 0 && progress / duration > 0.90) {
+        progressCache.delete(cacheKey); // Remove from cached lists
+        if (type === 'tv' && season !== undefined && episode !== undefined && episode < 99) {
+          if (DEBUG) console.log(`[Progress] TV Episode S${season}:E${episode} completed (>90%). Advancing to E${episode + 1}`);
+          try {
+            await supabase
+              .from('watch_progress')
+              .upsert({
+                profile_id: profile.id,
+                item_id: item.id.toString(),
+                type,
+                progress: 0,
+                duration: 0,
+                season_number: season,
+                episode_number: episode + 1,
+                last_watched: new Date().toISOString(),
+                data: item
+              }, { onConflict: 'profile_id,item_id,type' });
+          } catch (e) {
+            console.error('[Progress] Exception advancing TV show:', e);
+          }
+        } else {
+          console.log('[Progress] Removing finished item:', item.id);
+          await WatchProgressService.removeProgress(item.id, type);
+        }
+        return;
+      }
+
+      await StatsService.trackProgressUpdate(profile.id, item, progress, duration, season, episode);
+
+      if (!navigator.onLine) {
+        enqueueProgress({
+          profileId: profile.id,
+          itemId: item.id.toString(),
+          type: itemType,
+          progress: Math.round(progress),
+          duration: Math.round(duration),
+          seasonNumber: season,
+          episodeNumber: episode,
+          lastWatched: payload.last_watched,
+          data: item,
+          queuedAt: Date.now()
+        });
+        return;
+      }
+
       if (DEBUG) console.log(`[Progress] Saving ${itemType} ${item.id} (${progress}/${duration})`);
       const { error } = await supabase
         .from('watch_progress')
@@ -277,15 +319,13 @@ export const WatchProgressService = {
         data: item,
         queuedAt: Date.now()
       });
+    } finally {
+      WatchProgressService._inflight.delete(flightKey);
     }
   },
 
-  /**
-   * Flushes all queued offline progress saves to Supabase.
-   * Call this when the device regains internet connectivity.
-   */
   syncOfflineQueue: async (): Promise<void> => {
-    if (isGuest()) return; // Guests do not sync with Supabase
+    if (isGuest()) return;
     let queue = readOfflineQueue();
     if (queue.length === 0) return;
 
@@ -312,7 +352,6 @@ export const WatchProgressService = {
 
         if (error) {
           console.warn(`[Progress] Sync failed for ${entry.itemId}, will retry later:`, error.message);
-          // If RLS violation (e.g. stale entries from a previous session/profile), discard from queue immediately
           if (error.code === '42501' || error.message.toLowerCase().includes('row-level security')) {
             success = true;
           }
@@ -338,7 +377,6 @@ export const WatchProgressService = {
     }
   },
 
-  /** Returns the number of progress entries currently queued for offline sync. */
   getOfflineQueueLength: (): number => isGuest() ? 0 : readOfflineQueue().length,
 
   getProgress: async (id: number | string, type: 'movie' | 'tv' | 'anime'): Promise<WatchProgress | null> => {
@@ -364,31 +402,16 @@ export const WatchProgressService = {
         };
       }
 
-      const { data, error } = await supabase
-        .from('watch_progress')
-        .select('*')
-        .eq('profile_id', profile.id)
-        .eq('item_id', id.toString()) // Compare as string
-        .eq('type', type) 
-        .maybeSingle();
-        
-      if (error) console.error('[Progress] Fetch Error:', error);
-      if (!data) return null;
+      // 1. Ensure cache is loaded
+      await ensureProgressCacheLoaded(profile.id);
 
-      // Filter out insignificant progress (e.g. < 1s) to be safe
-      if (data.progress < 1 && data.duration > 0) return null;
+      // 2. Fetch directly from cache
+      const cachedKey = `${profile.id}::${id}::${type}`;
+      const cached = progressCache.get(cachedKey);
+      if (!cached) return null;
 
-      return {
-          id: data.id,
-          type: data.type,
-          itemId: data.item_id,
-          progress: data.progress,
-          duration: data.duration,
-          timestamp: new Date(data.last_watched).getTime(),
-          data: data.data,
-          season: data.season_number,
-          episode: data.episode_number
-      };
+      if (cached.progress < 1 && cached.duration > 0) return null;
+      return cached;
     } catch (e) {
       console.error('[Progress] Exception get:', e);
       return null;
@@ -443,62 +466,55 @@ export const WatchProgressService = {
         return result as (Movie | TVShow)[];
       }
 
-      if (DEBUG) console.log('[Progress] Fetching continue watching...');
-      const { data, error } = await supabase
-        .from('watch_progress')
-        .select('*')
-        .eq('profile_id', profile.id)
-        .neq('type', 'stats')
-        .gt('last_watched', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()) // Last 30 days only
-        .order('last_watched', { ascending: false });
+      // 1. Ensure cache is loaded
+      await ensureProgressCacheLoaded(profile.id);
 
-      if (error) {
-          console.error('[Progress] Fetch Error:', error);
-          return [];
-      }
+      // 2. Fetch all entries from the local memory cache
+      const profilePrefix = `${profile.id}::`;
+      const cachedList = Array.from(progressCache.values())
+        .filter(item => {
+          const key = `${profile.id}::${item.itemId}::${item.type}`;
+          const exists = progressCache.has(key);
+          const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+          return exists && item.timestamp > thirtyDaysAgo;
+        })
+        .sort((a, b) => b.timestamp - a.timestamp);
 
-      if (DEBUG) console.log(`[Progress] Found ${data?.length} raw items`, data);
-
-      // DEBUG: Remove strict filtering to verify saving
-      const result = data
-        // .filter((item: any) => item.data && (item.progress >= 1 || !item.duration)) 
-        .map((item: any) => {
+      const result = cachedList
+        .map((item: WatchProgress) => {
             if (!item.data) return null;
             const raw = item.data;
             
-            // Unpack complex Anime title if present (AniList format)
             if (raw.title && typeof raw.title === 'object') {
                 return {
                     ...raw,
-                    original_title: raw.title, // keep original
+                    original_title: raw.title,
                     title: raw.title.userPreferred || raw.title.english || raw.title.romaji || 'Anime',
-                    // Shotgun approach to ensure ContentRow finds the image
                     poster_path: raw.coverImage?.large || raw.coverImage?.extraLarge || raw.image || raw.poster_path || raw.bannerImage || raw.img || raw.thumbnail || raw.picture,
                     posterPath: raw.coverImage?.large || raw.coverImage?.extraLarge || raw.image || raw.poster_path || raw.bannerImage || raw.img || raw.thumbnail || raw.picture,
                     image: raw.coverImage?.large || raw.coverImage?.extraLarge || raw.image || raw.poster_path || raw.bannerImage || raw.img || raw.thumbnail || raw.picture,
                     mediaType: 'anime',
-                    id: item.item_id || raw.id, // Ensure ID is from row or data
-                    watchedAt: new Date(item.last_watched).getTime(), // Append timestamp
+                    id: item.itemId,
+                    watchedAt: item.timestamp,
                     progress: item.progress,
                     duration: item.duration,
-                    season: item.season_number,
-                    episode: item.episode_number
+                    season: item.season,
+                    episode: item.episode
                 };
             }
-            // Ensure ID is string for movies/tv if needed, but usually number
             return { 
                 ...raw, 
-                id: item.item_id || raw.id,
-                watchedAt: new Date(item.last_watched).getTime(), // Append timestamp
+                id: item.itemId,
+                watchedAt: item.timestamp,
                 progress: item.progress,
                 duration: item.duration,
-                season: item.season_number,
-                episode: item.episode_number
+                season: item.season,
+                episode: item.episode
             } as (Movie | TVShow);
         })
         .filter((item: any) => item !== null);
         
-      if (DEBUG) console.log(`[Progress] Returning ${result.length} valid items`);
+      if (DEBUG) console.log(`[Progress] Returning ${result.length} valid cached items`);
       return result;
     } catch (e) {
       console.error('[Progress] Exception list:', e);
@@ -511,47 +527,15 @@ export const WatchProgressService = {
       const profile = ProfileService.getActiveProfile();
       if (!profile) return [];
 
-      if (isGuest()) {
-        const list = getLocalProgress(profile.id);
-        const sorted = list.sort((a, b) => new Date(b.last_watched).getTime() - new Date(a.last_watched).getTime());
-        const sliced = sorted.slice(page * limit, (page + 1) * limit);
-        return sliced.map((item: any) => ({
-          id: item.item_id,
-          type: item.type,
-          itemId: item.item_id,
-          progress: item.progress,
-          duration: item.duration,
-          timestamp: new Date(item.last_watched).getTime(),
-          data: item.data,
-          season: item.season_number,
-          episode: item.episode_number
-        }));
-      }
+      // 1. Ensure cache is loaded
+      await ensureProgressCacheLoaded(profile.id);
 
-      const { data, error } = await supabase
-        .from('watch_progress')
-        .select('*')
-        .eq('profile_id', profile.id)
-        .neq('type', 'stats')
-        .order('last_watched', { ascending: false })
-        .range(page * limit, (page + 1) * limit - 1);
+      // 2. Paginate from local cache
+      const cached = Array.from(progressCache.values())
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(page * limit, (page + 1) * limit);
 
-      if (error) {
-        console.error('Error fetching watch history:', error);
-        return [];
-      }
-
-      return data.map((item: any) => ({
-        id: item.item_id,
-        type: item.type,
-        itemId: item.item_id,
-        progress: item.progress,
-        duration: item.duration,
-        timestamp: new Date(item.last_watched).getTime(),
-        data: item.data,
-        season: item.season_number,
-        episode: item.episode_number
-      }));
+      return cached;
     } catch (e) {
       console.error('Error fetching watch history', e);
       return [];
@@ -559,51 +543,16 @@ export const WatchProgressService = {
   },
 
   getAll: async (): Promise<Record<string, WatchProgress>> => {
-      // Used for quick synced checks
        try {
         const profile = ProfileService.getActiveProfile();
         if (!profile) return {};
   
-        if (isGuest()) {
-          const list = getLocalProgress(profile.id);
-          const map: Record<string, WatchProgress> = {};
-          list.forEach((item: any) => {
-             map[item.item_id] = {
-                id: item.item_id,
-                type: item.type,
-                itemId: item.item_id,
-                progress: item.progress,
-                duration: item.duration,
-                timestamp: new Date(item.last_watched).getTime(),
-                data: item.data,
-                season: item.season_number,
-                episode: item.episode_number
-             };
-          });
-          return map;
-        }
+        // 1. Ensure cache is loaded
+        await ensureProgressCacheLoaded(profile.id);
 
-        const { data } = await supabase
-          .from('watch_progress')
-          .select('*')
-          .eq('profile_id', profile.id)
-          .neq('type', 'stats');
-          
-        if (!data) return {};
-        
         const map: Record<string, WatchProgress> = {};
-        data.forEach((item: any) => {
-           map[item.item_id] = {
-              id: item.item_id,
-              type: item.type,
-              itemId: item.item_id,
-              progress: item.progress,
-              duration: item.duration,
-              timestamp: new Date(item.last_watched).getTime(),
-              data: item.data,
-              season: item.season_number,
-              episode: item.episode_number
-           };
+        progressCache.forEach((item) => {
+          map[item.itemId] = item;
         });
         return map;
       } catch {
@@ -615,6 +564,9 @@ export const WatchProgressService = {
     try {
       const profile = ProfileService.getActiveProfile();
       if (!profile) return;
+
+      const cacheKey = `${profile.id}::${id}::${type}`;
+      progressCache.delete(cacheKey);
 
       if (isGuest()) {
         const list = getLocalProgress(profile.id);
@@ -640,6 +592,8 @@ export const WatchProgressService = {
     try {
       const profile = ProfileService.getActiveProfile();
       if (!profile) return false;
+
+      progressCache.clear();
 
       if (isGuest()) {
         saveLocalProgress(profile.id, []);
