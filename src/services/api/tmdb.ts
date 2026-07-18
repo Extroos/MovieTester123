@@ -22,19 +22,26 @@ const MAX_RETRIES = 3;
 const INITIAL_BACKOFF = 300; // ms
 
 import { withRetry } from '../../utils/resilience';
-import { ProfileService } from '../user/profiles';
+
 
 // Request deduplication & SWR tracking
 const pendingRequests = new Map<string, Promise<any>>();
 const activeSubscriptions = new Map<string, Set<(data: any) => void>>();
 
 async function fetchFromApi<T>(path: string, params: Record<string, string | number> = {}, ttl: number = DEFAULT_TTL, signal?: AbortSignal): Promise<T> {
-  // Check if active profile is a Kids Profile
+  // Check if active profile is a Kids Profile via direct localStorage reading to avoid circular imports
   let isKids = false;
   try {
-    const activeProfile = ProfileService.getActiveProfile();
-    isKids = activeProfile?.isKids === true;
-  } catch (e) {}
+    if (typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem('watchmovie_active_profile_cache');
+      if (stored) {
+        const activeProfile = JSON.parse(stored);
+        isKids = activeProfile?.isKids === true;
+      }
+    }
+  } catch (e) {
+    console.error('localStorage active profile parsing error:', e);
+  }
 
   // Inject Kids Mode API parameters for discover/search endpoints
   if (isKids && (path.includes('/discover') || path.includes('/search'))) {

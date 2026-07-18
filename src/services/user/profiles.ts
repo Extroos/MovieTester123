@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase';
+import { CacheService } from '../core/cache';
 
 export interface Profile {
   id: string;

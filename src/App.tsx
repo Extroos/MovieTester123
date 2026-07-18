@@ -1452,7 +1452,7 @@ export default function App() {
                       </div>
                     ) : (
                       <>
-                        <Hero movie={heroMovie} isActive={currentView === 'home'} onPlayClick={() => setSelectedMovie(heroMovie)} onInfoClick={() => setSelectedMovie(heroMovie)} />
+                        <Hero movie={activeProfile?.isKids ? (filterKids(trending).length > 0 ? filterKids(trending)[0] : null) : heroMovie} isActive={currentView === 'home'} onPlayClick={() => setSelectedMovie(heroMovie)} onInfoClick={() => setSelectedMovie(heroMovie)} />
                         <div style={{ 
                           position: 'relative', 
                           marginTop: '-6rem', 
@@ -1485,7 +1485,7 @@ export default function App() {
                               <ContentRow 
                                 key={`progress-row-${homeActiveProgressTab}`}
                                 title={homeActiveProgressTab === 'continue' ? t('continue_watching') : t('what_were_watching')}
-                                movies={homeActiveProgressTab === 'continue' ? continueWatching : friendActivityItems} 
+                                movies={filterKids(homeActiveProgressTab === 'continue' ? continueWatching : friendActivityItems)} 
                                 onMovieClick={handleMovieClick} 
                                 onReaction={homeActiveProgressTab === 'friends' ? handleActivityReaction : undefined}
                                 onSeeAll={getSeeAllCallback('home-continue', homeActiveProgressTab === 'continue' ? t('continue_watching') : t('what_were_watching'), homeActiveProgressTab === 'continue' ? continueWatching : friendActivityItems)}
@@ -1512,7 +1512,7 @@ export default function App() {
                                 return (
                                   <ContentRow 
                                     title={t('trending_now')}
-                                    movies={combinedTrending}
+                                    movies={filterKids(combinedTrending)}
                                     onMovieClick={(item: any) => {
                                       if (item.firstAirDate || item.name) {
                                         handleTVShowClick(item);
@@ -1527,7 +1527,7 @@ export default function App() {
                               return (
                                 <ContentRow 
                                   title={t('trending_now')}
-                                  movies={homeActiveTrendingTab === 'movies' ? trending : trendingTV} 
+                                  movies={filterKids(homeActiveTrendingTab === 'movies' ? trending : trendingTV)} 
                                   onMovieClick={homeActiveTrendingTab === 'movies' ? handleMovieClick : handleTVShowClick}
                                   onSeeAll={getSeeAllCallback('home-trending', t('trending_now'), homeActiveTrendingTab === 'movies' ? trending : trendingTV)}
                                   tabs={[
@@ -1542,7 +1542,7 @@ export default function App() {
                             {topPicks.length > 0 && (
                               <ContentRow 
                                 title={t('top_picks_for_you')} 
-                                movies={topPicks} 
+                                movies={filterKids(topPicks)} 
                                 onMovieClick={handleMovieClick} 
                                 onSeeAll={getSeeAllCallback('home-toppicks', t('top_picks_for_you'), topPicks)}
                               />
@@ -1550,7 +1550,7 @@ export default function App() {
                             {popular.length > 0 && ( 
                                 <ContentRow 
                                   title={t('popular_movies')} 
-                                  movies={popular} 
+                                  movies={filterKids(popular)} 
                                   onMovieClick={handleMovieClick} 
                                   onSeeAll={getSeeAllCallback('home-popular', t('popular_movies'), popular)}
                                 /> 
@@ -1558,7 +1558,7 @@ export default function App() {
                             {topRated.length > 0 && ( 
                                 <ContentRow 
                                   title={t('top_rated')} 
-                                  movies={topRated} 
+                                  movies={filterKids(topRated)} 
                                   onMovieClick={handleMovieClick} 
                                   onSeeAll={getSeeAllCallback('home-toprated', t('top_rated'), topRated)}
                                 /> 
@@ -1566,7 +1566,7 @@ export default function App() {
                             {action.length > 0 && ( 
                                 <ContentRow 
                                   title={t('trending_action')} 
-                                  movies={action} 
+                                  movies={filterKids(action)} 
                                   onMovieClick={handleMovieClick} 
                                   onSeeAll={getSeeAllCallback('home-action', t('trending_action'), action)}
                                 /> 
@@ -1574,7 +1574,7 @@ export default function App() {
                             {comedy.length > 0 && ( 
                                 <ContentRow 
                                   title={t('top_comedies')} 
-                                  movies={comedy} 
+                                  movies={filterKids(comedy)} 
                                   onMovieClick={handleMovieClick} 
                                   onSeeAll={getSeeAllCallback('home-comedy', t('top_comedies'), comedy)}
                                 /> 
@@ -1582,7 +1582,7 @@ export default function App() {
                             {family.length > 0 && ( 
                                 <ContentRow 
                                   title={t('trending_family')} 
-                                  movies={family} 
+                                  movies={filterKids(family)} 
                                   onMovieClick={handleMovieClick} 
                                   onSeeAll={getSeeAllCallback('home-family', t('trending_family'), family)}
                                 /> 
