@@ -245,7 +245,7 @@ export default function Hero({ movie, onPlayClick, onInfoClick, onSurpriseMe, is
         minHeight: '320px',
         borderRadius: '24px',
         overflow: 'hidden',
-        boxShadow: '0 25px 60px rgba(0, 0, 0, 0.95)',
+        boxShadow: 'none',
         border: '1.5px solid rgba(255, 255, 255, 0.08)',
         boxSizing: 'border-box',
         cursor: 'pointer',
