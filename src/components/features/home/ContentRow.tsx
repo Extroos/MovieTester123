@@ -30,6 +30,9 @@ interface ContentRowProps {
 // ContentCard: Hardware-accelerated transitions & CSS-hover layers.
 // Snap-aligned at start for native touch swiping responsiveness.
 // ─────────────────────────────────────────────────────────────────────────────
+// Cache for in-theater API checks to prevent redundant observer checks
+const inTheatersCache = new Map<string, boolean>();
+
 const ContentCard = React.memo(({ movie, onClick, onReaction, index, isWide = false }: {
   movie: Movie | TVShow,
   onClick?: (movie: Movie | TVShow) => void,
@@ -42,11 +45,21 @@ const ContentCard = React.memo(({ movie, onClick, onReaction, index, isWide = fa
   const [hasError, setHasError] = React.useState(false);
   const [recoveredSrc, setRecoveredSrc] = React.useState<string | null>(null);
   const isUpcomingInitial = !!((movie as Movie).releaseDate && new Date((movie as Movie).releaseDate || '').getTime() > Date.now());
-  const [inTheaters, setInTheaters] = React.useState<boolean>(!!(movie as Movie).inTheaters && !isUpcomingInitial);
+  const [inTheaters, setInTheaters] = React.useState<boolean>(() => {
+    if ((movie as Movie).inTheaters !== undefined) return !!(movie as Movie).inTheaters;
+    return inTheatersCache.get(movie.id.toString()) || false;
+  });
 
   useEffect(() => {
     const isMovie = !(movie as any).name;
     if (!isMovie) return;
+
+    // Check memory cache first
+    const cached = inTheatersCache.get(movie.id.toString());
+    if (cached !== undefined) {
+      setInTheaters(cached);
+      return;
+    }
 
     const isUpcoming = !!((movie as Movie).releaseDate && new Date((movie as Movie).releaseDate || '').getTime() > Date.now());
 
@@ -55,6 +68,7 @@ const ContentCard = React.memo(({ movie, onClick, onReaction, index, isWide = fa
     // (might be stale cached data), we always do a live TMDB check.
     if ((movie as Movie).inTheaters === false) {
       setInTheaters(false);
+      inTheatersCache.set(movie.id.toString(), false);
       return;
     }
 
@@ -66,14 +80,17 @@ const ContentCard = React.memo(({ movie, onClick, onReaction, index, isWide = fa
 
         getMovieInTheaters(movie.id)
           .then((inT) => {
+            const isUpcomingCheck = !!((movie as Movie).releaseDate && new Date((movie as Movie).releaseDate || '').getTime() > Date.now());
+            const finalVal = inT && !isUpcomingCheck;
+            inTheatersCache.set(movie.id.toString(), finalVal);
             if (isMounted) {
-              const isUpcomingCheck = !!((movie as Movie).releaseDate && new Date((movie as Movie).releaseDate || '').getTime() > Date.now());
-              setInTheaters(inT && !isUpcomingCheck);
+              setInTheaters(finalVal);
             }
           })
           .catch(() => {
-            // On error fall back to prop value (or false if undefined)
-            if (isMounted) setInTheaters(!!(movie as Movie).inTheaters && !isUpcoming);
+            const finalVal = !!(movie as Movie).inTheaters && !isUpcoming;
+            inTheatersCache.set(movie.id.toString(), finalVal);
+            if (isMounted) setInTheaters(finalVal);
           });
       }
     }, {
