@@ -162,7 +162,7 @@ export const WatchProgressService = {
   _inflight: new Set<string>(),
   _lastSaved: new Map<string, number>(),
 
-  saveProgress: async (item: Movie | TVShow | any, progress: number, duration: number, season?: number, episode?: number) => {
+  saveProgress: async (item: Movie | TVShow | any, progress: number, duration: number, season?: number, episode?: number, forceSync?: boolean) => {
     if (!item || !item.id) {
         console.warn('[Progress] Cannot save: invalid item', item);
         return;
@@ -224,7 +224,7 @@ export const WatchProgressService = {
     const now = Date.now();
     const lastSaved = WatchProgressService._lastSaved.get(throttleKey) || 0;
     const isComplete = duration > 0 && progress / duration > 0.90;
-    const isForceSave = isComplete || (progress === 0 && duration === 0); // e.g. pause or stop heartbeat
+    const isForceSave = isComplete || (progress === 0 && duration === 0) || forceSync === true; // e.g. pause or stop heartbeat
 
     if (now - lastSaved < 60000 && !isForceSave) {
       // Skips Supabase REST payload, serving from local cache only

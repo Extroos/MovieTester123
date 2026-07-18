@@ -3130,7 +3130,7 @@ export default function LocalVideoPlayer({
         const finalTime = castConnected ? currentTimeRef.current : progressRef.current.time;
         const finalDuration = castConnected ? durationRef.current : progressRef.current.duration;
         if (finalTime > 0 && finalDuration > 0) {
-           WatchProgressService.saveProgress(item, finalTime, finalDuration, season, episode);
+           WatchProgressService.saveProgress(item, finalTime, finalDuration, season, episode, true);
         }
     };
 
@@ -3191,13 +3191,13 @@ export default function LocalVideoPlayer({
                iframeLastTickRef.current = now;
                
                if (iframeStartTimeRef.current > 0 && defaultDuration > 0) {
-                   WatchProgressService.saveProgress(item, iframeStartTimeRef.current, defaultDuration, season, episode);
+                   WatchProgressService.saveProgress(item, iframeStartTimeRef.current, defaultDuration, season, episode, true);
                }
             } else {
                const finalTime = castConnected ? currentTimeRef.current : progressRef.current.time;
                const finalDuration = castConnected ? durationRef.current : progressRef.current.duration;
                if (finalTime > 0 && finalDuration > 0) {
-                   WatchProgressService.saveProgress(item, finalTime, finalDuration, season, episode);
+                   WatchProgressService.saveProgress(item, finalTime, finalDuration, season, episode, true);
                }
             }
         } else {
@@ -3238,7 +3238,7 @@ export default function LocalVideoPlayer({
            iframeStartTimeRef.current = Math.min(defaultDuration, iframeStartTimeRef.current + deltaSeconds);
            
            if (iframeStartTimeRef.current > 0 && defaultDuration > 0) {
-               WatchProgressService.saveProgress(item, iframeStartTimeRef.current, defaultDuration, season, episode);
+               WatchProgressService.saveProgress(item, iframeStartTimeRef.current, defaultDuration, season, episode, true);
            }
       }
     }, 30000); 
@@ -3280,7 +3280,7 @@ export default function LocalVideoPlayer({
            const finalTime = castConnected ? currentTimeRef.current : progressRef.current.time;
            const finalDuration = castConnected ? durationRef.current : progressRef.current.duration;
            if (finalTime > 0 && finalDuration > 0) {
-                WatchProgressService.saveProgress(item, finalTime, finalDuration, season, episode);
+                WatchProgressService.saveProgress(item, finalTime, finalDuration, season, episode, true);
            }
         }
     };
