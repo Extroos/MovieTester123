@@ -299,7 +299,8 @@ export const FriendService = {
       const { data: matchingProfiles, error } = await supabase
         .from('profiles')
         .select('id, user_id, name, avatar, created_at')
-        .ilike('name', `%${query}%`);
+        .ilike('name', `%${query}%`)
+        .limit(30);
 
       if (error) {
         console.error("[FriendService] Supabase profile matching error:", error);
