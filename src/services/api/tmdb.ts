@@ -22,12 +22,31 @@ const MAX_RETRIES = 3;
 const INITIAL_BACKOFF = 300; // ms
 
 import { withRetry } from '../../utils/resilience';
+import { ProfileService } from '../user/profiles';
 
 // Request deduplication & SWR tracking
 const pendingRequests = new Map<string, Promise<any>>();
 const activeSubscriptions = new Map<string, Set<(data: any) => void>>();
 
 async function fetchFromApi<T>(path: string, params: Record<string, string | number> = {}, ttl: number = DEFAULT_TTL, signal?: AbortSignal): Promise<T> {
+  // Check if active profile is a Kids Profile
+  let isKids = false;
+  try {
+    const activeProfile = ProfileService.getActiveProfile();
+    isKids = activeProfile?.isKids === true;
+  } catch (e) {}
+
+  // Inject Kids Mode API parameters for discover/search endpoints
+  if (isKids && (path.includes('/discover') || path.includes('/search'))) {
+    params = {
+      ...params,
+      certification_country: 'US',
+      'certification.lte': 'PG',
+      without_genres: '27,80,53,10752',
+      include_adult: 'false'
+    };
+  }
+
   const urlObj = new URL(`${BASE_URL}${path}`);
   urlObj.searchParams.append('api_key', API_KEY);
   const lang = SettingsService.get('appLanguage') || 'en';
@@ -69,7 +88,35 @@ async function fetchFromApi<T>(path: string, params: Record<string, string | num
       if (response.status === 404) return null as any; 
       if (!response.ok) throw new Error(`TMDB error: ${response.status}`);
       
-      const data = await response.json();
+      let data = await response.json();
+      
+      // Perform strict local post-filtering on results arrays in Kids Mode
+      if (isKids && data && Array.isArray(data.results)) {
+        data.results = data.results.filter((item: any) => {
+          if (!item) return false;
+          
+          // Exclude R-rated genres: Horror (27), Crime (80), Thriller (53), War (10752)
+          const genreIds = item.genre_ids || [];
+          const hasUnwantedGenre = genreIds.some((id: number) => [27, 80, 53, 10752].includes(id));
+          if (hasUnwantedGenre) return false;
+          
+          // Check for adult label
+          if (item.adult === true) return false;
+
+          // Keyword check title/overview
+          const titleText = (item.title || item.name || '').toLowerCase();
+          const overviewText = (item.overview || '').toLowerCase();
+          const text = titleText + ' ' + overviewText;
+          
+          const matureKeywords = ['gore', 'bloody', 'erotic', 'slasher', 'murderer', 'horror film', 'brutal murder', 'serial killer'];
+          if (matureKeywords.some(kw => text.includes(kw))) {
+            return false;
+          }
+
+          return true;
+        });
+      }
+
       CacheService.set(cacheKey, data, ttl);
       return data;
     } finally {
