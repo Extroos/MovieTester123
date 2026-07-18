@@ -580,29 +580,29 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
           boxSizing: 'border-box'
         }}>
           <div style={{
-            maxWidth: '520px',
+            maxWidth: '420px',
             width: '100%',
             background: 'rgba(18, 18, 20, 0.98)',
             border: '1px solid rgba(255, 255, 255, 0.1)',
-            borderRadius: '24px',
-            padding: '2rem',
-            boxShadow: '0 25px 60px rgba(0,0,0,0.95)',
+            borderRadius: '20px',
+            padding: '1.5rem',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.9)',
             display: 'flex',
             flexDirection: 'column',
-            gap: '24px',
+            gap: '18px',
             textAlign: 'center',
             boxSizing: 'border-box'
           }}>
             <div>
-              <h2 style={{ margin: '0 0 8px 0', fontSize: '1.6rem', fontWeight: 800, color: '#fff', letterSpacing: '-0.03em' }}>
+              <h2 style={{ margin: '0 0 6px 0', fontSize: '1.25rem', fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>
                 Select Display Experience
               </h2>
-              <p style={{ margin: 0, fontSize: '0.9rem', color: 'rgba(255,255,255,0.6)', lineHeight: 1.45 }}>
+              <p style={{ margin: 0, fontSize: '0.82rem', color: 'rgba(255,255,255,0.6)', lineHeight: 1.4 }}>
                 Choose the best user interface layout for your device. You can change this later in settings.
               </p>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               {/* Option 1: Standard UI */}
               <button
                 type="button"
@@ -619,20 +619,20 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
                 style={{
                   background: 'rgba(255,255,255,0.03)',
                   border: '1.5px solid rgba(255,255,255,0.08)',
-                  borderRadius: '16px',
-                  padding: '24px 16px',
+                  borderRadius: '14px',
+                  padding: '16px 12px',
                   cursor: 'pointer',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  gap: '12px',
+                  gap: '8px',
                   outline: 'none',
                   transition: 'all 0.2s ease',
                 }}
                 onFocus={(e) => {
                   e.currentTarget.style.border = '1.5px solid #fff';
-                  e.currentTarget.style.boxShadow = '0 0 15px rgba(255,255,255,0.1)';
-                  e.currentTarget.style.transform = 'scale(1.03)';
+                  e.currentTarget.style.boxShadow = '0 0 10px rgba(255,255,255,0.08)';
+                  e.currentTarget.style.transform = 'scale(1.02)';
                 }}
                 onBlur={(e) => {
                   e.currentTarget.style.border = '1.5px solid rgba(255,255,255,0.08)';
@@ -641,17 +641,17 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
                 }}
               >
                 <div style={{
-                  width: '48px', height: '48px', borderRadius: '50%', background: 'rgba(255,255,255,0.05)',
+                  width: '38px', height: '38px', borderRadius: '50%', background: 'rgba(255,255,255,0.05)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff'
                 }}>
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
                     <line x1="12" y1="18" x2="12.01" y2="18" />
                   </svg>
                 </div>
                 <div>
-                  <div style={{ fontWeight: 800, color: '#fff', fontSize: '1rem', marginBottom: '4px' }}>Standard UI</div>
-                  <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', lineHeight: 1.3 }}>Optimized for Touchscreens and standard PC viewports.</div>
+                  <div style={{ fontWeight: 800, color: '#fff', fontSize: '0.9rem', marginBottom: '2px' }}>Standard UI</div>
+                  <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.4)', lineHeight: 1.25 }}>Optimized for Touchscreens and standard PC viewports.</div>
                 </div>
               </button>
 
@@ -676,20 +676,20 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
                 style={{
                   background: 'rgba(255,255,255,0.03)',
                   border: '1.5px solid rgba(255,255,255,0.08)',
-                  borderRadius: '16px',
-                  padding: '24px 16px',
+                  borderRadius: '14px',
+                  padding: '16px 12px',
                   cursor: 'pointer',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  gap: '12px',
+                  gap: '8px',
                   outline: 'none',
                   transition: 'all 0.2s ease',
                 }}
                 onFocus={(e) => {
                   e.currentTarget.style.border = '1.5px solid #fff';
-                  e.currentTarget.style.boxShadow = '0 0 15px rgba(255,255,255,0.1)';
-                  e.currentTarget.style.transform = 'scale(1.03)';
+                  e.currentTarget.style.boxShadow = '0 0 10px rgba(255,255,255,0.08)';
+                  e.currentTarget.style.transform = 'scale(1.02)';
                 }}
                 onBlur={(e) => {
                   e.currentTarget.style.border = '1.5px solid rgba(255,255,255,0.08)';
@@ -698,18 +698,18 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
                 }}
               >
                 <div style={{
-                  width: '48px', height: '48px', borderRadius: '50%', background: 'rgba(255,255,255,0.05)',
+                  width: '38px', height: '38px', borderRadius: '50%', background: 'rgba(255,255,255,0.05)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff'
                 }}>
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
                     <line x1="8" y1="21" x2="16" y2="21" />
                     <line x1="12" y1="17" x2="12" y2="21" />
                   </svg>
                 </div>
                 <div>
-                  <div style={{ fontWeight: 800, color: '#fff', fontSize: '1rem', marginBottom: '4px' }}>Android TV UI</div>
-                  <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', lineHeight: 1.3 }}>Optimized for Remote D-Pad Navigation and TV aspect ratios.</div>
+                  <div style={{ fontWeight: 800, color: '#fff', fontSize: '0.9rem', marginBottom: '2px' }}>Android TV UI</div>
+                  <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.4)', lineHeight: 1.25 }}>Optimized for Remote D-Pad Navigation and TV aspect ratios.</div>
                 </div>
               </button>
             </div>
