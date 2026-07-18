@@ -46,23 +46,46 @@ export default function ProfileSelector({ onProfileSelected }: ProfileSelectorPr
   const [activeMediaLogo, setActiveMediaLogo] = useState<string | null>(null);
   const [selectingProfile, setSelectingProfile] = useState<Profile | null>(null);
 
-  const generateAvatarOptions = () => {
+  const generateAvatarOptions = (currentAvatar?: string) => {
     const set = new Set<number>();
+    // If there is an existing avatar, parse its ID if possible to avoid duplication in random pool
+    let existingId: number | null = null;
+    if (currentAvatar) {
+      const match = currentAvatar.match(/avatar-(\d+)\./);
+      if (match) {
+        existingId = parseInt(match[1], 10);
+        set.add(existingId);
+      }
+    }
+
     while(set.size < 6) {
         set.add(Math.floor(Math.random() * 201) + 1);
     }
+    
     const urls = Array.from(set).map(id => `/avatars/avatar-${id}.jpg`);
     urls.forEach(url => {
       const img = new Image();
       img.src = url;
     });
+
+    // If currentAvatar is not in parsed format, ensure it is in the list
+    if (currentAvatar && !urls.includes(currentAvatar)) {
+      urls[0] = currentAvatar; // Overwrite first option with current avatar
+    }
+
     setAvatarOptions(urls);
-    setSelectedAvatar(urls[0]);
+    if (currentAvatar) {
+      setSelectedAvatar(currentAvatar);
+    } else {
+      setSelectedAvatar(urls[0]);
+    }
   };
 
   useEffect(() => {
-    if (isAdding || editingProfile) {
+    if (isAdding) {
         generateAvatarOptions();
+    } else if (editingProfile) {
+        generateAvatarOptions(editingProfile.avatar);
     }
   }, [isAdding, editingProfile]);
 
