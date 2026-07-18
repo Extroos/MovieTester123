@@ -30,18 +30,19 @@ import { getTrending, getPosterUrl, getBackdropUrl, prewarmImages, getMovieDetai
 
 // Core feature components
 import CategoryExplorer from './components/features/home/CategoryExplorer';
-import MovieDetails from './components/features/details/MovieDetails';
-import TVShowDetails from './components/features/details/TVShowDetails';
-import SearchOverlay from './components/features/search/SearchOverlay';
-import SearchResults from './components/features/search/SearchResults';
 import MyListSubPage from './components/features/settings/settingpage/MyListSubPage';
-import BrowseNewsPage from './components/features/newandhot/BrowseNewsPage';
-import ActorPage from './components/features/details/ActorPage';
+
+const MovieDetails = lazy(() => import('./components/features/details/MovieDetails'));
+const TVShowDetails = lazy(() => import('./components/features/details/TVShowDetails'));
+const SearchOverlay = lazy(() => import('./components/features/search/SearchOverlay'));
+const SearchResults = lazy(() => import('./components/features/search/SearchResults'));
+const BrowseNewsPage = lazy(() => import('./components/features/newandhot/BrowseNewsPage'));
+const ActorPage = lazy(() => import('./components/features/details/ActorPage'));
 
 // Lazy-loaded modal routes
 const WatchPartyRoomPage = lazy(() => import('./components/features/watchparty/WatchPartyRoomPage'));
-import SettingsPage from './components/features/settings/SettingsPage';
-import DownloadsPage from './components/features/downloads/DownloadsPage';
+const SettingsPage = lazy(() => import('./components/features/settings/SettingsPage'));
+const DownloadsPage = lazy(() => import('./components/features/downloads/DownloadsPage'));
 const VideoPlayer = lazy(() => import('./components/features/player/VideoPlayer'));
 
 
