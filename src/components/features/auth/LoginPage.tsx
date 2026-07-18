@@ -788,6 +788,7 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
             <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
               <button
                 type="button"
+                className="tv-focusable"
                 onClick={() => { triggerHaptic('light'); setShowGuestWarning(false); }}
                 style={{
                   flex: 1,
@@ -798,13 +799,15 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
                   color: '#fff',
                   fontSize: '0.8rem',
                   fontWeight: 700,
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  outline: 'none'
                 }}
               >
                 {t('cancel')}
               </button>
               <button
                 type="button"
+                className="tv-focusable"
                 onClick={() => {
                   triggerHaptic('heavy');
                   setShowGuestWarning(false);
@@ -820,6 +823,7 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
                   fontSize: '0.8rem',
                   fontWeight: 800,
                   cursor: 'pointer',
+                  outline: 'none',
                   boxShadow: '0 4px 12px rgba(255, 255, 255, 0.1)'
                 }}
               >
