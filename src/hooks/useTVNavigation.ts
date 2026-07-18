@@ -6,13 +6,13 @@ import { isTVMode } from '../utils/tv';
 // This eliminates the critical O(N²) DOM scan that was firing on every D-pad event.
 // ─────────────────────────────────────────────────────────────────────────────
 let cachedFocusables: HTMLElement[] = [];
-let rebuildScheduled = false;
+let rebuildTimeout: any = null;
 
 function isElementFocusable(el: HTMLElement): boolean {
   if (el.closest('.login-preview-panel') || el.tagName.toLowerCase() === 'iframe') return false;
   if ((el as any).disabled) return false;
-  const rect = el.getBoundingClientRect();
-  return rect.width > 0 && rect.height > 0;
+  // Use offsetWidth and offsetHeight which are extremely fast layout indicators and DO NOT trigger reflow/layout thrashing!
+  return el.offsetWidth > 0 || el.offsetHeight > 0;
 }
 
 function rebuildCache() {
@@ -20,13 +20,14 @@ function rebuildCache() {
     '.tv-focusable, [data-scrubber="true"]'
   );
   cachedFocusables = Array.from(query).filter(isElementFocusable);
-  rebuildScheduled = false;
 }
 
 function scheduleRebuild() {
-  if (rebuildScheduled) return;
-  rebuildScheduled = true;
-  Promise.resolve().then(() => rebuildCache());
+  if (rebuildTimeout) clearTimeout(rebuildTimeout);
+  rebuildTimeout = setTimeout(() => {
+    rebuildCache();
+    rebuildTimeout = null;
+  }, 150); // Debounce updates to batch multiple rapid DOM changes together
 }
 
 export function useTVNavigation() {
