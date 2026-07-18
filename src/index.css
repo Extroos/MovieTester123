@@ -1835,7 +1835,7 @@ body.tv-mode .movie-card.tv-focusable:focus-visible {
   border: 3px solid #ffffff !important;
   box-shadow: none !important;
   transform: scale(1.08) translate3d(0, 0, 0) !important;
-  border-radius: inherit !important;
+  border-radius: 16px !important;
 }
 
 body.tv-mode .search-grid-card.tv-focusable:focus,
@@ -1844,7 +1844,7 @@ body.tv-mode .search-result-row.tv-focusable:focus {
   box-shadow: none !important;
   transform: scale(1.05) translate3d(0, 0, 0) !important;
   z-index: 15 !important;
-  border-radius: inherit !important;
+  border-radius: 16px !important;
 }
 
 /* Disable blurry round shadow lighting for profile selector items specifically */
