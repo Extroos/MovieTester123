@@ -140,6 +140,12 @@ export const ProfileService = {
     window.dispatchEvent(new Event('profileChanged'));
   },
 
+  clearActiveProfile() {
+    localStorage.removeItem(ACTIVE_PROFILE_KEY);
+    localStorage.removeItem('watchmovie_active_profile_cache');
+    window.dispatchEvent(new Event('profileChanged'));
+  },
+
   async addProfile(name: string, isKids: boolean, customAvatarUrl?: string, pin?: string): Promise<Profile | null> {
     if (localStorage.getItem('cinemovie_is_guest') === 'true') {
       const localProfiles = getLocalGuestProfiles();
