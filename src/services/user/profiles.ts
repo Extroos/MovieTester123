@@ -274,12 +274,13 @@ export const ProfileService = {
           if (updates.name !== undefined) dbUpdates.name = updates.name;
           if (updates.avatar !== undefined) dbUpdates.avatar = updates.avatar;
           if (updates.isKids !== undefined) dbUpdates.is_kids = updates.isKids;
-          if (updates.autoplay !== undefined) dbUpdates.autoplay = updates.autoplay;
-          if (updates.haptics !== undefined) dbUpdates.haptics = updates.haptics;
-          if (updates.notifyFriendActivity !== undefined) dbUpdates.notify_friend_activity = updates.notifyFriendActivity;
-          if (updates.notifyNewContent !== undefined) dbUpdates.notify_new_content = updates.notifyNewContent;
-          if (updates.appLanguage !== undefined) dbUpdates.app_language = updates.appLanguage;
-          if (updates.pin !== undefined) dbUpdates.pin = updates.pin;
+          
+          if (updates.autoplay !== undefined && ProfileColumnsCache.has('autoplay')) dbUpdates.autoplay = updates.autoplay;
+          if (updates.haptics !== undefined && ProfileColumnsCache.has('haptics')) dbUpdates.haptics = updates.haptics;
+          if (updates.notifyFriendActivity !== undefined && ProfileColumnsCache.has('notify_friend_activity')) dbUpdates.notify_friend_activity = updates.notifyFriendActivity;
+          if (updates.notifyNewContent !== undefined && ProfileColumnsCache.has('notify_new_content')) dbUpdates.notify_new_content = updates.notifyNewContent;
+          if (updates.appLanguage !== undefined && ProfileColumnsCache.has('app_language')) dbUpdates.app_language = updates.appLanguage;
+          if (updates.pin !== undefined && ProfileColumnsCache.has('pin')) dbUpdates.pin = updates.pin;
 
           const { error } = await supabase
               .from('profiles')
