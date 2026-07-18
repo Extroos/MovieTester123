@@ -1657,14 +1657,14 @@ export default function App() {
                     <Hero movie={heroMovie} isActive={currentView === 'movies'} onPlayClick={() => setSelectedMovie(heroMovie)} onInfoClick={() => setSelectedMovie(heroMovie)} onSurpriseMe={handleSurpriseMe} />
                     <div style={{ position: 'relative', marginTop: '-6rem', zIndex: 10, background: 'linear-gradient(to bottom, transparent 0%, rgba(var(--bg-primary-rgb, 10,10,10), 0.0) 5%, rgba(var(--bg-primary-rgb, 10,10,10), 0.5) 35%, var(--bg-primary) 65%)', paddingTop: '6rem', pointerEvents: 'none' }}>
                       <div style={{ pointerEvents: 'auto' }}>
-                        {topPicksMovies.length > 0 && ( <ContentRow title={t('top_picks_for_you')} movies={topPicksMovies} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-toppicks', t('top_picks_for_you'), topPicksMovies)} /> )}
-                        {trending.length > 0 && ( <ContentRow title={t('trending_now')} movies={trending} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-trending', t('trending_now'), trending)} /> )}
-                        {popular.length > 0 && ( <ContentRow title={t('popular_movies')} movies={popular} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-popular', t('popular_movies'), popular)} /> )}
-                        {topRated.length > 0 && ( <ContentRow title={t('top_rated')} movies={topRated} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-toprated', t('top_rated'), topRated)} /> )}
-                        {action.length > 0 && ( <ContentRow title={t('trending_action')} movies={action} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-action', t('trending_action'), action)} /> )}
-                        {comedy.length > 0 && ( <ContentRow title={t('top_comedies')} movies={comedy} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-comedy', t('top_comedies'), comedy)} /> )}
-                        {family.length > 0 && ( <ContentRow title={t('family_hits')} movies={family} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-family', t('family_hits'), family)} /> )}
-                        {upcoming.length > 0 && ( <ContentRow title={t('upcoming_movies')} movies={upcoming} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-upcoming', t('upcoming_movies'), upcoming)} /> )}
+                        {topPicksMovies.length > 0 && ( <ContentRow title={t('top_picks_for_you')} movies={filterKids(topPicksMovies)} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-toppicks', t('top_picks_for_you'), topPicksMovies)} /> )}
+                        {trending.length > 0 && ( <ContentRow title={t('trending_now')} movies={filterKids(trending)} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-trending', t('trending_now'), trending)} /> )}
+                        {popular.length > 0 && ( <ContentRow title={t('popular_movies')} movies={filterKids(popular)} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-popular', t('popular_movies'), popular)} /> )}
+                        {topRated.length > 0 && ( <ContentRow title={t('top_rated')} movies={filterKids(topRated)} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-toprated', t('top_rated'), topRated)} /> )}
+                        {action.length > 0 && ( <ContentRow title={t('trending_action')} movies={filterKids(action)} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-action', t('trending_action'), action)} /> )}
+                        {comedy.length > 0 && ( <ContentRow title={t('top_comedies')} movies={filterKids(comedy)} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-comedy', t('top_comedies'), comedy)} /> )}
+                        {family.length > 0 && ( <ContentRow title={t('family_hits')} movies={filterKids(family)} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-family', t('family_hits'), family)} /> )}
+                        {upcoming.length > 0 && ( <ContentRow title={t('upcoming_movies')} movies={filterKids(upcoming)} onMovieClick={handleMovieClick} onSeeAll={getSeeAllCallback('movies-upcoming', t('upcoming_movies'), upcoming)} /> )}
                       </div>
                     </div>
                   </div>
@@ -1686,12 +1686,12 @@ export default function App() {
                       <Hero movie={heroTVShow as any} isActive={currentView === 'tvshows'} onPlayClick={() => setSelectedTVShow(heroTVShow)} onInfoClick={() => setSelectedTVShow(heroTVShow)} />
                       <div style={{ position: 'relative', marginTop: '-6rem', zIndex: 10, background: 'linear-gradient(to bottom, transparent 0%, rgba(var(--bg-primary-rgb, 10,10,10), 0.0) 5%, rgba(var(--bg-primary-rgb, 10,10,10), 0.5) 35%, var(--bg-primary) 65%)', paddingTop: '6rem', pointerEvents: 'none' }}>
                         <div style={{ pointerEvents: 'auto' }}>
-                          {topPicksTV.length > 0 && ( <ContentRow title={t('top_picks_for_you')} movies={topPicksTV} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-toppicks', t('top_picks_for_you'), topPicksTV)} /> )}
-                          {(trendingTV.length > 0) && ( <ContentRow title={t('trending_now')} movies={trendingTV as any} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-trending', t('trending_now'), trendingTV as any)} /> )}
-                          {popularTV.length > 0 && ( <ContentRow title={t('popular_tv')} movies={popularTV} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-popular', t('popular_tv'), popularTV)} /> )}
-                          {topRatedTV.length > 0 && ( <ContentRow title={t('top_rated')} movies={topRatedTV} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-toprated', t('top_rated'), topRatedTV)} /> )}
-                          {dramaTV.length > 0 && ( <ContentRow title={t('trending_drama')} movies={dramaTV as any} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-drama', t('trending_drama'), dramaTV as any)} /> )}
-                          {comedyTV.length > 0 && ( <ContentRow title={t('comedy_favorites')} movies={comedyTV as any} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-comedy', t('comedy_favorites'), comedyTV as any)} /> )}
+                          {topPicksTV.length > 0 && ( <ContentRow title={t('top_picks_for_you')} movies={filterKids(topPicksTV)} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-toppicks', t('top_picks_for_you'), topPicksTV)} /> )}
+                          {(trendingTV.length > 0) && ( <ContentRow title={t('trending_now')} movies={filterKids(trendingTV as any)} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-trending', t('trending_now'), trendingTV as any)} /> )}
+                          {popularTV.length > 0 && ( <ContentRow title={t('popular_tv')} movies={filterKids(popularTV)} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-popular', t('popular_tv'), popularTV)} /> )}
+                          {topRatedTV.length > 0 && ( <ContentRow title={t('top_rated')} movies={filterKids(topRatedTV)} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-toprated', t('top_rated'), topRatedTV)} /> )}
+                          {dramaTV.length > 0 && ( <ContentRow title={t('trending_drama')} movies={filterKids(dramaTV as any)} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-drama', t('trending_drama'), dramaTV as any)} /> )}
+                          {comedyTV.length > 0 && ( <ContentRow title={t('comedy_favorites')} movies={filterKids(comedyTV as any)} onMovieClick={handleTVShowClick} onSeeAll={getSeeAllCallback('tv-comedy', t('comedy_favorites'), comedyTV as any)} /> )}
                         </div>
                       </div>
                     </div>
@@ -1728,8 +1728,8 @@ export default function App() {
                   }}>
                     <div style={{ minHeight: '100vh', background: COLORS.bgPrimary, paddingLeft: '0px', paddingBottom: isTV ? '0px' : 'calc(130px + env(safe-area-inset-bottom, 0px))' }}>
                       <BrowseNewsPage 
-                        trending={combinedTrending} 
-                        upcoming={upcoming} 
+                        trending={filterKids(combinedTrending)} 
+                        upcoming={filterKids(upcoming)} 
                         onItemClick={(item: any) => { if (item.firstAirDate) { handleTVShowClick(item); } else { handleMovieClick(item); } }} 
                         selectedGenre={selectedNewsGenre}
                         onSelectedGenreChange={setSelectedNewsGenre}

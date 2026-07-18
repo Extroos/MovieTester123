@@ -528,7 +528,29 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
         if (!active) return;
         
         setVideos(showVideos);
-        setSimilarShows(similar);
+        // Filter similar TV shows in Kids Mode
+        let isKids = false;
+        try {
+          const stored = localStorage.getItem('watchmovie_active_profile_cache');
+          isKids = stored ? JSON.parse(stored)?.isKids === true : false;
+        } catch {}
+
+        let filteredSimilar = similar;
+        if (isKids) {
+          filteredSimilar = similar.filter((item: any) => {
+            if (!item) return false;
+            const genreIds = item.genreIds || item.genre_ids || item.genres?.map((g: any) => g.id) || [];
+            const hasRestricted = genreIds.some((id: number) => [28, 27, 80, 53, 10752, 9648, 18].includes(id));
+            if (hasRestricted) return false;
+            const title = (item.title || item.name || '').toLowerCase();
+            const overview = (item.overview || '').toLowerCase();
+            const text = title + ' ' + overview;
+            const blacklist = ['blood', 'gore', 'combat', 'kill', 'murder', 'obsession', 'desire', 'slasher', 'fight', 'mortal'];
+            if (blacklist.some(w => text.includes(w))) return false;
+            return genreIds.some((id: number) => [16, 10751].includes(id));
+          });
+        }
+        setSimilarShows(filteredSimilar);
         setCast(credits.cast);
         setCrew(credits.crew);
         setInList(inMyList);

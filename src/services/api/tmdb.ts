@@ -460,6 +460,25 @@ export async function getUpcoming(): Promise<Movie[]> {
 
 export async function getMoviesByGenre(genreId: number): Promise<Movie[]> {
   try {
+    // Check Kids Mode
+    let isKids = false;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem('watchmovie_active_profile_cache');
+        if (stored) {
+          isKids = JSON.parse(stored)?.isKids === true;
+        }
+      }
+    } catch (e) {}
+
+    if (isKids) {
+      if ([28, 10759, 18, 27, 80, 53, 9648, 10752].includes(genreId)) {
+        if (genreId === 28 || genreId === 10759) genreId = 16;
+        else if (genreId === 18) genreId = 10751;
+        else genreId = 35;
+      }
+    }
+
     const data: any = await fetchFromApi('/discover/movie', {
       with_genres: genreId,
       sort_by: 'popularity.desc',
@@ -477,6 +496,26 @@ export async function getMoviesByGenre(genreId: number): Promise<Movie[]> {
  * to find "hot" content rather than just all-time classics.
  */
 export async function getTrendingByGenre(genreId: number, mediaType: 'movie' | 'tv' = 'movie', signal?: AbortSignal): Promise<(Movie | TVShow)[]> {
+  // Check Kids Mode
+  let isKids = false;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem('watchmovie_active_profile_cache');
+      if (stored) {
+        isKids = JSON.parse(stored)?.isKids === true;
+      }
+    }
+  } catch (e) {}
+
+  if (isKids) {
+    // Swap restricted genres (Action, Drama, Thriller, War, Crime, Horror) to Animation/Family
+    if ([28, 10759, 18, 27, 80, 53, 9648, 10752].includes(genreId)) {
+      if (genreId === 28 || genreId === 10759) genreId = 16; // Action -> Animation
+      else if (genreId === 18) genreId = 10751; // Drama -> Family
+      else genreId = 35; // Thriller/Crime/Horror -> Comedy
+    }
+  }
+
   const sixMonthsAgo = new Date();
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
   const dateStr = sixMonthsAgo.toISOString().split('T')[0];

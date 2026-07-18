@@ -29,6 +29,19 @@ const GENRES = [
   { id: 53, name: 'Thriller', color: '#f87171' },
 ];
 
+// Helper to check and retrieve visible genres list for Kids Mode
+function getVisibleGenres() {
+  try {
+    const stored = localStorage.getItem('watchmovie_active_profile_cache');
+    const isKids = stored ? JSON.parse(stored)?.isKids === true : false;
+    if (isKids) {
+      // Keep strictly safe categories
+      return GENRES.filter(g => [16, 35, 12, 10751, 14].includes(g.id));
+    }
+  } catch (e) {}
+  return GENRES;
+}
+
 type ContentItem = (Movie | TVShow) & { mediaType: 'movie' | 'tv' };
 
 interface BrowseNewsProps {
@@ -109,7 +122,7 @@ export default function BrowseNewsPage({ trending, upcoming, onItemClick, select
     const allContent = [...trendingList, ...upcomingList].filter(item => !!(item.backdropPath || item.posterPath));
     const usedMovieIds = new Set<number>();
     
-    return GENRES.map(genre => {
+    return getVisibleGenres().map(genre => {
       // 1. Try to find an unused movie matching this genre
       let matchedMovie = allContent.find(item => {
         const ids = item.genres?.map((g: any) => g.id) || [];
@@ -140,7 +153,7 @@ export default function BrowseNewsPage({ trending, upcoming, onItemClick, select
   }, [trendingList, upcomingList]);
 
   if (selectedGenre) {
-    const genre = GENRES.find(g => g.id === selectedGenre);
+    const genre = getVisibleGenres().find(g => g.id === selectedGenre);
     return (
       <div style={{ minHeight: '100vh', background: 'var(--bg-primary, #070708)', paddingTop: 'calc(84px + env(safe-area-inset-top, 0px))', paddingBottom: '32px' }}>
         <CustomStyles />
