@@ -2096,10 +2096,10 @@ const StaticStyles = React.memo(() => (
         gap: 1rem !important;
         margin-bottom: 0.5rem !important;
       }
-      .profile-avatar-img-container {
-        width: 70px !important;
-        height: 70px !important;
-        border-radius: 16px !important;
+      .profiles-grid .profile-avatar-img-container {
+        width: 88px !important;
+        height: 88px !important;
+        border-radius: 20px !important;
       }
       .profile-avatar-name {
         gap: 0.5rem !important;
