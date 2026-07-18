@@ -300,7 +300,7 @@ export const FriendService = {
         .from('profiles')
         .select('id, user_id, name, avatar, created_at')
         .ilike('name', `%${query}%`)
-        .limit(30);
+        .limit(5);
 
       if (error) {
         console.error("[FriendService] Supabase profile matching error:", error);
