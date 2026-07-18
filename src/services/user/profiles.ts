@@ -17,11 +17,27 @@ export interface Profile {
 
 const ACTIVE_PROFILE_KEY = 'watchmovie_active_profile_id';
 const DEFAULT_AVATAR = 'https://upload.wikimedia.org/wikipedia/commons/0/0b/Netflix-avatar.png'; // Fallback
-// Dynamic column cache to inspect schema layout and prevent console 400 Bad Request messages
+
+// Self-healing columns cache: starts assuming all exist, drops them dynamically on column errors
 const ProfileColumnsCache = {
-  columns: new Set<string>(['id', 'user_id', 'name', 'avatar', 'is_kids']),
+  columns: new Set<string>([
+    'id', 
+    'user_id', 
+    'name', 
+    'avatar', 
+    'is_kids', 
+    'autoplay', 
+    'haptics', 
+    'notify_friend_activity', 
+    'notify_new_content', 
+    'app_language', 
+    'pin'
+  ]),
   set(keys: string[]) {
     this.columns = new Set(keys);
+  },
+  remove(column: string) {
+    this.columns.delete(column);
   },
   has(column: string): boolean {
     return this.columns.has(column);
@@ -70,7 +86,6 @@ export const ProfileService = {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .eq('user_id', user.id)
         .order('created_at', { ascending: true });
 
       if (error) {
@@ -80,6 +95,11 @@ export const ProfileService = {
 
       if (!data || data.length === 0) {
         return [];
+      }
+
+      // Populate column cache dynamically from database keys
+      if (data && data[0]) {
+        ProfileColumnsCache.set(Object.keys(data[0]));
       }
 
       return data.map(p => ({
@@ -105,43 +125,27 @@ export const ProfileService = {
     const stored = localStorage.getItem('watchmovie_active_profile_cache');
     if (!stored) return null;
     try {
-      const parsed = JSON.parse(stored);
-      if (localStorage.getItem('cinemovie_is_guest') === 'true' && parsed && parsed.name !== 'Guest') {
-        parsed.name = 'Guest';
-        localStorage.setItem('watchmovie_active_profile_cache', JSON.stringify(parsed));
-      }
-      return parsed;
+      return JSON.parse(stored);
     } catch (e) {
       return null;
     }
   },
 
-  setActiveProfile(id: string, profileData?: Profile) {
+  setActiveProfile(id: string, profile: Profile) {
     localStorage.setItem(ACTIVE_PROFILE_KEY, id);
-    if (profileData) {
-        localStorage.setItem('watchmovie_active_profile_cache', JSON.stringify(profileData));
-    }
-    window.dispatchEvent(new CustomEvent('profileChanged', { detail: id }));
-  },
-
-  clearActiveProfile() {
-    localStorage.removeItem(ACTIVE_PROFILE_KEY);
-    localStorage.removeItem('watchmovie_active_profile_cache');
-    window.dispatchEvent(new CustomEvent('profileChanged', { detail: null }));
+    localStorage.setItem('watchmovie_active_profile_cache', JSON.stringify(profile));
+    // Clear page TMDB cache to ensure kids mode changes apply instantly without stale records
+    CacheService.clear();
+    window.dispatchEvent(new Event('profileChanged'));
   },
 
   async addProfile(name: string, isKids: boolean, customAvatarUrl?: string, pin?: string): Promise<Profile | null> {
     if (localStorage.getItem('cinemovie_is_guest') === 'true') {
-      let avatar = customAvatarUrl;
-      if (!avatar) {
-        const randomId = Math.floor(Math.random() * TOTAL_LOCAL_AVATARS) + 1;
-        avatar = `/avatars/avatar-${randomId}.jpg`;
-      }
       const localProfiles = getLocalGuestProfiles();
       const newProfile: Profile = {
         id: Math.random().toString(36).substr(2, 9),
         name,
-        avatar,
+        avatar: customAvatarUrl || '/avatars/avatar-1.jpg',
         isKids,
         autoplay: true,
         haptics: true,
@@ -157,84 +161,72 @@ export const ProfileService = {
       if (!user) throw new Error('No user logged in');
 
       let avatar = customAvatarUrl;
-      
       if (!avatar) {
-        // Fallback random avatar from local collection
         const randomId = Math.floor(Math.random() * TOTAL_LOCAL_AVATARS) + 1;
         avatar = `/avatars/avatar-${randomId}.jpg`;
       }
 
-      // Try inserting with all settings columns first
-      const { data, error } = await supabase
-        .from('profiles')
-        .insert({
+      const buildInsertData = () => {
+        const insertData: any = {
           user_id: user.id,
           name,
           avatar,
-          is_kids: isKids,
-          autoplay: true,
-          haptics: true,
-          notify_friend_activity: true,
-          notify_new_content: true,
-          pin
-        })
+          is_kids: isKids
+        };
+        if (ProfileColumnsCache.has('autoplay')) insertData.autoplay = true;
+        if (ProfileColumnsCache.has('haptics')) insertData.haptics = true;
+        if (ProfileColumnsCache.has('notify_friend_activity')) insertData.notify_friend_activity = true;
+        if (ProfileColumnsCache.has('notify_new_content')) insertData.notify_new_content = true;
+        if (pin && ProfileColumnsCache.has('pin')) insertData.pin = pin;
+        return insertData;
+      };
+
+      let insertAttempt = buildInsertData();
+      let { data, error } = await supabase
+        .from('profiles')
+        .insert(insertAttempt)
         .select()
         .single();
 
-      if (error) {
-        // Check for missing column error code '42703' or standard PostgreSQL 'column does not exist' message
-        if (error.code === '42703' || error.message?.includes('column')) {
-          console.warn('[ProfileService] Profiles table missing settings/pin columns. Retrying base insert...');
-          const baseInsert: any = {
+      if (error && (error.code === '42703' || error.message?.includes('column'))) {
+        console.warn('[ProfileService] Retrying insert after missing column detection...', error.message);
+        const match = error.message?.match(/column "?(\w+)"?/);
+        if (match && match[1]) {
+          ProfileColumnsCache.remove(match[1]);
+        }
+        
+        insertAttempt = buildInsertData();
+        const retryResult = await supabase
+          .from('profiles')
+          .insert(insertAttempt)
+          .select()
+          .single();
+        data = retryResult.data;
+        error = retryResult.error;
+
+        if (error && (error.code === '42703' || error.message?.includes('column'))) {
+          const match2 = error.message?.match(/column "?(\w+)"?/);
+          if (match2 && match2[1]) {
+            ProfileColumnsCache.remove(match2[1]);
+          }
+
+          const baseInsert = {
             user_id: user.id,
             name,
             avatar,
             is_kids: isKids
           };
-          // If the error was specifically not about PIN, or if we want to try including it
-          try {
-            const { data: pinData, error: pinError } = await supabase
-              .from('profiles')
-              .insert({
-                user_id: user.id,
-                name,
-                avatar,
-                is_kids: isKids,
-                pin
-              })
-              .select()
-              .single();
-            if (!pinError) {
-              return {
-                id: pinData.id,
-                name: pinData.name,
-                avatar: pinData.avatar,
-                isKids: pinData.is_kids,
-                autoplay: true,
-                haptics: true,
-                pin: pinData.pin
-              };
-            }
-          } catch (e) {}
-
-          const { data: baseData, error: baseError } = await supabase
+          const baseResult = await supabase
             .from('profiles')
             .insert(baseInsert)
             .select()
             .single();
-
-          if (baseError) throw baseError;
-          return {
-            id: baseData.id,
-            name: baseData.name,
-            avatar: baseData.avatar,
-            isKids: baseData.is_kids,
-            autoplay: true,
-            haptics: true
-          };
+          data = baseResult.data;
+          error = baseResult.error;
         }
-        throw error;
       }
+
+      if (error) throw error;
 
       return {
         id: data.id,
@@ -252,107 +244,117 @@ export const ProfileService = {
   },
 
   async updateProfile(id: string, updates: Partial<Profile>): Promise<boolean> {
-      // Optimistically update cache and dispatch event for immediate UI updates
-      const current = this.getActiveProfile();
-      if (current && current.id === id) {
-          this.setActiveProfile(id, { ...current, ...updates });
+    const current = this.getActiveProfile();
+    if (current && current.id === id) {
+      this.setActiveProfile(id, { ...current, ...updates });
+    }
+
+    if (localStorage.getItem('cinemovie_is_guest') === 'true') {
+      const localProfiles = getLocalGuestProfiles();
+      const index = localProfiles.findIndex(p => p.id === id);
+      if (index !== -1) {
+        localProfiles[index] = { ...localProfiles[index], ...updates };
+        saveLocalGuestProfiles(localProfiles);
+        return true;
       }
+      return false;
+    }
 
-      if (localStorage.getItem('cinemovie_is_guest') === 'true') {
-          const localProfiles = getLocalGuestProfiles();
-          const index = localProfiles.findIndex(p => p.id === id);
-          if (index !== -1) {
-              localProfiles[index] = { ...localProfiles[index], ...updates };
-              saveLocalGuestProfiles(localProfiles);
-              return true;
-          }
-          return false;
-      }
+    try {
+      const buildUpdateData = () => {
+        const dbUpdates: any = {};
+        if (updates.name !== undefined) dbUpdates.name = updates.name;
+        if (updates.avatar !== undefined) dbUpdates.avatar = updates.avatar;
+        if (updates.isKids !== undefined) dbUpdates.is_kids = updates.isKids;
+        
+        if (updates.autoplay !== undefined && ProfileColumnsCache.has('autoplay')) dbUpdates.autoplay = updates.autoplay;
+        if (updates.haptics !== undefined && ProfileColumnsCache.has('haptics')) dbUpdates.haptics = updates.haptics;
+        if (updates.notifyFriendActivity !== undefined && ProfileColumnsCache.has('notify_friend_activity')) dbUpdates.notify_friend_activity = updates.notifyFriendActivity;
+        if (updates.notifyNewContent !== undefined && ProfileColumnsCache.has('notify_new_content')) dbUpdates.notify_new_content = updates.notifyNewContent;
+        if (updates.appLanguage !== undefined && ProfileColumnsCache.has('app_language')) dbUpdates.app_language = updates.appLanguage;
+        if (updates.pin !== undefined && ProfileColumnsCache.has('pin')) dbUpdates.pin = updates.pin;
+        return dbUpdates;
+      };
 
-      try {
-          const dbUpdates: any = {};
-          if (updates.name !== undefined) dbUpdates.name = updates.name;
-          if (updates.avatar !== undefined) dbUpdates.avatar = updates.avatar;
-          if (updates.isKids !== undefined) dbUpdates.is_kids = updates.isKids;
-          
-          if (updates.autoplay !== undefined && ProfileColumnsCache.has('autoplay')) dbUpdates.autoplay = updates.autoplay;
-          if (updates.haptics !== undefined && ProfileColumnsCache.has('haptics')) dbUpdates.haptics = updates.haptics;
-          if (updates.notifyFriendActivity !== undefined && ProfileColumnsCache.has('notify_friend_activity')) dbUpdates.notify_friend_activity = updates.notifyFriendActivity;
-          if (updates.notifyNewContent !== undefined && ProfileColumnsCache.has('notify_new_content')) dbUpdates.notify_new_content = updates.notifyNewContent;
-          if (updates.appLanguage !== undefined && ProfileColumnsCache.has('app_language')) dbUpdates.app_language = updates.appLanguage;
-          if (updates.pin !== undefined && ProfileColumnsCache.has('pin')) dbUpdates.pin = updates.pin;
+      let updateAttempt = buildUpdateData();
+      let { error } = await supabase
+        .from('profiles')
+        .update(updateAttempt)
+        .eq('id', id);
 
-          const { error } = await supabase
-              .from('profiles')
-              .update(dbUpdates)
-              .eq('id', id);
+      if (error && (error.code === '42703' || error.message?.includes('column'))) {
+        console.warn('[ProfileService] Retrying update after missing column detection...', error.message);
+        const match = error.message?.match(/column "?(\w+)"?/);
+        if (match && match[1]) {
+          ProfileColumnsCache.remove(match[1]);
+        }
+        
+        updateAttempt = buildUpdateData();
+        const retryResult = await supabase
+          .from('profiles')
+          .update(updateAttempt)
+          .eq('id', id);
+        error = retryResult.error;
 
-          if (error) {
-              // Retry updating only base fields if columns are missing
-              if (error.code === '42703' || error.message?.includes('column')) {
-                  console.warn('[ProfileService] Profiles table missing settings/pin columns. Retrying base update...');
-                  const baseUpdates: any = {};
-                  if (updates.name !== undefined) baseUpdates.name = updates.name;
-                  if (updates.avatar !== undefined) baseUpdates.avatar = updates.avatar;
-                  if (updates.isKids !== undefined) baseUpdates.is_kids = updates.isKids;
-                  if (updates.pin !== undefined) {
-                    // Try to update with pin separately in case pin exists but other settings don't
-                    try {
-                      await supabase.from('profiles').update({ pin: updates.pin }).eq('id', id);
-                    } catch (e) {}
-                  }
-
-                  const { error: baseError } = await supabase
-                      .from('profiles')
-                      .update(baseUpdates)
-                      .eq('id', id);
-
-                  if (baseError) throw baseError;
-                  return true;
-              }
-              throw error;
-          }
-          
-          // Update cache if this is the active profile
-          const current = this.getActiveProfile();
-
-          if (current && current.id === id) {
-              this.setActiveProfile(id, { ...current, ...updates });
+        if (error && (error.code === '42703' || error.message?.includes('column'))) {
+          const match2 = error.message?.match(/column "?(\w+)"?/);
+          if (match2 && match2[1]) {
+            ProfileColumnsCache.remove(match2[1]);
           }
 
-          return true;
-      } catch (e) {
-          console.error('Error updating profile:', e);
-          return false;
+          const baseUpdates: any = {};
+          if (updates.name !== undefined) baseUpdates.name = updates.name;
+          if (updates.avatar !== undefined) baseUpdates.avatar = updates.avatar;
+          if (updates.isKids !== undefined) baseUpdates.is_kids = updates.isKids;
+
+          const baseResult = await supabase
+            .from('profiles')
+            .update(baseUpdates)
+            .eq('id', id);
+          error = baseResult.error;
+        }
       }
+
+      if (error) throw error;
+
+      const updatedProfile = this.getActiveProfile();
+      if (updatedProfile && updatedProfile.id === id) {
+        this.setActiveProfile(id, { ...updatedProfile, ...updates });
+      }
+
+      return true;
+    } catch (e) {
+      console.error('Error updating profile:', e);
+      return false;
+    }
   },
 
   async uploadAvatar(file: File): Promise<string | null> {
     if (localStorage.getItem('cinemovie_is_guest') === 'true') {
-      // Local avatars only for guests, no uploads supported, return a local data URL if needed
-      // but standard is to just choose from gallery. We'll return null to let upload fail or return local url
       return null;
     }
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      if (!user) return null;
 
       const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}/${Math.random()}.${fileExt}`;
+      const fileName = `${user.id}/${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
       const filePath = `avatars/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(filePath, file);
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        throw uploadError;
+      }
 
-      const { data } = supabase.storage
+      const { data: { publicUrl } } = supabase.storage
         .from('avatars')
         .getPublicUrl(filePath);
 
-      return data.publicUrl;
+      return publicUrl;
     } catch (e) {
       console.error('Error uploading avatar:', e);
       return null;
@@ -360,15 +362,11 @@ export const ProfileService = {
   },
 
   async deleteProfile(id: string): Promise<boolean> {
-    try {
-      localStorage.removeItem(`cinemovie_guest_progress_${id}`);
-    } catch (e) {}
-
     if (localStorage.getItem('cinemovie_is_guest') === 'true') {
-        const localProfiles = getLocalGuestProfiles();
-        const filtered = localProfiles.filter(p => p.id !== id);
-        saveLocalGuestProfiles(filtered);
-        return true;
+      const localProfiles = getLocalGuestProfiles();
+      const filtered = localProfiles.filter(p => p.id !== id);
+      saveLocalGuestProfiles(filtered);
+      return true;
     }
 
     try {
@@ -385,4 +383,3 @@ export const ProfileService = {
     }
   }
 };
-
