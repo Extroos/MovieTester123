@@ -11,6 +11,7 @@ export interface Profile {
   notifyFriendActivity?: boolean;
   notifyNewContent?: boolean;
   appLanguage?: string;
+  pin?: string;
 }
 
 const ACTIVE_PROFILE_KEY = 'watchmovie_active_profile_id';
@@ -76,7 +77,8 @@ export const ProfileService = {
         isKids: p.is_kids,
         autoplay: p.autoplay,
         haptics: p.haptics,
-        appLanguage: p.app_language || undefined
+        appLanguage: p.app_language || undefined,
+        pin: p.pin || undefined
       }));
     } catch (e: any) {
       console.error('Profile fetch error:', e);
@@ -116,7 +118,7 @@ export const ProfileService = {
     window.dispatchEvent(new CustomEvent('profileChanged', { detail: null }));
   },
 
-  async addProfile(name: string, isKids: boolean, customAvatarUrl?: string): Promise<Profile | null> {
+  async addProfile(name: string, isKids: boolean, customAvatarUrl?: string, pin?: string): Promise<Profile | null> {
     if (localStorage.getItem('cinemovie_is_guest') === 'true') {
       let avatar = customAvatarUrl;
       if (!avatar) {
@@ -130,7 +132,8 @@ export const ProfileService = {
         avatar,
         isKids,
         autoplay: true,
-        haptics: true
+        haptics: true,
+        pin
       };
       localProfiles.push(newProfile);
       saveLocalGuestProfiles(localProfiles);
@@ -160,7 +163,8 @@ export const ProfileService = {
           autoplay: true,
           haptics: true,
           notify_friend_activity: true,
-          notify_new_content: true
+          notify_new_content: true,
+          pin
         })
         .select()
         .single();
@@ -168,15 +172,42 @@ export const ProfileService = {
       if (error) {
         // Check for missing column error code '42703' or standard PostgreSQL 'column does not exist' message
         if (error.code === '42703' || error.message?.includes('column')) {
-          console.warn('[ProfileService] Profiles table missing settings columns. Retrying base insert...');
+          console.warn('[ProfileService] Profiles table missing settings/pin columns. Retrying base insert...');
+          const baseInsert: any = {
+            user_id: user.id,
+            name,
+            avatar,
+            is_kids: isKids
+          };
+          // If the error was specifically not about PIN, or if we want to try including it
+          try {
+            const { data: pinData, error: pinError } = await supabase
+              .from('profiles')
+              .insert({
+                user_id: user.id,
+                name,
+                avatar,
+                is_kids: isKids,
+                pin
+              })
+              .select()
+              .single();
+            if (!pinError) {
+              return {
+                id: pinData.id,
+                name: pinData.name,
+                avatar: pinData.avatar,
+                isKids: pinData.is_kids,
+                autoplay: true,
+                haptics: true,
+                pin: pinData.pin
+              };
+            }
+          } catch (e) {}
+
           const { data: baseData, error: baseError } = await supabase
             .from('profiles')
-            .insert({
-              user_id: user.id,
-              name,
-              avatar,
-              is_kids: isKids
-            })
+            .insert(baseInsert)
             .select()
             .single();
 
@@ -199,7 +230,8 @@ export const ProfileService = {
         avatar: data.avatar,
         isKids: data.is_kids,
         autoplay: data.autoplay,
-        haptics: data.haptics
+        haptics: data.haptics,
+        pin: data.pin
       };
     } catch (e) {
       console.error('Error adding profile:', e);
@@ -235,6 +267,7 @@ export const ProfileService = {
           if (updates.notifyFriendActivity !== undefined) dbUpdates.notify_friend_activity = updates.notifyFriendActivity;
           if (updates.notifyNewContent !== undefined) dbUpdates.notify_new_content = updates.notifyNewContent;
           if (updates.appLanguage !== undefined) dbUpdates.app_language = updates.appLanguage;
+          if (updates.pin !== undefined) dbUpdates.pin = updates.pin;
 
           const { error } = await supabase
               .from('profiles')
@@ -244,11 +277,17 @@ export const ProfileService = {
           if (error) {
               // Retry updating only base fields if columns are missing
               if (error.code === '42703' || error.message?.includes('column')) {
-                  console.warn('[ProfileService] Profiles table missing settings columns. Retrying base update...');
+                  console.warn('[ProfileService] Profiles table missing settings/pin columns. Retrying base update...');
                   const baseUpdates: any = {};
                   if (updates.name !== undefined) baseUpdates.name = updates.name;
                   if (updates.avatar !== undefined) baseUpdates.avatar = updates.avatar;
                   if (updates.isKids !== undefined) baseUpdates.is_kids = updates.isKids;
+                  if (updates.pin !== undefined) {
+                    // Try to update with pin separately in case pin exists but other settings don't
+                    try {
+                      await supabase.from('profiles').update({ pin: updates.pin }).eq('id', id);
+                    } catch (e) {}
+                  }
 
                   const { error: baseError } = await supabase
                       .from('profiles')
@@ -263,6 +302,7 @@ export const ProfileService = {
           
           // Update cache if this is the active profile
           const current = this.getActiveProfile();
+
           if (current && current.id === id) {
               this.setActiveProfile(id, { ...current, ...updates });
           }

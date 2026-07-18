@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { COLORS } from '../../../constants';
 import { Profile, ProfileService } from '../../../services/profiles';
 import { triggerHaptic, triggerSuccessHaptic } from '../../../utils/haptics';
@@ -13,23 +13,41 @@ export default function ProfileSelector({ onProfileSelected }: ProfileSelectorPr
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
+  const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
+  
+  // Creation/Edit Form State
   const [newProfileName, setNewProfileName] = useState('');
+  const [newProfileIsKids, setNewProfileIsKids] = useState(false);
+  const [newProfileHasPin, setNewProfileHasPin] = useState(false);
+  const [newProfilePin, setNewProfilePin] = useState('');
+  
   const [addingLoading, setAddingLoading] = useState(false);
-
   const [missingTables, setMissingTables] = useState(false);
   const [isManaging, setIsManaging] = useState(false);
   const [avatarOptions, setAvatarOptions] = useState<string[]>([]);
   const [selectedAvatar, setSelectedAvatar] = useState<string>('');
   const [deleteProfileId, setDeleteProfileId] = useState<string | null>(null);
 
+  // PIN Unlock State
+  const [unlockProfile, setUnlockProfile] = useState<Profile | null>(null);
+  const [enteredPin, setEnteredPin] = useState('');
+  const [pinError, setPinError] = useState(false);
+
+  // TV Mode variables
+  const isTVMode = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
+  const [backgroundMediaList, setBackgroundMediaList] = useState<any[]>([]);
+  const [currentMediaIdx, setCurrentMediaIdx] = useState<number>(0);
+  const [activeProfileIdx, setActiveProfileIdx] = useState<number>(0);
+  const [isFading, setIsFading] = useState<boolean>(false);
+  const [activeMediaLogo, setActiveMediaLogo] = useState<string | null>(null);
+  const [selectingProfile, setSelectingProfile] = useState<Profile | null>(null);
+
   const generateAvatarOptions = () => {
-    // Select 6 unique random avatars from 201 available
     const set = new Set<number>();
     while(set.size < 6) {
         set.add(Math.floor(Math.random() * 201) + 1);
     }
     const urls = Array.from(set).map(id => `/avatars/avatar-${id}.jpg`);
-    // Preload all avatar images eagerly so they appear instantly (no fade-in)
     urls.forEach(url => {
       const img = new Image();
       img.src = url;
@@ -39,10 +57,10 @@ export default function ProfileSelector({ onProfileSelected }: ProfileSelectorPr
   };
 
   useEffect(() => {
-    if (isAdding) {
+    if (isAdding || editingProfile) {
         generateAvatarOptions();
     }
-  }, [isAdding]);
+  }, [isAdding, editingProfile]);
 
   useEffect(() => {
     loadProfiles();
@@ -52,11 +70,8 @@ export default function ProfileSelector({ onProfileSelected }: ProfileSelectorPr
     setLoading(true);
     try {
       let data = await ProfileService.getProfiles();
-      
-      // Cache localStorage read — avoid 3 separate synchronous reads
       const isGuestMode = localStorage.getItem('cinemovie_is_guest') === 'true';
 
-      // Deduplicate guest profiles if any duplicates already exist in local storage
       if (isGuestMode && data.length > 0) {
         const unique = new Map();
         data.forEach(p => {
@@ -72,7 +87,6 @@ export default function ProfileSelector({ onProfileSelected }: ProfileSelectorPr
       }
 
       if (isGuestMode && data.length === 0) {
-        // Only auto-create the default Guest profile on first-time initialization (when currentLocal is null)
         const currentLocal = localStorage.getItem('cinemovie_guest_profiles');
         if (currentLocal === null) {
           const defaultProfile = await ProfileService.addProfile('Guest', false, '/avatars/avatar-1.jpg');
@@ -90,7 +104,191 @@ export default function ProfileSelector({ onProfileSelected }: ProfileSelectorPr
     setLoading(false);
   };
 
-  
+  const handleAddProfile = async () => {
+    if (!newProfileName.trim() || addingLoading) return;
+    
+    setAddingLoading(true);
+    triggerSuccessHaptic();
+    try {
+        const pinValue = newProfileHasPin && newProfilePin.length === 4 ? newProfilePin : undefined;
+        const newProfile = await ProfileService.addProfile(newProfileName.trim(), newProfileIsKids, selectedAvatar, pinValue);
+        if (newProfile) {
+            await loadProfiles();
+            setIsAdding(false);
+            setNewProfileName('');
+            setNewProfileIsKids(false);
+            setNewProfileHasPin(false);
+            setNewProfilePin('');
+        }
+    } catch (e) {
+        console.error(e);
+    }
+    setAddingLoading(false);
+  };
+
+  const handleUpdateProfile = async () => {
+    if (!editingProfile || !newProfileName.trim() || addingLoading) return;
+
+    setAddingLoading(true);
+    triggerSuccessHaptic();
+    try {
+        const pinValue = newProfileHasPin && newProfilePin.length === 4 ? newProfilePin : '';
+        const success = await ProfileService.updateProfile(editingProfile.id, {
+          name: newProfileName.trim(),
+          isKids: newProfileIsKids,
+          avatar: selectedAvatar,
+          pin: pinValue
+        });
+        if (success) {
+          await loadProfiles();
+          setEditingProfile(null);
+          setNewProfileName('');
+          setNewProfileIsKids(false);
+          setNewProfileHasPin(false);
+          setNewProfilePin('');
+        }
+    } catch (e) {
+      console.error(e);
+    }
+    setAddingLoading(false);
+  };
+
+  // TV Mode background media fetching
+  useEffect(() => {
+    if (!isTVMode) return;
+    Promise.all([
+      fetch(`https://api.themoviedb.org/3/trending/movie/week?api_key=${API_KEY}&language=en-US`).then(r => r.json()).catch(() => ({ results: [] })),
+      fetch(`https://api.themoviedb.org/3/trending/tv/week?api_key=${API_KEY}&language=en-US`).then(r => r.json()).catch(() => ({ results: [] }))
+    ]).then(([moviesData, tvData]) => {
+      const list = [];
+      const movies = moviesData.results || [];
+      const tv = tvData.results || [];
+      const len = Math.max(movies.length, tv.length);
+      for (let i = 0; i < len; i++) {
+        if (movies[i] && movies[i].backdrop_path) list.push({ ...movies[i], media_type: 'movie' });
+        if (tv[i] && tv[i].backdrop_path) list.push({ ...tv[i], media_type: 'tv' });
+      }
+      if (list.length > 0) {
+        setBackgroundMediaList(list.slice(0, 15));
+      }
+    });
+  }, [isTVMode]);
+
+  useEffect(() => {
+    if (!isTVMode || backgroundMediaList.length === 0) return;
+    const media = backgroundMediaList[currentMediaIdx];
+    if (!media) return;
+    setActiveMediaLogo(null);
+    const type = media.media_type || (media.title ? 'movie' : 'tv');
+    fetch(`https://api.themoviedb.org/3/${type}/${media.id}/images?api_key=${API_KEY}`)
+      .then(res => res.json())
+      .then(data => {
+        const logos = data.logos || [];
+        const englishLogo = logos.find((l: any) => l.iso_639_1 === 'en');
+        if (englishLogo) {
+          setActiveMediaLogo(`https://image.tmdb.org/t/p/w500${englishLogo.file_path}`);
+        }
+      })
+      .catch(() => {});
+  }, [isTVMode, backgroundMediaList, currentMediaIdx]);
+
+  useEffect(() => {
+    if (!isTVMode || backgroundMediaList.length === 0) return;
+    const interval = setInterval(() => {
+      setIsFading(true);
+      setTimeout(() => {
+        setCurrentMediaIdx(prev => (prev + 1) % backgroundMediaList.length);
+        setTimeout(() => {
+          setIsFading(false);
+        }, 1200);
+      }, 800);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [isTVMode, backgroundMediaList]);
+
+  const handleSelect = (profile: Profile) => {
+    triggerSuccessHaptic();
+    
+    // Check if profile lock is enabled
+    if (profile.pin && profile.pin.length === 4) {
+      setUnlockProfile(profile);
+      setEnteredPin('');
+      setPinError(false);
+      return;
+    }
+
+    proceedWithSelection(profile);
+  };
+
+  const proceedWithSelection = (profile: Profile) => {
+    if (isTVMode) {
+      setSelectingProfile(profile);
+      setTimeout(() => {
+        onProfileSelected(profile);
+      }, 2400);
+    } else {
+      onProfileSelected(profile);
+    }
+  };
+
+  const executeDeleteProfile = async () => {
+    if (!deleteProfileId) return;
+    triggerHaptic('heavy');
+    setLoading(true);
+    await ProfileService.deleteProfile(deleteProfileId);
+    await loadProfiles();
+    setDeleteProfileId(null);
+    setEditingProfile(null); // Exit editing if we deleted it
+    setLoading(false);
+  };
+
+  const handlePinDigit = (digit: string) => {
+    if (enteredPin.length >= 4) return;
+    triggerHaptic('light');
+    const nextPin = enteredPin + digit;
+    setEnteredPin(nextPin);
+
+    if (nextPin.length === 4) {
+      if (unlockProfile && nextPin === unlockProfile.pin) {
+        triggerSuccessHaptic();
+        setTimeout(() => {
+          setUnlockProfile(null);
+          proceedWithSelection(unlockProfile);
+        }, 300);
+      } else {
+        triggerHaptic('heavy');
+        setPinError(true);
+        setTimeout(() => {
+          setEnteredPin('');
+          setPinError(false);
+        }, 800);
+      }
+    }
+  };
+
+  const handlePinDelete = () => {
+    if (enteredPin.length === 0) return;
+    triggerHaptic('medium');
+    setEnteredPin(enteredPin.slice(0, -1));
+  };
+
+  const openEditProfile = (profile: Profile, e: React.MouseEvent) => {
+    e.stopPropagation();
+    triggerHaptic('medium');
+    setEditingProfile(profile);
+    setNewProfileName(profile.name);
+    setNewProfileIsKids(profile.isKids);
+    setSelectedAvatar(profile.avatar);
+    if (profile.pin && profile.pin.length === 4) {
+      setNewProfileHasPin(true);
+      setNewProfilePin(profile.pin);
+    } else {
+      setNewProfileHasPin(false);
+      setNewProfilePin('');
+    }
+  };
+
+  // SQL Script display block
   if (missingTables) {
     return (
         <div style={{
@@ -118,40 +316,28 @@ export default function ProfileSelector({ onProfileSelected }: ProfileSelectorPr
                 borderRadius: '24px',
                 padding: '3rem 2rem',
                 boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.1), 0 24px 80px rgba(0,0,0,0.5)',
-                animation: 'slideUpGlass 0.7s cubic-bezier(0.16, 1, 0.3, 1)',
             }}>
-                 <h1 style={{ color: '#ffffff', fontSize: '2rem', marginBottom: '1rem', fontWeight: 800, letterSpacing: '-0.5px' }}>Database Setup Required</h1>
+                 <h1 style={{ color: '#ffffff', fontSize: '2rem', marginBottom: '1rem', fontWeight: 800, letterSpacing: '-0.5px' }}>Database Setup / Migration Required</h1>
                 <p style={{ textAlign: 'left', lineHeight: '1.6', color: 'rgba(255, 255, 255, 0.6)', marginBottom: '2rem', fontSize: '1rem' }}>
-                    The application needs to create tables in your Supabase project to function correctly. 
-                    Please follow these simple steps to complete the setup:
+                    The application needs to prepare the profiles table in your Supabase project to support profiles and Profile PIN Locks.
                 </p>
                 
                 <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '1.5rem', borderRadius: '16px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
-                    <ol style={{ marginLeft: '1.5rem', marginBottom: '1.5rem', color: 'rgba(255, 255, 255, 0.9)', lineHeight: '1.8' }}>
-                        <li style={{ marginBottom: '0.5rem' }}>Go to your <a href="https://supabase.com/dashboard/project/_/sql" target="_blank" rel="noreferrer" style={{ color: '#ffffff', fontWeight: 600, textDecoration: 'none', borderBottom: '1px solid currentColor' }}>Supabase SQL Editor</a>.</li>
-                        <li style={{ marginBottom: '0.5rem' }}>Click <strong>"New Query"</strong>.</li>
-                        <li style={{ marginBottom: '0.5rem' }}>Paste the SQL code provided below.</li>
-                        <li style={{ marginBottom: '0.5rem' }}>Click <strong>"Run"</strong> and ensure success.</li>
-                        <li>Refresh this page to start.</li>
-                    </ol>
-                    
-                    <div style={{ position: 'relative' }}>
-                        <pre style={{ 
-                            background: 'rgba(10, 10, 10, 0.8)', 
-                            padding: '1.25rem', 
-                            borderRadius: '12px', 
-                            overflowX: 'auto', 
-                            fontSize: '0.875rem', 
-                            color: '#34d399',
-                            maxHeight: '300px',
-                            border: '1px solid rgba(255, 255, 255, 0.1)',
-                            lineHeight: '1.6',
-                            fontFamily: 'monospace'
-                        }}>
-{`-- Enable UUID extension
-create extension if not exists "uuid-ossp";
-
--- 1. PROFILES TABLE
+                    <p style={{ color: '#fff', fontWeight: 700, marginBottom: '0.5rem' }}>If setting up for the first time:</p>
+                    <pre style={{ 
+                        background: 'rgba(10, 10, 10, 0.8)', 
+                        padding: '1.25rem', 
+                        borderRadius: '12px', 
+                        overflowX: 'auto', 
+                        fontSize: '0.875rem', 
+                        color: '#34d399',
+                        maxHeight: '180px',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        lineHeight: '1.6',
+                        fontFamily: 'monospace',
+                        marginBottom: '1rem'
+                    }}>
+{`-- Create profiles table with PIN Lock column
 create table profiles (
   id uuid default uuid_generate_v4() primary key,
   user_id uuid references auth.users(id) on delete cascade not null,
@@ -162,197 +348,27 @@ create table profiles (
   haptics boolean default true,
   notify_friend_activity boolean default true,
   notify_new_content boolean default true,
+  pin text check (pin ~ '^[0-9]{4}$'), -- 4-digit PIN
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
--- RLS for Profiles
-alter table profiles enable row level security;
-
-create policy "Users can view their own profiles"
-  on profiles for select
-  using (auth.uid() = user_id);
-
-create policy "Users can insert their own profiles"
-  on profiles for insert
-  with check (auth.uid() = user_id);
-
-create policy "Users can update their own profiles"
-  on profiles for update
-  using (auth.uid() = user_id);
-
-create policy "Users can delete their own profiles"
-  on profiles for delete
-  using (auth.uid() = user_id);
-
--- 2. MY LIST TABLE
-create table my_list (
-  id uuid default uuid_generate_v4() primary key,
-  profile_id uuid references profiles(id) on delete cascade not null,
-  movie_id integer not null, -- TMDB ID
-  type text not null check (type in ('movie', 'tv')),
-  data jsonb not null,
-  added_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  unique(profile_id, movie_id, type)
-);
-
--- RLS for My List
-alter table my_list enable row level security;
-
-create policy "Users can view their list via profile"
-  on my_list for select
-  using (exists (select 1 from profiles where profiles.id = my_list.profile_id and profiles.user_id = auth.uid()));
-
-create policy "Users can insert into their list via profile"
-  on my_list for insert
-  with check (exists (select 1 from profiles where profiles.id = my_list.profile_id and profiles.user_id = auth.uid()));
-
-create policy "Users can delete from their list via profile"
-  on my_list for delete
-  using (exists (select 1 from profiles where profiles.id = my_list.profile_id and profiles.user_id = auth.uid()));
-
--- 3. WATCH PROGRESS TABLE
-create table watch_progress (
-  id uuid default uuid_generate_v4() primary key,
-  profile_id uuid references profiles(id) on delete cascade not null,
-  item_id integer not null,
-  type text not null check (type in ('movie', 'tv')),
-  progress integer not null,
-  duration integer not null,
-  season_number integer,
-  episode_number integer,
-  last_watched timestamp with time zone default timezone('utc'::text, now()) not null,
-  data jsonb not null,
-  unique(profile_id, item_id, type)
-);
-
--- RLS for Watch Progress
-alter table watch_progress enable row level security;
-
-create policy "Users can view their progress via profile"
-  on watch_progress for select
-  using (exists (select 1 from profiles where profiles.id = watch_progress.profile_id and profiles.user_id = auth.uid()));
-
-create policy "Users can insert/update their progress via profile"
-  on watch_progress for all
-  using (exists (select 1 from profiles where profiles.id = watch_progress.profile_id and profiles.user_id = auth.uid()));
-
--- 4. REVIEWS TABLE
-create table if not exists reviews (
-  id uuid default uuid_generate_v4() primary key,
-  user_id uuid references auth.users(id) on delete cascade not null,
-  item_id text not null,
-  content text not null,
-  rating integer not null check (rating >= 1 and rating <= 10),
-  spoiler boolean default false,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
--- RLS for Reviews
-alter table reviews enable row level security;
-create policy "Reviews are viewable by everyone" on reviews for select using (true);
-create policy "Users can create reviews" on reviews for insert with check (auth.uid() = user_id);
-
--- 5. RATINGS TABLE
-create table if not exists ratings (
-  id uuid default uuid_generate_v4() primary key,
-  user_id uuid references auth.users(id) on delete cascade not null,
-  item_id text not null,
-  rating integer not null check (rating >= 1 and rating <= 10),
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  unique(user_id, item_id)
-);
-
--- RLS for Ratings
-alter table ratings enable row level security;
-create policy "Ratings are viewable by everyone" on ratings for select using (true);
-create policy "Users can rate items" on ratings for insert with check (auth.uid() = user_id);
-create policy "Users can update their ratings" on ratings for update using (auth.uid() = user_id);
-
--- 6. REVIEW LIKES TABLE
-create table if not exists review_likes (
-  id uuid default uuid_generate_v4() primary key,
-  review_id uuid references reviews(id) on delete cascade not null,
-  user_id uuid references auth.users(id) on delete cascade not null,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  unique(review_id, user_id)
-);
-
--- RLS for Review Likes
-alter table review_likes enable row level security;
-create policy "Review likes are viewable by everyone" on review_likes for select using (true);
-create policy "Users can like reviews" on review_likes for insert with check (auth.uid() = user_id);
-create policy "Users can unlike their own likes" on review_likes for delete using (auth.uid() = user_id);
-
--- 7. ACTIVITY REACTIONS TABLE
-create table if not exists activity_reactions (
-  id uuid default uuid_generate_v4() primary key,
-  item_id text not null,
-  media_type text not null,
-  user_id uuid references auth.users(id) on delete cascade not null,
-  target_user_id uuid references auth.users(id) on delete cascade not null,
-  emoji text not null,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  unique(item_id, user_id, target_user_id, emoji)
-);
-
--- RLS for Activity Reactions
-alter table activity_reactions enable row level security;
-create policy "Activity reactions are viewable by everyone" on activity_reactions for select using (true);
-create policy "Users can react to activity" on activity_reactions for insert with check (auth.uid() = user_id);
-
--- 8. NOTIFICATIONS TABLE
-create table if not exists notifications (
-  id uuid default uuid_generate_v4() primary key,
-  user_id uuid references auth.users(id) on delete cascade not null,
-  type text not null,
-  title text not null,
-  content text not null,
-  data jsonb,
-  is_read boolean default false,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
--- RLS for Notifications
-alter table notifications enable row level security;
-create policy "Users can view their own notifications" on notifications for select using (auth.uid() = user_id);
-create policy "System/users can insert notifications" on notifications for insert with check (true);
-create policy "Users can update their own notifications" on notifications for update using (auth.uid() = user_id);
-create policy "Users can delete their own notifications" on notifications for delete using (auth.uid() = user_id);
-
--- 9. FRIENDS TABLE
-create table if not exists friends (
-  id uuid default uuid_generate_v4() primary key,
-  user_id uuid references auth.users(id) on delete cascade not null,
-  friend_id uuid references auth.users(id) on delete cascade not null,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  unique(user_id, friend_id)
-);
-
--- RLS for Friends
-alter table friends enable row level security;
-create policy "Users can view their own friends" on friends for select using (auth.uid() = user_id or auth.uid() = friend_id);
-create policy "Users can insert friends" on friends for insert with check (auth.uid() = user_id);
-create policy "Users can delete friends" on friends for delete using (auth.uid() = user_id);
-
--- 10. FRIEND REQUESTS TABLE
-create table if not exists friend_requests (
-  id uuid default uuid_generate_v4() primary key,
-  sender_id uuid references auth.users(id) on delete cascade not null,
-  receiver_id uuid references auth.users(id) on delete cascade not null,
-  status text not null check (status in ('pending', 'accepted', 'declined')),
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  unique(sender_id, receiver_id)
-);
-
--- RLS for Friend Requests
-alter table friend_requests enable row level security;
-create policy "Users can view their own requests" on friend_requests for select using (auth.uid() = sender_id or auth.uid() = receiver_id);
-create policy "Users can insert request" on friend_requests for insert with check (auth.uid() = sender_id);
-create policy "Users can update request" on friend_requests for update using (auth.uid() = receiver_id);
-create policy "Users can delete request" on friend_requests for delete using (auth.uid() = sender_id or auth.uid() = receiver_id);
-`}
+);`}
                     </pre>
-                    </div>
+
+                    <p style={{ color: '#fff', fontWeight: 700, marginBottom: '0.5rem' }}>If migrating an existing profiles table:</p>
+                    <pre style={{ 
+                        background: 'rgba(10, 10, 10, 0.8)', 
+                        padding: '1.25rem', 
+                        borderRadius: '12px', 
+                        overflowX: 'auto', 
+                        fontSize: '0.875rem', 
+                        color: '#fbbf24',
+                        maxHeight: '100px',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        lineHeight: '1.6',
+                        fontFamily: 'monospace'
+                    }}>
+{`-- Add pin column to profiles
+alter table profiles add column if not exists pin text check (pin ~ '^[0-9]{4}$');`}
+                    </pre>
                 </div>
                 
                 <button 
@@ -379,104 +395,6 @@ create policy "Users can delete request" on friend_requests for delete using (au
     );
   }
 
-  const handleAddProfile = async () => {
-    if (!newProfileName.trim() || addingLoading) return;
-    
-    setAddingLoading(true);
-    triggerSuccessHaptic();
-    try {
-        const newProfile = await ProfileService.addProfile(newProfileName.trim(), false, selectedAvatar);
-        if (newProfile) {
-            await loadProfiles();
-            setIsAdding(false);
-            setNewProfileName('');
-        }
-    } catch (e) {
-        // Fallback for failed add (likely also missing table if not caught by get)
-        console.error(e);
-    }
-    setAddingLoading(false);
-  };
-
-
-  // TV Mode variables
-  const isTVMode = typeof localStorage !== 'undefined' && localStorage.getItem('cinemovie_is_tv') === 'true';
-  const [backgroundMediaList, setBackgroundMediaList] = useState<any[]>([]);
-  const [currentMediaIdx, setCurrentMediaIdx] = useState<number>(0);
-  const [activeProfileIdx, setActiveProfileIdx] = useState<number>(0);
-  const [isFading, setIsFading] = useState<boolean>(false);
-  const [activeMediaLogo, setActiveMediaLogo] = useState<string | null>(null);
-
-  // Fetch background media (TV mode only)
-  useEffect(() => {
-    if (!isTVMode) return;
-    Promise.all([
-      fetch(`https://api.themoviedb.org/3/trending/movie/week?api_key=${API_KEY}&language=en-US`).then(r => r.json()).catch(() => ({ results: [] })),
-      fetch(`https://api.themoviedb.org/3/trending/tv/week?api_key=${API_KEY}&language=en-US`).then(r => r.json()).catch(() => ({ results: [] }))
-    ]).then(([moviesData, tvData]) => {
-      const list = [];
-      const movies = moviesData.results || [];
-      const tv = tvData.results || [];
-      const len = Math.max(movies.length, tv.length);
-      for (let i = 0; i < len; i++) {
-        if (movies[i] && movies[i].backdrop_path) list.push({ ...movies[i], media_type: 'movie' });
-        if (tv[i] && tv[i].backdrop_path) list.push({ ...tv[i], media_type: 'tv' });
-      }
-      if (list.length > 0) {
-        setBackgroundMediaList(list.slice(0, 15));
-      }
-    });
-  }, [isTVMode]);
-
-  // Fetch current media logo
-  useEffect(() => {
-    if (!isTVMode || backgroundMediaList.length === 0) return;
-    const media = backgroundMediaList[currentMediaIdx];
-    if (!media) return;
-    setActiveMediaLogo(null);
-    const type = media.media_type || (media.title ? 'movie' : 'tv');
-    fetch(`https://api.themoviedb.org/3/${type}/${media.id}/images?api_key=${API_KEY}`)
-      .then(res => res.json())
-      .then(data => {
-        const logos = data.logos || [];
-        // Find first English logo
-        const englishLogo = logos.find((l: any) => l.iso_639_1 === 'en');
-        if (englishLogo) {
-          setActiveMediaLogo(`https://image.tmdb.org/t/p/w500${englishLogo.file_path}`);
-        }
-      })
-      .catch(() => {});
-  }, [isTVMode, backgroundMediaList, currentMediaIdx]);  // Rotates background media every 30 seconds with cross-fade animation to black (TV mode only)
-  useEffect(() => {
-    if (!isTVMode || backgroundMediaList.length === 0) return;
-    const interval = setInterval(() => {
-      // Start fade to black
-      setIsFading(true);
-      setTimeout(() => {
-        setCurrentMediaIdx(prev => (prev + 1) % backgroundMediaList.length);
-        // Wait in the dark for 1.2s to change state before fading in
-        setTimeout(() => {
-          setIsFading(false);
-        }, 1200);
-      }, 800); // 800ms transition duration to reach complete black screen
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [isTVMode, backgroundMediaList]);
-
-  const [selectingProfile, setSelectingProfile] = useState<Profile | null>(null);
-
-  const handleSelect = (profile: Profile) => {
-    triggerSuccessHaptic();
-    if (isTVMode) {
-      setSelectingProfile(profile);
-      setTimeout(() => {
-        onProfileSelected(profile);
-      }, 2400); // 2.4s delay to load backdrop, row cards, and hero elements silently in background
-    } else {
-      onProfileSelected(profile);
-    }
-  };
-
   if (loading) {
      return (
          <div style={{
@@ -494,23 +412,177 @@ create policy "Users can delete request" on friend_requests for delete using (au
      );
   }
 
-  const handleDeleteProfile = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    triggerHaptic('medium');
-    setDeleteProfileId(id);
-  };
+  // 1-0 Numeric Pad locks screen
+  if (unlockProfile) {
+    return (
+      <div style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 11000,
+        background: '#09090b',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '24px',
+        color: '#fff',
+        fontFamily: 'system-ui, -apple-system, sans-serif'
+      }}>
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '16px',
+          marginBottom: '32px',
+          textAlign: 'center'
+        }}>
+          <div style={{
+            width: '84px',
+            height: '84px',
+            borderRadius: '20px',
+            overflow: 'hidden',
+            border: '2px solid rgba(255,255,255,0.1)',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.5)'
+          }}>
+            <img src={unlockProfile.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          </div>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 900, margin: '8px 0 4px 0' }}>Profile Locked</h2>
+          <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem', margin: 0 }}>
+            Enter PIN for <strong>{unlockProfile.name}</strong>
+          </p>
+        </div>
 
-  const executeDeleteProfile = async () => {
-    if (!deleteProfileId) return;
-    triggerHaptic('heavy');
-    setLoading(true);
-    await ProfileService.deleteProfile(deleteProfileId);
-    await loadProfiles();
-    setDeleteProfileId(null);
-    setLoading(false);
-  };
+        {/* PIN circle dots */}
+        <div 
+          className={pinError ? 'shake' : ''}
+          style={{
+            display: 'flex',
+            gap: '20px',
+            marginBottom: '40px',
+            transition: 'transform 0.1s ease'
+          }}
+        >
+          {[0, 1, 2, 3].map((idx) => (
+            <div
+              key={idx}
+              style={{
+                width: '18px',
+                height: '18px',
+                borderRadius: '50%',
+                border: '2px solid rgba(255,255,255,0.4)',
+                background: enteredPin.length > idx 
+                  ? (pinError ? '#ef4444' : '#ffffff') 
+                  : 'transparent',
+                boxShadow: enteredPin.length > idx && !pinError ? '0 0 12px #fff' : 'none',
+                transition: 'all 0.15s cubic-bezier(0.16, 1, 0.3, 1)'
+              }}
+            />
+          ))}
+        </div>
 
-  const activeMedia = backgroundMediaList[currentMediaIdx];  // Render TV-optimized split layout
+        {/* Premium Numeric Key Button Pad (Designed for phone viewport) */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '16px',
+          maxWidth: '280px',
+          width: '100%',
+          boxSizing: 'border-box'
+        }}>
+          {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((num) => (
+            <button
+              key={num}
+              onClick={() => handlePinDigit(num)}
+              style={{
+                aspectRatio: '1/1',
+                borderRadius: '50%',
+                background: 'rgba(255,255,255,0.06)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                color: '#fff',
+                fontSize: '1.6rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                outline: 'none',
+                transition: 'all 0.15s ease'
+              }}
+              className="pin-btn"
+            >
+              {num}
+            </button>
+          ))}
+          
+          {/* Bottom row: Cancel / 0 / Backspace */}
+          <button
+            onClick={() => { triggerHaptic('light'); setUnlockProfile(null); }}
+            style={{
+              aspectRatio: '1/1',
+              borderRadius: '50%',
+              background: 'transparent',
+              border: 'none',
+              color: 'rgba(255,255,255,0.6)',
+              fontSize: '0.9rem',
+              fontWeight: 800,
+              cursor: 'pointer',
+              outline: 'none'
+            }}
+          >
+            Cancel
+          </button>
+          
+          <button
+            onClick={() => handlePinDigit('0')}
+            style={{
+              aspectRatio: '1/1',
+              borderRadius: '50%',
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              color: '#fff',
+              fontSize: '1.6rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              outline: 'none'
+            }}
+            className="pin-btn"
+          >
+            0
+          </button>
+
+          <button
+            onClick={handlePinDelete}
+            style={{
+              aspectRatio: '1/1',
+              borderRadius: '50%',
+              background: 'transparent',
+              border: 'none',
+              color: '#fff',
+              fontSize: '1.2rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              outline: 'none'
+            }}
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/>
+              <line x1="18" y1="9" x2="12" y2="15"/>
+              <line x1="12" y1="9" x2="18" y2="15"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const activeMedia = backgroundMediaList[currentMediaIdx];  
+  
+  // Render TV-optimized split layout
   if (isTVMode) {
     return (
       <div 
@@ -572,7 +644,7 @@ create policy "Users can delete request" on friend_requests for delete using (au
           </div>
         )}
 
-        {/* Left Side: Dark Profiles Panel (approx 38% width) */}
+        {/* Left Side: Dark Profiles Panel */}
         <div style={{
           width: '38%',
           minWidth: '420px',
@@ -599,262 +671,144 @@ create policy "Users can delete request" on friend_requests for delete using (au
             <img 
               src="/cinemovie-logo.png" 
               alt="CineMovie" 
-              style={{
-                height: '48px',
-                width: 'auto',
-                objectFit: 'contain'
-              }} 
+              style={{ height: '32px', width: 'auto', objectFit: 'contain' }}
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
             />
-            <span style={{
-              fontSize: '0.88rem',
-              fontWeight: 700,
-              color: 'rgba(255, 255, 255, 0.45)',
-              letterSpacing: '0.04em',
-              textTransform: 'none',
-              marginLeft: '2px'
-            }}>
-              Choose a Profile
-            </span>
           </div>
 
-          {isAdding ? (
-            /* TV-Optimized Create Profile Form */
-            <div style={{ width: '100%', marginTop: '90px', display: 'flex', flexDirection: 'column', gap: '20px', boxSizing: 'border-box', animation: 'fadeInScale 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}>
-              <h2 style={{ color: '#fff', fontSize: '1.8rem', fontWeight: 900, margin: '0 0 10px 0', letterSpacing: '-0.03em' }}>{t('create_profile')}</h2>
-              
-              {/* Profile Setup Area (Removed Card Background) */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '100%', boxSizing: 'border-box' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', width: '100%' }}>
-                  {/* Selected Avatar Preview */}
-                  <div style={{ width: '64px', height: '64px', borderRadius: '12px', overflow: 'hidden', border: '2.5px solid rgba(255, 255, 255, 0.15)', flexShrink: 0 }}>
-                    <img src={selectedAvatar} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  </div>
-                  {/* Input Name field */}
-                  <div style={{ flex: 1 }}>
-                    <input
-                      autoFocus
-                      type="text"
-                      value={newProfileName}
-                      onChange={(e) => setNewProfileName(e.target.value)}
-                      placeholder={t('profile_name')}
-                      className="profile-input-tv tv-focusable"
-                      style={{
-                        width: '100%',
-                        padding: '12px 16px',
-                        borderRadius: '12px',
-                        background: '#141414',
-                        border: '1.5px solid rgba(255,255,255,0.08)',
-                        color: '#fff',
-                        fontSize: '1rem',
-                        fontWeight: 700,
-                        outline: 'none',
-                        boxSizing: 'border-box'
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {/* Avatar Selection Area */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '4px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem', fontWeight: 800 }}>Choose Avatar</span>
-                    <button
-                      onClick={() => { triggerHaptic('light'); generateAvatarOptions(); }}
-                      className="tv-focusable"
-                      style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: '#fff', padding: '4px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}
-                    >
-                      Shuffle
-                    </button>
-                  </div>
-                  
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px' }}>
-                    {avatarOptions.slice(0, 5).map((url: string, index: number) => (
-                      <div
-                        key={index}
-                        onClick={() => setSelectedAvatar(url)}
-                        className="tv-focusable"
-                        tabIndex={0}
-                        style={{
-                          aspectRatio: '1/1',
-                          borderRadius: '10px',
-                          overflow: 'hidden',
-                          cursor: 'pointer',
-                          border: selectedAvatar === url ? '2.5px solid #ffffff' : '1.5px solid rgba(255,255,255,0.08)',
-                          background: '#141414'
-                        }}
-                      >
-                        <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Buttons Row */}
-              <div style={{ display: 'flex', gap: '12px', width: '100%' }}>
-                <button
-                  onClick={() => setIsAdding(false)}
-                  className="tv-focusable"
-                  style={{
-                    flex: 1,
-                    padding: '12px',
-                    background: 'rgba(255, 255, 255, 0.05)',
-                    color: '#fff',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    borderRadius: '12px',
-                    fontSize: '0.9rem',
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                    outline: 'none'
-                  }}
-                >
-                  {t('cancel')}
-                </button>
-                <button
-                  onClick={handleAddProfile}
-                  disabled={addingLoading || !newProfileName.trim()}
-                  className="tv-focusable"
-                  style={{
-                    flex: 1.5,
-                    padding: '12px',
-                    background: addingLoading || !newProfileName.trim() ? 'rgba(255, 255, 255, 0.05)' : '#ffffff',
-                    color: addingLoading || !newProfileName.trim() ? 'rgba(255, 255, 255, 0.2)' : '#000000',
-                    border: 'none',
-                    borderRadius: '12px',
-                    fontSize: '0.9rem',
-                    fontWeight: 900,
-                    cursor: addingLoading || !newProfileName.trim() ? 'not-allowed' : 'pointer',
-                    outline: 'none'
-                  }}
-                >
-                  {addingLoading ? t('saving') : t('save_profile')}
-                </button>
-              </div>
-            </div>
-          ) : (
-            /* TV-Optimized Profile Grid list */
+          {!isAdding && !editingProfile ? (
             <>
-              {/* Profiles Grid (3 columns next to each other, no scrolling) */}
-              <div 
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(3, 1fr)',
-                  gap: '16px',
-                  width: '100%',
-                  marginTop: '110px',
-                  boxSizing: 'border-box'
-                }}
-              >
+              <h1 style={{ fontSize: '2.5rem', fontWeight: 950, color: '#ffffff', margin: '0 0 8px 0', letterSpacing: '-1.5px' }}>
+                {isManaging ? 'Manage Profiles' : "Who's watching?"}
+              </h1>
+              <p style={{ fontSize: '0.92rem', color: 'rgba(255,255,255,0.45)', margin: '0 0 32px 0', fontWeight: 600 }}>
+                Select a profile to begin your customized home screen.
+              </p>
+
+              {/* Profiles Row/Grid */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', width: '100%' }}>
                 {profiles.map((profile, idx) => {
-                  const isFocused = idx === activeProfileIdx;
-                  const hideName = profiles.length >= 4;
+                  const isFocused = activeProfileIdx === idx;
                   return (
-                    <div
+                    <div 
                       key={profile.id}
-                      onClick={(e) => {
-                        if (isManaging) {
-                          handleDeleteProfile(profile.id, e);
-                        } else {
-                          handleSelect(profile);
-                        }
-                      }}
+                      onClick={(e) => isManaging ? openEditProfile(profile, e) : handleSelect(profile)}
                       onFocus={() => setActiveProfileIdx(idx)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
                           if (isManaging) {
-                            handleDeleteProfile(profile.id, e as any);
+                            openEditProfile(profile, e as any);
                           } else {
                             handleSelect(profile);
                           }
                         }
                       }}
                       tabIndex={0}
-                      className="profile-item tv-focusable"
+                      className="tv-focusable"
                       style={{
+                        position: 'relative',
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: 'center',
-                        gap: '10px',
-                        padding: '8px',
-                        borderRadius: '12px',
+                        gap: '12px',
                         cursor: 'pointer',
-                        outline: 'none',
-                        position: 'relative',
+                        padding: '12px',
+                        borderRadius: '16px',
+                        background: isFocused ? 'rgba(255,255,255,0.08)' : 'transparent',
+                        border: isFocused ? '1.5px solid rgba(255,255,255,0.2)' : '1.5px solid transparent',
                         transition: 'all 0.2s ease',
-                        boxSizing: 'border-box'
+                        outline: 'none',
+                        width: '100px'
                       }}
                     >
-
-                      {/* Profile Avatar Card Container */}
                       <div style={{
-                        width: '76px',
-                        height: '76px',
-                        borderRadius: '8px',
+                        width: '74px',
+                        height: '74px',
+                        borderRadius: '14px',
                         overflow: 'hidden',
-                        flexShrink: 0,
-                        boxShadow: isFocused ? '0 0 0 3px #ffffff' : 'none',
-                        transform: isFocused ? 'scale(1.04)' : 'scale(1)',
-                        opacity: isFocused ? 1 : 0.5,
-                        transition: 'all 0.2s ease',
-                        border: 'none',
-                        background: '#141414',
-                        position: 'relative'
+                        position: 'relative',
+                        boxShadow: isFocused ? '0 10px 30px rgba(0,0,0,0.8)' : '0 4px 12px rgba(0,0,0,0.4)'
                       }}>
                         <img 
                           src={profile.avatar} 
                           alt="" 
-                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                          onError={(e) => {
-                            const target = e.currentTarget as HTMLImageElement;
-                            target.src = `/avatars/avatar-${(idx % 6) + 1}.jpg`;
-                          }}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
                         />
-
-                        {/* TV Deletion Overlay when in Manage mode */}
                         {isManaging && (
                           <div style={{
                             position: 'absolute',
                             inset: 0,
-                            background: 'rgba(225, 29, 72, 0.8)',
+                            background: 'rgba(0,0,0,0.6)',
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: 'center',
-                            zIndex: 10
+                            justifyContent: 'center'
                           }}>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5">
-                              <line x1="18" y1="6" x2="6" y2="18"></line>
-                              <line x1="6" y1="6" x2="18" y2="18"></line>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3">
+                              <path d="M12 20h9"/>
+                              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
                             </svg>
                           </div>
                         )}
                       </div>
-
-                      {/* Profile Name Displayed below the avatar only if 3 or fewer profiles */}
-                      {!hideName && (
-                        <span style={{
-                          fontSize: '0.9rem',
-                          fontWeight: 800,
-                          color: isFocused ? '#ffffff' : 'rgba(255, 255, 255, 0.6)',
-                          textShadow: '0 2px 4px rgba(0,0,0,0.6)',
-                          transition: 'color 0.2s ease',
-                          textAlign: 'center',
-                          maxWidth: '80px',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap'
+                      
+                      {profile.isKids && (
+                        <div style={{
+                          position: 'absolute',
+                          top: '4px',
+                          right: '4px',
+                          background: 'rgba(255,255,255,0.15)',
+                          border: '1.5px solid rgba(255,255,255,0.3)',
+                          color: '#fff',
+                          fontSize: '0.62rem',
+                          fontWeight: 900,
+                          padding: '1px 6px',
+                          borderRadius: '8px',
+                          letterSpacing: '0.05em'
                         }}>
-                          {profile.name}
-                        </span>
+                          KIDS
+                        </div>
                       )}
+
+                      {profile.pin && (
+                        <div style={{
+                          position: 'absolute',
+                          top: '4px',
+                          left: '4px',
+                          background: 'rgba(0,0,0,0.7)',
+                          color: '#fff',
+                          padding: '3px',
+                          borderRadius: '6px',
+                          zIndex: 10
+                        }}>
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                          </svg>
+                        </div>
+                      )}
+
+                      <span style={{
+                        fontSize: '0.9rem',
+                        fontWeight: 800,
+                        color: isFocused ? '#ffffff' : 'rgba(255,255,255,0.6)',
+                        textAlign: 'center',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        width: '100%'
+                      }}>
+                        {profile.name}
+                      </span>
                     </div>
                   );
                 })}
               </div>
 
-              {/* Action Row: Manage Profiles & Add Profile side-by-side */}
+              {/* Action Row */}
               <div style={{ display: 'flex', gap: '12px', width: '100%', marginTop: '36px', boxSizing: 'border-box' }}>
-                {/* Manage Profiles Trigger Button */}
                 {profiles.length > 0 && localStorage.getItem('cinemovie_is_guest') !== 'true' && (() => {
                   const isFocused = activeProfileIdx === profiles.length;
                   return (
@@ -891,13 +845,19 @@ create policy "Users can delete request" on friend_requests for delete using (au
                   );
                 })()}
 
-                {/* Small Plus/Add Button next to Manage */}
                 {!(localStorage.getItem('cinemovie_is_guest') === 'true' && profiles.length >= 1) && (() => {
                   const isFocused = activeProfileIdx === (profiles.length + 1);
                   return (
                     <button
                       onFocus={() => setActiveProfileIdx(profiles.length + 1)}
-                      onClick={() => { triggerHaptic('light'); setIsAdding(true); }}
+                      onClick={() => { 
+                        triggerHaptic('light'); 
+                        setIsAdding(true); 
+                        setNewProfileName('');
+                        setNewProfileIsKids(false);
+                        setNewProfileHasPin(false);
+                        setNewProfilePin('');
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
@@ -931,17 +891,145 @@ create policy "Users can delete request" on friend_requests for delete using (au
                 })()}
               </div>
             </>
+          ) : (
+            // Add / Edit Profile View in TV Mode
+            <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <h2 style={{ fontSize: '2rem', fontWeight: 900, color: '#fff', margin: 0 }}>
+                {isAdding ? 'Create Profile' : 'Edit Profile'}
+              </h2>
+              
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+                <div style={{ width: '80px', height: '80px', borderRadius: '16px', overflow: 'hidden' }}>
+                  <img src={selectedAvatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                </div>
+                <input
+                  autoFocus
+                  type="text"
+                  value={newProfileName}
+                  onChange={(e) => setNewProfileName(e.target.value)}
+                  placeholder="Profile Name"
+                  style={{
+                    flex: 1,
+                    padding: '12px 16px',
+                    borderRadius: '12px',
+                    background: '#141414',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    color: '#fff',
+                    fontSize: '1rem',
+                    fontWeight: 700,
+                    outline: 'none'
+                  }}
+                />
+              </div>
+
+              {/* Kids Mode Toggle */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', userSelect: 'none' }}>
+                <input 
+                  type="checkbox" 
+                  checked={newProfileIsKids}
+                  onChange={(e) => setNewProfileIsKids(e.target.checked)}
+                  style={{ width: '20px', height: '20px', accentColor: '#fff' }}
+                />
+                <span style={{ fontSize: '1rem', fontWeight: 600 }}>Kids Mode (Filtered Safe Content)</span>
+              </label>
+
+              {/* PIN lock input */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', userSelect: 'none' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={newProfileHasPin}
+                    onChange={(e) => setNewProfileHasPin(e.target.checked)}
+                    style={{ width: '20px', height: '20px', accentColor: '#fff' }}
+                  />
+                  <span style={{ fontSize: '1rem', fontWeight: 600 }}>Require 4-digit PIN lock</span>
+                </label>
+
+                {newProfileHasPin && (
+                  <input
+                    type="text"
+                    maxLength={4}
+                    value={newProfilePin}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9]/g, '');
+                      if (val.length <= 4) setNewProfilePin(val);
+                    }}
+                    placeholder="Enter 4-digit PIN"
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: '10px',
+                      background: '#141414',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      color: '#fff',
+                      fontSize: '0.9rem',
+                      width: '140px',
+                      outline: 'none',
+                      letterSpacing: '0.2em',
+                      fontWeight: 'bold',
+                      textAlign: 'center'
+                    }}
+                  />
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
+                <button
+                  onClick={() => { triggerHaptic('light'); setIsAdding(false); setEditingProfile(null); }}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: '12px',
+                    color: '#fff',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={isAdding ? handleAddProfile : handleUpdateProfile}
+                  disabled={!newProfileName.trim() || (newProfileHasPin && newProfilePin.length !== 4)}
+                  style={{
+                    flex: 2,
+                    padding: '12px',
+                    background: '#fff',
+                    color: '#000',
+                    border: 'none',
+                    borderRadius: '12px',
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                    opacity: !newProfileName.trim() || (newProfileHasPin && newProfilePin.length !== 4) ? 0.4 : 1
+                  }}
+                >
+                  Save Profile
+                </button>
+              </div>
+
+              {!isAdding && editingProfile && (
+                <button
+                  onClick={() => setDeleteProfileId(editingProfile.id)}
+                  style={{
+                    padding: '12px',
+                    background: 'rgba(239, 68, 68, 0.1)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    borderRadius: '12px',
+                    color: '#ef4444',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    marginTop: '8px'
+                  }}
+                >
+                  Delete Profile
+                </button>
+              )}
+            </div>
           )}
         </div>
 
-        {/* Right Side: Rotating Media Poster & Details */}
-        <div style={{
-          flex: 1,
-          height: '100%',
-          position: 'relative',
-          background: '#000000',
-          zIndex: 10
-        }}>
+        {/* Right Side: Rotating Backdrop Poster */}
+        <div style={{ flex: 1, height: '100%', position: 'relative', background: '#000000', zIndex: 10 }}>
           {activeMedia ? (
             <div key={activeMedia.id} style={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }}>
               <img
@@ -955,138 +1043,15 @@ create policy "Users can delete request" on friend_requests for delete using (au
                   transition: 'opacity 0.8s ease-in-out'
                 }}
               />
-              {/* Overlay Gradients to bind it with profiles and screen edges */}
-              <div style={{
-                position: 'absolute',
-                inset: 0,
-                background: 'linear-gradient(to right, #000000 5%, rgba(0,0,0,0.15) 35%, transparent 100%)'
-              }} />
-              <div style={{
-                position: 'absolute',
-                inset: 0,
-                background: 'linear-gradient(to bottom, transparent 55%, rgba(0,0,0,0.95) 100%)'
-              }} />
-
-              {/* Title & Metadata Details Overlay (Bottom Right) */}
-              <div style={{
-                position: 'absolute',
-                bottom: '10%',
-                right: '8%',
-                maxWidth: '600px',
-                textAlign: 'right',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-end',
-                gap: '10px',
-                zIndex: 12,
-                opacity: isFading ? 0 : 1,
-                transition: 'opacity 0.8s ease-in-out'
-              }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  fontSize: '0.8rem',
-                  fontWeight: 900,
-                  color: 'rgba(255,255,255,0.7)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.12em'
-                }}>
-                  <span>{activeMedia.media_type === 'tv' ? 'Series' : 'Film'}</span>
-                </div>
-
-                {/* Show Movie Graphic Logo if available, fallback to styled small text title */}
-                {activeMediaLogo ? (
-                  <img
-                    src={activeMediaLogo}
-                    alt={activeMedia.title || activeMedia.name}
-                    style={{
-                      maxHeight: '120px',
-                      maxWidth: '85%',
-                      objectFit: 'contain',
-                      margin: '12px 0',
-                      filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.8))'
-                    }}
-                  />
-                ) : (
-                  <h2 style={{
-                    margin: '4px 0 8px 0',
-                    fontSize: '2.4rem',
-                    fontWeight: 950,
-                    color: '#ffffff',
-                    lineHeight: 1.05,
-                    letterSpacing: '-1px',
-                    textShadow: '0 4px 20px rgba(0,0,0,0.95)'
-                  }}>
-                    {activeMedia.title || activeMedia.name}
-                  </h2>
-                )}
-                
-                {/* Custom formatted genre bullet points matching photo */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  fontSize: '0.9rem',
-                  fontWeight: 700,
-                  color: 'rgba(255,255,255,0.85)',
-                  textShadow: '0 2px 4px rgba(0,0,0,0.7)',
-                  marginBottom: '6px'
-                }}>
-                  {activeMedia.genre_ids?.slice(0, 3).map((id: number, gIdx: number) => {
-                    const gMap: Record<number, string> = {
-                      28: 'Action', 12: 'Adventure', 16: 'Animation', 35: 'Comedy', 80: 'Crime',
-                      99: 'Doc', 18: 'Drama', 10751: 'Family', 14: 'Fantasy', 36: 'History',
-                      27: 'Horror', 10402: 'Music', 9648: 'Sci-Fi Mystery', 10749: 'Romance', 878: 'Sci-Fi',
-                      10770: 'Thriller', 53: 'Thriller', 10752: 'War', 37: 'Western',
-                      10759: 'Action', 10762: 'Kids', 10765: 'Sci-Fi Mystery'
-                    };
-                    const name = gMap[id] || 'Cerebral';
-                    return (
-                      <React.Fragment key={id}>
-                        {gIdx > 0 && <span style={{ color: 'rgba(255,255,255,0.4)' }}>•</span>}
-                        <span>{name}</span>
-                      </React.Fragment>
-                    );
-                  }) || (
-                    <>
-                      <span>Mind-Bending</span>
-                      <span style={{ color: 'rgba(255,255,255,0.4)' }}>•</span>
-                      <span>Cerebral</span>
-                      <span style={{ color: 'rgba(255,255,255,0.4)' }}>•</span>
-                      <span>Sci-Fi Mystery</span>
-                    </>
-                  )}
-                </div>
-
-                <p style={{
-                  margin: 0,
-                  fontSize: '0.88rem',
-                  fontWeight: 500,
-                  color: 'rgba(255,255,255,0.65)',
-                  lineHeight: 1.5,
-                  textAlign: 'right',
-                  textShadow: '0 2px 8px rgba(0,0,0,0.95)',
-                  display: '-webkit-box',
-                  WebkitLineClamp: 3,
-                  WebkitBoxOrient: 'vertical',
-                  overflow: 'hidden',
-                  maxWidth: '480px'
-                }}>
-                  {activeMedia.overview}
-                </p>
-              </div>
+              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, #000000 5%, rgba(0,0,0,0.15) 35%, transparent 100%)' }} />
+              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 55%, rgba(0,0,0,0.95) 100%)' }} />
             </div>
           ) : (
-            <div style={{
-              width: '100%',
-              height: '100%',
-              background: 'radial-gradient(circle at 75% 50%, rgba(255, 255, 255, 0.03) 0%, transparent 60%)'
-            }} />
+            <div style={{ width: '100%', height: '100%', background: 'radial-gradient(circle at 75% 50%, rgba(255, 255, 255, 0.03) 0%, transparent 60%)' }} />
           )}
         </div>
 
-        {/* Custom Profile Deletion Confirmation Drawer inside TV Mode */}
+        {/* Delete Confirmation Modal */}
         {deleteProfileId && (
           <div style={{
             position: 'fixed',
@@ -1098,8 +1063,7 @@ create policy "Users can delete request" on friend_requests for delete using (au
             alignItems: 'center',
             justifyContent: 'center',
             zIndex: 100000,
-            padding: '20px',
-            animation: 'fadeInGlass 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+            padding: '20px'
           }}>
             <div style={{
               maxWidth: '380px',
@@ -1108,38 +1072,15 @@ create policy "Users can delete request" on friend_requests for delete using (au
               border: '1px solid rgba(255, 255, 255, 0.08)',
               borderRadius: '24px',
               padding: '24px',
-              boxShadow: '0 24px 80px rgba(0,0,0,0.8)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '20px',
               textAlign: 'center'
             }}>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-                <div style={{
-                  width: '64px',
-                  height: '64px',
-                  borderRadius: '16px',
-                  overflow: 'hidden',
-                  border: '2px solid rgba(255,255,255,0.1)'
-                }}>
-                  <img 
-                    src={profiles.find(p => p.id === deleteProfileId)?.avatar || ''} 
-                    alt="" 
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                  />
-                </div>
-                <div>
-                  <h3 style={{ margin: '0 0 6px', fontSize: '1.2rem', fontWeight: 900, color: '#fff', letterSpacing: '-0.02em' }}>{t('delete_profile_title')}</h3>
-                  <p style={{ margin: 0, fontSize: '0.85rem', color: 'rgba(255,255,255,0.5)', lineHeight: 1.4 }}>
-                    {t('delete_profile_confirm').replace('{name}', profiles.find(p => p.id === deleteProfileId)?.name || '')}
-                  </p>
-                </div>
-              </div>
+              <h3 style={{ margin: '0 0 12px', fontSize: '1.2rem', fontWeight: 900, color: '#fff' }}>Delete Profile?</h3>
+              <p style={{ margin: '0 0 20px 0', fontSize: '0.85rem', color: 'rgba(255,255,255,0.5)', lineHeight: 1.4 }}>
+                Are you sure you want to delete this profile? This action is permanent.
+              </p>
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button
-                  autoFocus
-                  onClick={() => { triggerHaptic('light'); setDeleteProfileId(null); }}
-                  className="tv-focusable"
+                  onClick={() => setDeleteProfileId(null)}
                   style={{
                     flex: 1,
                     padding: '12px',
@@ -1147,16 +1088,14 @@ create policy "Users can delete request" on friend_requests for delete using (au
                     border: '1px solid rgba(255, 255, 255, 0.08)',
                     borderRadius: '14px',
                     color: '#fff',
-                    fontSize: '0.9rem',
                     fontWeight: 800,
                     cursor: 'pointer'
                   }}
                 >
-                  {t('cancel')}
+                  Cancel
                 </button>
                 <button
                   onClick={executeDeleteProfile}
-                  className="tv-focusable"
                   style={{
                     flex: 1,
                     padding: '12px',
@@ -1164,10 +1103,8 @@ create policy "Users can delete request" on friend_requests for delete using (au
                     border: 'none',
                     borderRadius: '14px',
                     color: '#fff',
-                    fontSize: '0.9rem',
                     fontWeight: 900,
-                    cursor: 'pointer',
-                    boxShadow: '0 4px 16px rgba(225, 29, 72, 0.3)'
+                    cursor: 'pointer'
                   }}
                 >
                   Delete
@@ -1180,6 +1117,7 @@ create policy "Users can delete request" on friend_requests for delete using (au
     );
   }
 
+  // Render Mobile / Web View Layout
   return (
     <div 
       className="profile-selector-container"
@@ -1208,7 +1146,7 @@ create policy "Users can delete request" on friend_requests for delete using (au
           alignItems: 'center',
           animation: 'slideUpGlass 0.7s cubic-bezier(0.16, 1, 0.3, 1)',
       }}>
-          {!isAdding ? (
+          {!isAdding && !editingProfile ? (
               <>
                 <h1 
                   className="profile-selector-title"
@@ -1225,41 +1163,191 @@ create policy "Users can delete request" on friend_requests for delete using (au
                     {isManaging ? t('manage_profiles') : t('whos_watching')}
                 </h1>
 
-                <ProfilesGrid
-                  profiles={profiles}
-                  isManaging={isManaging}
-                  handleSelect={handleSelect}
-                  handleDeleteProfile={handleDeleteProfile}
-                  setIsAdding={setIsAdding}
-                />
-
-                {/* Manage Profiles Toggle */}
-                {profiles.length > 0 && localStorage.getItem('cinemovie_is_guest') !== 'true' && (
-                    <button
-                        onClick={() => { triggerHaptic('medium'); setIsManaging(!isManaging); }}
-                        tabIndex={0}
-                        style={{
-                            marginTop: '4.5rem',
-                            padding: '12px 36px',
-                            background: isManaging ? '#fff' : 'rgba(255,255,255,0.05)',
-                            color: isManaging ? '#000' : '#888',
-                            border: isManaging ? 'none' : '1px solid rgba(255,255,255,0.1)',
-                            borderRadius: '14px',
-                            fontSize: '0.85rem',
-                            fontWeight: 900,
-                            cursor: 'pointer',
-                            letterSpacing: '0.12em',
-                            textTransform: 'uppercase',
-                            transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-                            boxShadow: isManaging ? '0 8px 24px rgba(255,255,255,0.15)' : 'none'
-                        }}
-                        className="manage-btn profile-manage-btn tv-focusable"
+                {/* Profiles grid component */}
+                <div 
+                  className="profiles-grid"
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    justifyContent: 'center',
+                    gap: '2.5rem',
+                    width: '100%',
+                    marginBottom: '1rem',
+                  }}
+                >
+                  {profiles.map((profile, idx) => (
+                    <div 
+                      key={profile.id}
+                      onClick={(e) => isManaging ? openEditProfile(profile, e) : handleSelect(profile)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          if (isManaging) openEditProfile(profile, e as any);
+                          else handleSelect(profile);
+                        }
+                      }}
+                      tabIndex={0}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '1.2rem',
+                        cursor: 'pointer',
+                        position: 'relative'
+                      }}
+                      className="profile-item profile-avatar-name tv-focusable"
                     >
-                      {isManaging ? t('finish') : t('manage_profiles')}
-                    </button>
+                      <div style={{ position: 'relative' }}>
+                        <div 
+                          className="profile-avatar profile-avatar-img-container"
+                          style={{
+                            width: 'clamp(100px, 14vw, 130px)', 
+                            height: 'clamp(100px, 14vw, 130px)',
+                            borderRadius: '28px', 
+                            overflow: 'hidden',
+                            border: 'none',
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            boxShadow: '0 15px 40px rgba(0,0,0,0.5)',
+                            opacity: isManaging ? 0.45 : 1
+                          }}
+                        >
+                          <img src={profile.avatar} alt={profile.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          {isManaging && (
+                            <div style={{
+                              position: 'absolute',
+                              inset: 0,
+                              background: 'rgba(0,0,0,0.5)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}>
+                              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3">
+                                <path d="M12 20h9"/>
+                                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+
+                        {profile.isKids && (
+                          <div style={{
+                            position: 'absolute',
+                            top: '-6px',
+                            right: '-6px',
+                            background: 'rgba(255, 255, 255, 0.15)',
+                            border: '1px solid rgba(255, 255, 255, 0.25)',
+                            color: '#fff',
+                            fontSize: '0.72rem',
+                            fontWeight: 900,
+                            padding: '3px 8px',
+                            borderRadius: '10px',
+                            letterSpacing: '0.05em',
+                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
+                            zIndex: 11
+                          }}>
+                            KIDS
+                          </div>
+                        )}
+
+                        {profile.pin && (
+                          <div style={{
+                            position: 'absolute',
+                            bottom: '0',
+                            right: '0',
+                            background: 'rgba(0,0,0,0.85)',
+                            color: '#fff',
+                            padding: '5px',
+                            borderRadius: '10px',
+                            zIndex: 11,
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                            </svg>
+                          </div>
+                        )}
+                      </div>
+                      
+                      <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '1.05rem', fontWeight: 700, letterSpacing: '-0.02em' }} className="profile-name">
+                        {profile.name}
+                      </span>
+                    </div>
+                  ))}
+
+                  {/* Add Profile Trigger */}
+                  {!(localStorage.getItem('cinemovie_is_guest') === 'true' && profiles.length >= 1) && (
+                    <div 
+                      onClick={() => { 
+                        triggerHaptic('light'); 
+                        setIsAdding(true); 
+                        setNewProfileName('');
+                        setNewProfileIsKids(false);
+                        setNewProfileHasPin(false);
+                        setNewProfilePin('');
+                      }}
+                      tabIndex={0}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '1.2rem',
+                        cursor: 'pointer'
+                      }}
+                      className="add-profile-btn profile-avatar-name tv-focusable"
+                    >
+                      <div 
+                        className="add-icon-container profile-avatar-img-container"
+                        style={{
+                          width: 'clamp(100px, 14vw, 130px)',
+                          height: 'clamp(100px, 14vw, 130px)',
+                          borderRadius: '28px',
+                          background: 'rgba(255,255,255,0.04)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxShadow: '0 15px 40px rgba(0,0,0,0.5)'
+                        }}
+                      >
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="2.5">
+                          <line x1="12" y1="5" x2="12" y2="19"></line>
+                          <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                      </div>
+                      <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '1.05rem', fontWeight: 700 }}>Add Profile</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Manage button */}
+                {profiles.length > 0 && localStorage.getItem('cinemovie_is_guest') !== 'true' && (
+                  <button
+                    onClick={() => { triggerHaptic('medium'); setIsManaging(!isManaging); }}
+                    style={{
+                      marginTop: '4.5rem',
+                      padding: '12px 36px',
+                      background: isManaging ? '#fff' : 'rgba(255,255,255,0.05)',
+                      color: isManaging ? '#000' : '#888',
+                      border: isManaging ? 'none' : '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '14px',
+                      fontSize: '0.85rem',
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                      letterSpacing: '0.12em',
+                      textTransform: 'uppercase',
+                      transition: 'all 0.3s ease'
+                    }}
+                    className="manage-btn profile-manage-btn tv-focusable"
+                  >
+                    {isManaging ? t('finish') : t('manage_profiles')}
+                  </button>
                 )}
               </>
           ) : (
+              // Add / Edit Profile View in Mobile/Web Mode
               <div className="add-profile-container" style={{
                 width: '100%',
                 maxWidth: '850px',
@@ -1267,10 +1355,7 @@ create policy "Users can delete request" on friend_requests for delete using (au
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: '2.5rem',
-                background: isTVMode ? '#000000' : 'transparent',
-                padding: isTVMode ? '40px' : '0',
-                borderRadius: '24px'
+                gap: '2.5rem'
               }}>
                 <h2 className="add-profile-title" style={{
                     color: '#fff',
@@ -1279,7 +1364,9 @@ create policy "Users can delete request" on friend_requests for delete using (au
                     letterSpacing: '-0.04em',
                     margin: 0,
                     textAlign: 'center',
-                }}>{t('create_profile')}</h2>
+                }}>
+                  {isAdding ? t('create_profile') : 'Edit Profile'}
+                </h2>
                 
                 <div className="add-profile-row" style={{
                   width: '100%',
@@ -1297,10 +1384,11 @@ create policy "Users can delete request" on friend_requests for delete using (au
                     flexDirection: 'column',
                     alignItems: 'center',
                     gap: '2rem',
-                    background: isTVMode ? '#09090b' : 'rgba(255, 255, 255, 0.02)',
+                    background: 'rgba(255, 255, 255, 0.02)',
                     border: '1px solid rgba(255, 255, 255, 0.06)',
                     borderRadius: '24px',
                     padding: '2.5rem 2rem',
+                    boxSizing: 'border-box'
                   }}>
                     {/* Selected Avatar Preview */}
                     <div className="add-profile-avatar-preview" style={{
@@ -1326,20 +1414,19 @@ create policy "Users can delete request" on friend_requests for delete using (au
                     </div>
 
                     {/* Name Input Box */}
-                    <div style={{ width: '100%' }}>
+                    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                       <input
                         autoFocus
                         type="text"
                         value={newProfileName}
-                        onChange={(e) => { setNewProfileName(e.target.value); }}
+                        onChange={(e) => setNewProfileName(e.target.value)}
                         placeholder={t('profile_name')}
-                        className="profile-input-tv tv-focusable"
-                        tabIndex={0}
+                        className="profile-input-tv"
                         style={{
                           width: '100%',
                           padding: '16px 20px',
                           borderRadius: '16px',
-                          background: isTVMode ? '#141414' : 'rgba(0,0,0,0.55)',
+                          background: 'rgba(0,0,0,0.55)',
                           border: '1.5px solid rgba(255,255,255,0.08)',
                           color: '#fff',
                           fontSize: '1.15rem',
@@ -1348,6 +1435,208 @@ create policy "Users can delete request" on friend_requests for delete using (au
                           boxSizing: 'border-box'
                         }}
                       />
+
+                      {/* Kids Mode Checkbox Option */}
+                      <label style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        cursor: 'pointer',
+                        padding: '12px 16px',
+                        background: 'rgba(255,255,255,0.03)',
+                        border: '1px solid rgba(255,255,255,0.05)',
+                        borderRadius: '14px',
+                        userSelect: 'none'
+                      }}>
+                        <input
+                          type="checkbox"
+                          checked={newProfileIsKids}
+                          onChange={(e) => setNewProfileIsKids(e.target.checked)}
+                          style={{
+                            width: '20px',
+                            height: '20px',
+                            accentColor: '#ffffff',
+                            cursor: 'pointer'
+                          }}
+                        />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          <span style={{ color: '#fff', fontSize: '0.95rem', fontWeight: 700 }}>Kids Profile</span>
+                          <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.78rem' }}>Restrict this profile to family safe content</span>
+                        </div>
+                      </label>
+
+                      {/* Profile Lock Option */}
+                      <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
+                        background: 'rgba(255,255,255,0.03)',
+                        border: '1px solid rgba(255,255,255,0.05)',
+                        borderRadius: '14px',
+                        padding: '12px 16px'
+                      }}>
+                        <label style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
+                          cursor: 'pointer',
+                          userSelect: 'none'
+                        }}>
+                          <input
+                            type="checkbox"
+                            checked={newProfileHasPin}
+                            onChange={(e) => setNewProfileHasPin(e.target.checked)}
+                            style={{
+                              width: '20px',
+                              height: '20px',
+                              accentColor: '#ffffff',
+                              cursor: 'pointer'
+                            }}
+                          />
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <span style={{ color: '#fff', fontSize: '0.95rem', fontWeight: 700 }}>Profile Lock</span>
+                            <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.78rem' }}>Require a 4-digit PIN to access this profile</span>
+                          </div>
+                        </label>
+
+                        {newProfileHasPin && (
+                          <div style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: '12px',
+                            marginTop: '8px',
+                            paddingTop: '12px',
+                            borderTop: '1px solid rgba(255,255,255,0.06)'
+                          }}>
+                            {/* PIN Display indicators */}
+                            <div style={{ display: 'flex', gap: '12px' }}>
+                              {[0, 1, 2, 3].map((i) => (
+                                <div
+                                  key={i}
+                                  style={{
+                                    width: '12px',
+                                    height: '12px',
+                                    borderRadius: '50%',
+                                    border: '1.5px solid rgba(255,255,255,0.4)',
+                                    background: newProfilePin.length > i ? '#ffffff' : 'transparent',
+                                    boxShadow: newProfilePin.length > i ? '0 0 6px #fff' : 'none',
+                                    transition: 'all 0.1s ease'
+                                  }}
+                                />
+                              ))}
+                            </div>
+
+                            {/* Custom 1-0 Numeric pad for setup without keyboard */}
+                            <div style={{
+                              display: 'grid',
+                              gridTemplateColumns: 'repeat(3, 1fr)',
+                              gap: '10px',
+                              maxWidth: '180px',
+                              width: '100%',
+                              marginTop: '8px'
+                            }}>
+                              {['1','2','3','4','5','6','7','8','9'].map((digit) => (
+                                <button
+                                  key={digit}
+                                  onClick={() => {
+                                    if (newProfilePin.length < 4) {
+                                      triggerHaptic('light');
+                                      setNewProfilePin(newProfilePin + digit);
+                                    }
+                                  }}
+                                  style={{
+                                    aspectRatio: '1/1',
+                                    borderRadius: '50%',
+                                    background: 'rgba(255,255,255,0.06)',
+                                    border: '1px solid rgba(255,255,255,0.08)',
+                                    color: '#fff',
+                                    fontSize: '1rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    outline: 'none',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                  }}
+                                  className="pin-btn"
+                                >
+                                  {digit}
+                                </button>
+                              ))}
+                              
+                              <button
+                                onClick={() => {
+                                  triggerHaptic('medium');
+                                  setNewProfilePin('');
+                                }}
+                                style={{
+                                  background: 'transparent',
+                                  border: 'none',
+                                  color: 'rgba(255,255,255,0.4)',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 800,
+                                  cursor: 'pointer',
+                                  outline: 'none'
+                                }}
+                              >
+                                Clear
+                              </button>
+
+                              <button
+                                onClick={() => {
+                                  if (newProfilePin.length < 4) {
+                                    triggerHaptic('light');
+                                    setNewProfilePin(newProfilePin + '0');
+                                  }
+                                }}
+                                style={{
+                                  aspectRatio: '1/1',
+                                  borderRadius: '50%',
+                                  background: 'rgba(255,255,255,0.06)',
+                                  border: '1px solid rgba(255,255,255,0.08)',
+                                  color: '#fff',
+                                  fontSize: '1rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  outline: 'none',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center'
+                                }}
+                                className="pin-btn"
+                              >
+                                0
+                              </button>
+
+                              <button
+                                onClick={() => {
+                                  if (newProfilePin.length > 0) {
+                                    triggerHaptic('medium');
+                                    setNewProfilePin(newProfilePin.slice(0, -1));
+                                  }
+                                }}
+                                style={{
+                                  background: 'transparent',
+                                  border: 'none',
+                                  color: '#fff',
+                                  cursor: 'pointer',
+                                  outline: 'none',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center'
+                                }}
+                              >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                  <path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/>
+                                  <line x1="18" y1="9" x2="12" y2="15"/>
+                                  <line x1="12" y1="9" x2="18" y2="15"/>
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -1362,13 +1651,6 @@ create policy "Users can delete request" on friend_requests for delete using (au
                       <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '1.1rem', fontWeight: 800 }}>{t('choose_identity')}</span>
                       <button 
                         onClick={() => { triggerHaptic('light'); generateAvatarOptions(); }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            triggerHaptic('light');
-                            generateAvatarOptions();
-                          }
-                        }}
                         className="tv-action-btn tv-focusable"
                         tabIndex={0}
                         style={{ 
@@ -1404,14 +1686,7 @@ create policy "Users can delete request" on friend_requests for delete using (au
                 {/* Bottom Row Actions */}
                 <div className="add-profile-actions" style={{ display: 'flex', width: '100%', maxWidth: '500px', gap: '20px', marginTop: '1.5rem' }}>
                   <button
-                    onClick={() => { triggerHaptic('light'); setIsAdding(false); }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        triggerHaptic('light');
-                        setIsAdding(false);
-                      }
-                    }}
+                    onClick={() => { triggerHaptic('light'); setIsAdding(false); setEditingProfile(null); }}
                     className="tv-action-btn tv-focusable"
                     tabIndex={0}
                     style={{
@@ -1429,31 +1704,46 @@ create policy "Users can delete request" on friend_requests for delete using (au
                     {t('cancel')}
                   </button>
                   <button
-                    onClick={handleAddProfile}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        handleAddProfile();
-                      }
-                    }}
-                    disabled={addingLoading || !newProfileName.trim()}
+                    onClick={isAdding ? handleAddProfile : handleUpdateProfile}
+                    disabled={addingLoading || !newProfileName.trim() || (newProfileHasPin && newProfilePin.length !== 4)}
                     className="tv-action-btn tv-focusable"
                     tabIndex={0}
                     style={{
                       flex: 2,
                       padding: '16px',
-                      background: addingLoading || !newProfileName.trim() ? 'rgba(255, 255, 255, 0.05)' : '#ffffff',
-                      color: addingLoading || !newProfileName.trim() ? 'rgba(255, 255, 255, 0.2)' : '#000000',
+                      background: addingLoading || !newProfileName.trim() || (newProfileHasPin && newProfilePin.length !== 4) ? 'rgba(255, 255, 255, 0.05)' : '#ffffff',
+                      color: addingLoading || !newProfileName.trim() || (newProfileHasPin && newProfilePin.length !== 4) ? 'rgba(255, 255, 255, 0.2)' : '#000000',
                       border: 'none',
                       borderRadius: '16px',
                       fontSize: '1rem',
                       fontWeight: 900,
-                      cursor: addingLoading || !newProfileName.trim() ? 'not-allowed' : 'pointer',
+                      cursor: addingLoading || !newProfileName.trim() || (newProfileHasPin && newProfilePin.length !== 4) ? 'not-allowed' : 'pointer',
                     }}
                   >
                     {addingLoading ? t('saving') : t('save_profile')}
                   </button>
                 </div>
+
+                {!isAdding && editingProfile && (
+                  <button
+                    onClick={() => setDeleteProfileId(editingProfile.id)}
+                    style={{
+                      width: '100%',
+                      maxWidth: '500px',
+                      padding: '16px',
+                      background: 'rgba(239, 68, 68, 0.1)',
+                      border: '1.5px solid rgba(239, 68, 68, 0.2)',
+                      borderRadius: '16px',
+                      color: '#ef4444',
+                      fontSize: '0.95rem',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      marginTop: '-1rem'
+                    }}
+                  >
+                    Delete Profile
+                  </button>
+                )}
               </div>
           )}
       </div>
@@ -1683,6 +1973,21 @@ const StaticStyles = React.memo(() => (
       color: #000000 !important;
     }
 
+    .pin-btn:active {
+      background: rgba(255,255,255,0.2) !important;
+      transform: scale(0.92);
+    }
+
+    .shake {
+      animation: shakeAnim 0.4s ease;
+    }
+
+    @keyframes shakeAnim {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-8px); }
+      40%, 80% { transform: translateX(8px); }
+    }
+
     /* Mobile overrides */
     @media (max-width: 400px), (max-height: 800px) {
       .profile-selector-container {
@@ -1782,174 +2087,6 @@ const StaticStyles = React.memo(() => (
   `}</style>
 ));
 StaticStyles.displayName = 'StaticStyles';
-
-const ProfilesGrid = React.memo(({ profiles, isManaging, handleSelect, handleDeleteProfile, setIsAdding }: any) => {
-  return (
-    <div 
-      className="profiles-grid"
-      style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        justifyContent: 'center',
-        gap: '2.5rem',
-        width: '100%',
-        marginBottom: '1rem',
-      }}
-    >
-        {profiles.map((profile: any, idx: number) => (
-        <div 
-            key={profile.id}
-            onClick={() => !isManaging && handleSelect(profile)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                if (!isManaging) handleSelect(profile);
-              }
-            }}
-            tabIndex={0}
-            style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '1.2rem',
-            cursor: isManaging ? 'default' : 'pointer',
-            position: 'relative',
-            // Disable heavy entry animation delays on mobile screens for faster rendering
-            animation: window.innerWidth <= 768 ? 'none' : `fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) ${idx * 0.05}s both`
-            }}
-            className={`profile-item ${isManaging ? 'managing' : ''} profile-avatar-name tv-focusable`}
-        >
-            <div style={{ position: 'relative' }}>
-                <div 
-                    className="profile-avatar profile-avatar-img-container"
-                    style={{
-                        width: 'clamp(100px, 14vw, 130px)', 
-                        height: 'clamp(100px, 14vw, 130px)',
-                        borderRadius: '28px', 
-                        overflow: 'hidden',
-                        border: 'none',
-                        background: 'rgba(255, 255, 255, 0.03)',
-                        boxShadow: '0 15px 40px rgba(0,0,0,0.5)',
-                        opacity: (isManaging) ? 0.4 : 1,
-                    }}
-                >
-                    <img 
-                        src={profile.avatar} 
-                        alt={profile.name}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                        onError={(e) => {
-                          const target = e.currentTarget as HTMLImageElement;
-                          const fallbackId = Math.floor(Math.random() * 67) + 1;
-                          target.src = `/avatars/avatar-${fallbackId}.jpg`;
-                        }}
-                    />
-                    
-                    {/* Delete Overlay */}
-                    {isManaging && (
-                        <div 
-                            onClick={(e) => handleDeleteProfile(profile.id, e)}
-                            style={{
-                                position: 'absolute',
-                                inset: 0,
-                                background: 'rgba(255, 255, 255, 0.12)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                cursor: 'pointer',
-                                zIndex: 10,
-                                backdropFilter: 'blur(10px)',
-                                animation: 'fadeInScale 0.2s ease-out',
-                            }}
-                        >
-                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5">
-                                <polyline points="3 6 5 6 21 6"></polyline>
-                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                            </svg>
-                        </div>
-                    )}
-                </div>
-
-                {profile.isKids && (
-                    <div style={{
-                        position: 'absolute',
-                        top: '-6px',
-                        right: '-6px',
-                        background: 'rgba(255, 255, 255, 0.15)',
-                        border: '1px solid rgba(255, 255, 255, 0.25)',
-                        color: '#fff',
-                        fontSize: '0.72rem',
-                        fontWeight: 900,
-                        padding: '3px 8px',
-                        borderRadius: '10px',
-                        letterSpacing: '0.05em',
-                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
-                        zIndex: 11
-                    }}>
-                        KIDS
-                    </div>
-                )}
-            </div>
-            <span style={{
-                color: 'rgba(255,255,255,0.5)',
-                fontSize: '1.05rem',
-                fontWeight: 700,
-                letterSpacing: '-0.02em'
-            }}
-            className="profile-name"
-            >
-                {profile.name}
-            </span>
-        </div>
-        ))}
-
-        {/* Add Profile Button */}
-        {!(localStorage.getItem('cinemovie_is_guest') === 'true' && profiles.length >= 1) && (
-          <div 
-              onClick={() => { triggerHaptic('light'); setIsAdding(true); }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  triggerHaptic('light');
-                  setIsAdding(true);
-                }
-              }}
-              tabIndex={0}
-              style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '1.2rem',
-                  cursor: 'pointer', 
-                  animation: window.innerWidth <= 768 ? 'none' : `fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) ${profiles.length * 0.05}s both`
-              }}
-              className="add-profile-btn profile-avatar-name tv-focusable"
-          >
-              <div 
-                  className="add-icon-container profile-avatar-img-container"
-                  style={{
-                      width: 'clamp(100px, 14vw, 130px)',
-                      height: 'clamp(100px, 14vw, 130px)',
-                      borderRadius: '28px',
-                      background: 'rgba(255,255,255,0.04)',
-                      border: 'none',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      boxShadow: '0 15px 40px rgba(0,0,0,0.5)'
-                    }}
-              >
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="12" y1="5" x2="12" y2="19"></line>
-                      <line x1="5" y1="12" x2="19" y2="12"></line>
-                  </svg>
-              </div>
-              <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '1.05rem', fontWeight: 700 }}>Add Profile</span>
-          </div>
-        )}
-    </div>
-  );
-});
-ProfilesGrid.displayName = 'ProfilesGrid';
 
 const AvatarGrid = React.memo(({ avatarOptions, selectedAvatar, setSelectedAvatar }: any) => {
   return (
