@@ -1446,7 +1446,8 @@ alter table profiles add column if not exists pin text check (pin ~ '^[0-9]{4}$'
                       }}>
                         {/* Kids Mode Config Block */}
                         <label style={{
-                          flex: '1 1 140px',
+                          flex: '1 1 calc(50% - 6px)',
+                          minWidth: '100px',
                           display: 'flex',
                           flexDirection: 'column',
                           gap: '10px',
@@ -1481,7 +1482,8 @@ alter table profiles add column if not exists pin text check (pin ~ '^[0-9]{4}$'
 
                         {/* Profile PIN Lock Config Block */}
                         <div style={{
-                          flex: '1 1 140px',
+                          flex: '1 1 calc(50% - 6px)',
+                          minWidth: '100px',
                           display: 'flex',
                           flexDirection: 'column',
                           gap: '10px',
