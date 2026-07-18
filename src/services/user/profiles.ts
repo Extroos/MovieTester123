@@ -86,6 +86,7 @@ export const ProfileService = {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
+        .eq('user_id', user.id)
         .order('created_at', { ascending: true });
 
       if (error) {
