@@ -317,6 +317,25 @@ function getTVGenreName(id: number): string {
 
 export async function getTrending(timeWindow: 'day' | 'week' = 'week'): Promise<Movie[]> {
   try {
+      // Check Kids Mode
+  let isKids = false;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem('watchmovie_active_profile_cache');
+      if (stored) {
+        isKids = JSON.parse(stored)?.isKids === true;
+      }
+    }
+  } catch (e) {}
+    if (isKids) {
+      // Fetch popular kids animation/family movies instead
+      const data: any = await fetchFromApi('/discover/movie', {
+        sort_by: 'popularity.desc',
+        with_genres: '16,10751',
+        include_adult: 'false'
+      });
+      return data.results.slice(0, 20).map(transformMovie);
+    }
     const data: any = await fetchFromApi(`/trending/movie/${timeWindow}`);
     return data.results.slice(0, 20).map(transformMovie);
   } catch (error) {
@@ -327,6 +346,24 @@ export async function getTrending(timeWindow: 'day' | 'week' = 'week'): Promise<
 
 export async function getPopular(): Promise<Movie[]> {
   try {
+      // Check Kids Mode
+  let isKids = false;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem('watchmovie_active_profile_cache');
+      if (stored) {
+        isKids = JSON.parse(stored)?.isKids === true;
+      }
+    }
+  } catch (e) {}
+    if (isKids) {
+      const data: any = await fetchFromApi('/discover/movie', {
+        sort_by: 'popularity.desc',
+        with_genres: '16,10751',
+        include_adult: 'false'
+      });
+      return data.results.slice(0, 20).map(transformMovie);
+    }
     const data: any = await fetchFromApi('/movie/popular');
     return data.results.slice(0, 20).map(transformMovie);
   } catch (error) {
@@ -337,6 +374,25 @@ export async function getPopular(): Promise<Movie[]> {
 
 export async function getTopRated(): Promise<Movie[]> {
   try {
+      // Check Kids Mode
+  let isKids = false;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem('watchmovie_active_profile_cache');
+      if (stored) {
+        isKids = JSON.parse(stored)?.isKids === true;
+      }
+    }
+  } catch (e) {}
+    if (isKids) {
+      const data: any = await fetchFromApi('/discover/movie', {
+        sort_by: 'vote_average.desc',
+        'vote_count.gte': 1000,
+        with_genres: '16,10751',
+        include_adult: 'false'
+      });
+      return data.results.slice(0, 20).map(transformMovie);
+    }
     const data: any = await fetchFromApi('/movie/top_rated');
     return data.results.slice(0, 20).map(transformMovie);
   } catch (error) {
@@ -686,6 +742,24 @@ export async function getMovieCredits(movieId: number): Promise<{ cast: any[], c
 
 export async function getTrendingTV(timeWindow: 'day' | 'week' = 'week'): Promise<TVShow[]> {
   try {
+      // Check Kids Mode
+  let isKids = false;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem('watchmovie_active_profile_cache');
+      if (stored) {
+        isKids = JSON.parse(stored)?.isKids === true;
+      }
+    }
+  } catch (e) {}
+    if (isKids) {
+      const data: any = await fetchFromApi('/discover/tv', {
+        sort_by: 'popularity.desc',
+        with_genres: '16,10751,10762', // Animation, Family, Kids
+        include_adult: 'false'
+      });
+      return data.results.slice(0, 20).map(transformTVShow);
+    }
     const data: any = await fetchFromApi(`/trending/tv/${timeWindow}`);
     return data.results.slice(0, 20).map(transformTVShow);
   } catch (error) {
@@ -696,6 +770,24 @@ export async function getTrendingTV(timeWindow: 'day' | 'week' = 'week'): Promis
 
 export async function getPopularTV(): Promise<TVShow[]> {
   try {
+      // Check Kids Mode
+  let isKids = false;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem('watchmovie_active_profile_cache');
+      if (stored) {
+        isKids = JSON.parse(stored)?.isKids === true;
+      }
+    }
+  } catch (e) {}
+    if (isKids) {
+      const data: any = await fetchFromApi('/discover/tv', {
+        sort_by: 'popularity.desc',
+        with_genres: '16,10751,10762',
+        include_adult: 'false'
+      });
+      return data.results.slice(0, 20).map(transformTVShow);
+    }
     const data: any = await fetchFromApi('/tv/popular');
     return data.results.slice(0, 20).map(transformTVShow);
   } catch (error) {
@@ -706,6 +798,25 @@ export async function getPopularTV(): Promise<TVShow[]> {
 
 export async function getTopRatedTV(): Promise<TVShow[]> {
   try {
+      // Check Kids Mode
+  let isKids = false;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem('watchmovie_active_profile_cache');
+      if (stored) {
+        isKids = JSON.parse(stored)?.isKids === true;
+      }
+    }
+  } catch (e) {}
+    if (isKids) {
+      const data: any = await fetchFromApi('/discover/tv', {
+        sort_by: 'vote_average.desc',
+        'vote_count.gte': 100,
+        with_genres: '16,10751,10762',
+        include_adult: 'false'
+      });
+      return data.results.slice(0, 20).map(transformTVShow);
+    }
     const data: any = await fetchFromApi('/tv/top_rated');
     return data.results.slice(0, 20).map(transformTVShow);
   } catch (error) {
