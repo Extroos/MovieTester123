@@ -1135,8 +1135,40 @@ export default function App() {
   const filterKids = useCallback(<T extends Movie | TVShow>(items: T[]): T[] => {
     if (!activeProfile?.isKids) return items;
     return items.filter(item => {
-        const genreIds = (item as any).genreIds || (item as any).genres?.map((g: any) => g.id);
-        return genreIds?.some((id: number) => [16, 10751, 12].includes(id));
+      if (!item) return false;
+      
+      const title = ((item as any).title || (item as any).name || '').toLowerCase();
+      const overview = ((item as any).overview || '').toLowerCase();
+      const fullText = title + ' ' + overview;
+
+      // 1. Strict blacklisted words (blood, violence, mature topics)
+      const blacklist = [
+        'combat', 'blood', 'gore', 'odyssey', 'slasher', 'death', 'kill', 'murder', 
+        'desire', 'obsession', 'battle', 'assassin', 'fight', 'warrior', 'homicide',
+        'sex', 'erotic', 'terrorist', 'vengeance', 'revenge', 'demon', 'zombie', 'scary',
+        'mortal', 'suicide', 'deadly', 'weapons', 'crime', 'drugs'
+      ];
+      if (blacklist.some(word => fullText.includes(word))) {
+        return false;
+      }
+
+      // 2. Block mature/unwanted genres: Action (28), Horror (27), Crime (80), Thriller (53), War (10752), Mystery (9648), Drama (18)
+      const genreIds = (item as any).genreIds || (item as any).genre_ids || (item as any).genres?.map((g: any) => g.id) || [];
+      const hasRestrictedGenre = genreIds.some((id: number) => [28, 27, 80, 53, 10752, 9648, 18].includes(id));
+      if (hasRestrictedGenre) return false;
+
+      // 3. Block mature certifications
+      const cert = ((item as any).certification || '').toUpperCase();
+      if (['R', 'NC-17', 'TV-MA', 'TV-14', 'PG-13'].some(c => cert.includes(c))) {
+        return false;
+      }
+
+      // 4. Must match kids-friendly categories: Animation (16), Family (10751)
+      const hasKidsGenre = genreIds.some((id: number) => [16, 10751].includes(id));
+      if (hasKidsGenre) return true;
+
+      // Fallback: If it has absolutely no genres but passes the text check, let's keep it only if it is animation-focused
+      return false;
     });
   }, [activeProfile?.isKids]);
 
