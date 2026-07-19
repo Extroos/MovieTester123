@@ -891,11 +891,27 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                       fontWeight: 800,
                       fontSize: 'clamp(0.8rem, 2.2vh, 1.05rem)',
                       transition: 'all 0.2s',
-                      boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
+                      boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+                      overflow: 'hidden'
                     }}
                   >
-                    <span style={{ zIndex: 2 }}>{cat.label}</span>
-                    {cat.graphic}
+                    {cat.id === 'Disney+' ? (
+                      <img 
+                        src="/disney-logo.png" 
+                        style={{ 
+                          width: '100%', 
+                          height: '100%', 
+                          objectFit: 'cover',
+                          position: 'absolute',
+                          inset: 0
+                        }} 
+                      />
+                    ) : (
+                      <>
+                        <span style={{ zIndex: 2 }}>{cat.label}</span>
+                        {cat.graphic}
+                      </>
+                    )}
                   </button>
                 ))}
               </div>
