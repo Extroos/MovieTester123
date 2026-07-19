@@ -85,12 +85,19 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
     document.body.style.overflow = 'hidden';
     // Listen for physical remote control voice search keys
     const handleVoiceKeys = (e: KeyboardEvent) => {
+      const keyName = (e.key || '').toLowerCase();
+      const codeName = (e.code || '').toLowerCase();
+      
       if (
-        e.key === 'Search' || 
+        keyName === 'search' || 
+        keyName === 'voicesearch' || 
+        keyName === 'microphone' || 
+        keyName === 'microphonetoggle' || 
+        keyName === 'browsersearch' ||
+        codeName === 'browsersearch' ||
         e.keyCode === 84 || 
         e.keyCode === 219 || 
-        e.keyCode === 130 ||
-        e.key === 'VoiceSearch'
+        e.keyCode === 130
       ) {
         e.preventDefault();
         startVoiceSearch();
