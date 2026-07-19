@@ -345,6 +345,15 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
                 if (firstCard) {
                   firstCard.focus();
                 }
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                const activeHeaderBtn = document.querySelector('.cinemovie-header-nav-btn.active') as HTMLElement | null;
+                if (activeHeaderBtn) {
+                  activeHeaderBtn.focus();
+                } else {
+                  const firstHeaderBtn = document.querySelector('.cinemovie-header-nav-btn') as HTMLElement | null;
+                  if (firstHeaderBtn) firstHeaderBtn.focus();
+                }
               }
             }}
             className="tv-focusable downloads-options-btn"

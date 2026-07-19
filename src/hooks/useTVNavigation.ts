@@ -165,6 +165,15 @@ export function useTVNavigation() {
       if (focusableElements.length === 0) return;
 
       const activeEl = document.activeElement as HTMLElement | null;
+      if (activeEl && isHeaderEl(activeEl) && e.key === 'ArrowDown') {
+        const optionsBtn = document.querySelector('.downloads-options-btn') as HTMLElement | null;
+        if (optionsBtn) {
+          optionsBtn.focus();
+          e.preventDefault();
+          return;
+        }
+      }
+
       if (!activeEl || !focusableElements.includes(activeEl)) {
         const currentActiveLink = document.querySelector('.cinemovie-header-nav-btn.active.tv-focusable') as HTMLElement | null;
         if (currentActiveLink && focusableElements.includes(currentActiveLink)) {
