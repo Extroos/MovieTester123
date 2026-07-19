@@ -419,6 +419,8 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
 
   const isTV = typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
   const [showKeyboard, setShowKeyboard] = useState(false);
+  const [trendingBackdrop, setTrendingBackdrop] = useState<string>('');
+  const [newBackdrop, setNewBackdrop] = useState<string>('');
 
   const keyboardRows = [
     ['A', 'B', 'C', 'D', 'E', 'F'],
