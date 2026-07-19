@@ -6,6 +6,7 @@ import { COLORS, GENRES } from '../../../constants';
 import { triggerHaptic } from '../../../utils/haptics';
 import { t } from '../../../utils/i18n';
 import { SpeechRecognition } from '@capacitor-community/speech-recognition';
+import { SpeechRecognition } from '@capacitor-community/speech-recognition';
 
 interface SearchOverlayProps {
   onClose: () => void;
@@ -83,8 +84,24 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
     }
 
     document.body.style.overflow = 'hidden';
+    // Listen for physical remote control voice search keys
+    const handleVoiceKeys = (e: KeyboardEvent) => {
+      if (
+        e.key === 'Search' || 
+        e.keyCode === 84 || 
+        e.keyCode === 219 || 
+        e.keyCode === 130 ||
+        e.key === 'VoiceSearch'
+      ) {
+        e.preventDefault();
+        startVoiceSearch();
+      }
+    };
+    window.addEventListener('keydown', handleVoiceKeys);
+
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keydown', handleVoiceKeys);
       document.body.style.overflow = 'unset';
     };
   }, [onClose]);
@@ -401,6 +418,38 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
       setQuery('');
     } else {
       setQuery(prev => prev + key);
+    }
+  };
+
+    const startVoiceSearch = async () => {
+    try {
+      triggerHaptic('medium');
+      const hasPermission = await SpeechRecognition.hasPermission();
+      if (!hasPermission.permission) {
+        await SpeechRecognition.requestPermission();
+      }
+      
+      const available = await SpeechRecognition.available();
+      if (available.available) {
+        SpeechRecognition.start({
+          language: 'en-US',
+          maxResults: 1,
+          prompt: 'Speak to search...',
+          partialResults: false,
+          popup: true
+        });
+
+        // Listen for the voice result
+        const listener = SpeechRecognition.addListener('partialResults', (data: any) => {
+          if (data.matches && data.matches.length > 0) {
+            setQuery(data.matches[0]);
+            // Clean up listener
+            listener.remove();
+          }
+        });
+      }
+    } catch (e) {
+      console.error('Speech recognition error:', e);
     }
   };
 
