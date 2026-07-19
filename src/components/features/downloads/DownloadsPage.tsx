@@ -419,10 +419,15 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
                 : `${episodesCount} Episode${episodesCount > 1 ? 's' : ''} • ${itemSizeGB} GB`;
 
               const imagePath = item.type === 'movie' 
-                ? (item.raw.posterPath || item.raw.metaData?.posterPath || item.raw.metaData?.poster_path || item.raw.poster_path || '')
-                : (item.raw.show.posterPath || item.raw.show.poster_path || item.raw.show.backdropPath || '');
+                ? (item.raw.metaData?.backdropPath || item.raw.metaData?.backdrop_path || item.raw.posterPath || '')
+                : (item.raw.show.backdropPath || item.raw.show.backdrop_path || item.raw.show.posterPath || '');
               
-              const imageUrl = imagePath ? `https://image.tmdb.org/t/p/w500${imagePath}` : '/movie-placeholder.png';
+              const getCleanUrl = (path: string) => {
+                if (!path) return '/movie-placeholder.png';
+                const clean = path.startsWith('/') ? path : '/' + path;
+                return `https://image.tmdb.org/t/p/w500${clean}`;
+              };
+              const imageUrl = getCleanUrl(imagePath);
 
               return (
                 <div
@@ -458,19 +463,22 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
                     background: 'rgba(255, 255, 255, 0.02)',
                     border: '1px solid rgba(255, 255, 255, 0.04)',
                     borderRadius: '12px',
-                    padding: '16px 24px',
+                    padding: '0 24px 0 0',
                     gap: '24px',
                     cursor: 'pointer',
                     outline: 'none',
                     transition: 'all 0.2s ease-out',
-                    position: 'relative'
+                    position: 'relative',
+                    height: '130px',
+                    overflow: 'hidden'
                   }}
                 >
-                  {/* Left Portrait Poster */}
+                  {/* Left Widescreen Image */}
                   <div style={{
-                    width: '120px',
-                    aspectRatio: '2/3',
-                    borderRadius: '8px',
+                    width: '230px',
+                    height: '130px',
+                    borderTopLeftRadius: '11px',
+                    borderBottomLeftRadius: '11px',
                     overflow: 'hidden',
                     background: '#1a1a1a',
                     flexShrink: 0,
@@ -483,6 +491,9 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
                         width: '100%',
                         height: '100%',
                         objectFit: 'cover'
+                      }}
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
                       }}
                     />
                   </div>
@@ -540,42 +551,6 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'rgba(255, 255, 255, 0.3)' }}>
                       <polyline points="9 18 15 12 9 6" />
                     </svg>
-
-                    {item.type === 'movie' && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDelete(item.raw, e);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.stopPropagation();
-                            e.preventDefault();
-                            handleDelete(item.raw, e);
-                          }
-                        }}
-                        className="tv-focusable"
-                        tabIndex={0}
-                        style={{
-                          background: 'rgba(239, 68, 68, 0.1)',
-                          border: '1px solid rgba(239, 68, 68, 0.2)',
-                          borderRadius: '8px',
-                          width: '40px',
-                          height: '40px',
-                          color: '#ef4444',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          cursor: 'pointer',
-                          outline: 'none'
-                        }}
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                          <polyline points="3 6 5 6 21 6"></polyline>
-                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                        </svg>
-                      </button>
-                    )}
                   </div>
                 </div>
               );
