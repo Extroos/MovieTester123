@@ -511,6 +511,14 @@ export default function SettingsPage({
   }
 
   if (isTV) {
+    // Hide global header when settings page is open
+    useEffect(() => {
+      document.body.classList.add('global-header-hidden');
+      return () => {
+        document.body.classList.remove('global-header-hidden');
+      };
+    }, []);
+
     // Dynamic clock display
     const [currentTime, setCurrentTime] = useState(() => {
       const d = new Date();
@@ -539,7 +547,7 @@ export default function SettingsPage({
           flexDirection: 'column',
           height: '100vh',
           width: '100vw',
-          // Top-left red glowing aura exactly like the Netflix original design
+          // Subtle glowing red aura on the top-left corner
           background: 'radial-gradient(circle at 10% 12%, rgba(229, 9, 20, 0.15) 0%, rgba(9, 9, 11, 0.98) 60%, #000000 100%)',
           color: '#ffffff',
           overflow: 'hidden',
@@ -549,7 +557,7 @@ export default function SettingsPage({
           boxSizing: 'border-box'
         }}
       >
-        {/* TOP BAR / HEADER - Borderless design */}
+        {/* TOP BAR / HEADER */}
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
@@ -608,7 +616,7 @@ export default function SettingsPage({
           boxSizing: 'border-box',
           position: 'relative'
         }}>
-          {/* COLUMN 1: Profiles list - Borderless & Transparent */}
+          {/* COLUMN 1: Profiles list */}
           <div style={{
             width: '24vw',
             maxWidth: '280px',
@@ -654,7 +662,7 @@ export default function SettingsPage({
                       padding: '1.2vh 1vw',
                       background: isActive ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
                       border: 'none',
-                      borderRadius: '8px',
+                      borderRadius: '10px',
                       cursor: 'pointer',
                       color: '#fff',
                       textAlign: 'left',
@@ -668,7 +676,7 @@ export default function SettingsPage({
                       style={{
                         width: 'clamp(32px, 5vh, 42px)',
                         height: 'clamp(32px, 5vh, 42px)',
-                        borderRadius: '6px',
+                        borderRadius: '8px',
                         border: isActive ? '2px solid #007aff' : 'none',
                         objectFit: 'cover'
                       }}
@@ -716,7 +724,7 @@ export default function SettingsPage({
                   padding: '1.2vh 1vw',
                   background: 'transparent',
                   border: 'none',
-                  borderRadius: '8px',
+                  borderRadius: '10px',
                   cursor: 'pointer',
                   color: 'rgba(255,255,255,0.5)',
                   textAlign: 'left',
@@ -727,7 +735,7 @@ export default function SettingsPage({
                 <div style={{
                   width: 'clamp(32px, 5vh, 42px)',
                   height: 'clamp(32px, 5vh, 42px)',
-                  borderRadius: '6px',
+                  borderRadius: '8px',
                   background: 'rgba(255,255,255,0.05)',
                   display: 'flex',
                   alignItems: 'center',
@@ -747,8 +755,8 @@ export default function SettingsPage({
               marginTop: 'auto',
               background: 'rgba(255,255,255,0.03)',
               border: '1px solid rgba(255,255,255,0.08)',
-              padding: '1vh 1vw',
-              borderRadius: '20px',
+              padding: '1.2vh 1.2vw',
+              borderRadius: '24px',
               fontSize: 'clamp(0.65rem, 1.8vh, 0.8rem)',
               fontWeight: 700,
               display: 'flex',
@@ -766,7 +774,7 @@ export default function SettingsPage({
             </div>
           </div>
 
-          {/* COLUMN 2: Active Profile Summary details - Borderless & Transparent */}
+          {/* COLUMN 2: Active Profile Summary details */}
           <div style={{
             width: '32vw',
             maxWidth: '380px',
@@ -840,31 +848,36 @@ export default function SettingsPage({
               </span>
             </div>
 
-            {/* Change Avatar button */}
+            {/* Change Avatar button - Pill styling */}
             <button
               onClick={() => { triggerHaptic('light'); setShowAvatarPicker(true); }}
               className="tv-focusable"
               tabIndex={0}
               style={{
-                width: '100%',
+                width: '80%',
                 padding: '1.2vh 1.5vw',
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255,255,255,0.08)',
+                background: 'rgba(255, 255, 255, 0.08)',
+                border: 'none',
                 color: '#fff',
-                borderRadius: '8px',
+                borderRadius: '24px',
                 fontSize: 'clamp(0.75rem, 2vh, 0.9rem)',
                 fontWeight: 700,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '6px',
+                gap: '8px',
                 outline: 'none',
                 marginBottom: '3vh',
                 transition: 'all 0.2s'
               }}
             >
-              <User size={14} />
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <circle cx="12" cy="12" r="10"></circle>
+                <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
+                <line x1="9" y1="9" x2="9.01" y2="9"></line>
+                <line x1="15" y1="9" x2="15.01" y2="9"></line>
+              </svg>
               Change Avatar
             </button>
 
@@ -898,7 +911,7 @@ export default function SettingsPage({
             </div>
           </div>
 
-          {/* COLUMN 3: Profile Settings / SubPage Editor - Borderless & Transparent */}
+          {/* COLUMN 3: Profile Settings / SubPage Editor */}
           <div 
             className="tv-settings-right-panel no-scrollbar"
             onKeyDown={(e) => {

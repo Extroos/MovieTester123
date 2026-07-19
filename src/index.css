@@ -1898,4 +1898,8 @@ body.tv-mode.header-hidden header {
   pointer-events: none !important;
 }
 
+body.global-header-hidden header {
+  display: none !important;
+}
+
 
