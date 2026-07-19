@@ -70,11 +70,11 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
     ]).then(([trendingList, newList]) => {
       if (trendingList && trendingList.length > 0) {
         const p = (trendingList[0] as any).backdrop_path || (trendingList[0] as any).backdropPath;
-        if (p) setTrendingBackdrop(`https://image.tmdb.org/t/p/w780${p}`);
+        if (p) setTrendingBackdrop(`https://image.tmdb.org/t/p/w300${p}`);
       }
       if (newList && newList.length > 0) {
         const p = (newList[0] as any).backdrop_path || (newList[0] as any).backdropPath;
-        if (p) setNewBackdrop(`https://image.tmdb.org/t/p/w780${p}`);
+        if (p) setNewBackdrop(`https://image.tmdb.org/t/p/w300${p}`);
       }
     }).catch(() => {});
     
@@ -982,6 +982,8 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                       background: cat.bg,
                       backgroundSize: 'cover',
                       backgroundPosition: 'center',
+                      backgroundRepeat: 'no-repeat',
+                      backgroundColor: '#0a0a0a',
                       border: 'none',
                       borderRadius: '12px',
                       position: 'relative',
