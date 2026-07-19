@@ -399,6 +399,13 @@ export function useTVNavigation() {
         lastFocusedHeaderElement = target;
       }
 
+      // Hide/Show TV Header dynamically in Downloads Page
+      if (target.classList.contains('download-tv-card')) {
+        document.body.classList.add('header-hidden');
+      } else if (target.classList.contains('downloads-options-btn') || isHeaderEl(target)) {
+        document.body.classList.remove('header-hidden');
+      }
+
       if (target.classList.contains('movie-card') && target.classList.contains('tv-focusable')) {
         const activeRowContainer = target.closest('.content-row-container') as HTMLElement | null;
         if (activeRowContainer) {

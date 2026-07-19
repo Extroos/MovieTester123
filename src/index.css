@@ -1887,4 +1887,15 @@ body.tv-mode .downloads-options-btn.tv-focusable:focus {
   outline-offset: 2.5px !important;
 }
 
+/* Smooth TV Header slide-out when hidden */
+body.tv-mode header {
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.28s ease !important;
+}
+
+body.tv-mode.header-hidden header {
+  transform: translateY(-110%) !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 
