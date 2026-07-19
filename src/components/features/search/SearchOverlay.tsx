@@ -426,7 +426,8 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
             background: rgba(255,255,255,0.06) !important;
           }
           .tv-search-card:focus {
-            border: 2px solid #e50914 !important;
+            outline: 2.5px solid #e50914 !important;
+            outline-offset: -2.5px !important;
             box-shadow: 0 0 15px rgba(229, 9, 20, 0.4) !important;
             transform: scale(1.03);
           }
@@ -682,7 +683,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                             borderRadius: '8px',
                             overflow: 'hidden',
                             background: 'rgba(255,255,255,0.03)',
-                            border: '2px solid rgba(255,255,255,0.05)',
+                            border: 'none',
                             outline: 'none',
                             transition: 'transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.15s ease, box-shadow 0.15s ease'
                           }}
@@ -743,7 +744,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                       style={{
                         flex: 1,
                         background: 'rgba(255,255,255,0.03)',
-                        border: '2px solid rgba(255,255,255,0.06)',
+                        border: 'none',
                         borderRadius: '12px',
                         padding: '2.2vh 1.5vw',
                         display: 'flex',
@@ -793,7 +794,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                       tabIndex={0}
                       style={{
                         background: 'rgba(255,255,255,0.03)',
-                        border: '2px solid rgba(255,255,255,0.05)',
+                        border: 'none',
                         borderRadius: '10px',
                         padding: '1.2vh 1.2vw',
                         display: 'flex',
@@ -833,7 +834,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                       tabIndex={0}
                       style={{
                         background: 'rgba(255,255,255,0.03)',
-                        border: '2px solid rgba(255,255,255,0.05)',
+                        border: 'none',
                         borderRadius: '10px',
                         padding: '1.2vh 1.2vw',
                         display: 'flex',
@@ -878,8 +879,8 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                     style={{
                       flex: 1,
                       aspectRatio: '16/10',
-                      background: ['Disney+', 'Netflix', 'Oscar Winners'].includes(cat.id) ? '#000000' : cat.bg,
-                      border: '2px solid transparent',
+                      background: cat.bg,
+                      border: 'none',
                       borderRadius: '12px',
                       position: 'relative',
                       cursor: 'pointer',
