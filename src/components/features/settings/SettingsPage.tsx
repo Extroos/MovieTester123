@@ -539,7 +539,8 @@ export default function SettingsPage({
           flexDirection: 'column',
           height: '100vh',
           width: '100vw',
-          background: '#09090b',
+          // Top-left red glowing aura exactly like the Netflix original design
+          background: 'radial-gradient(circle at 10% 12%, rgba(229, 9, 20, 0.15) 0%, rgba(9, 9, 11, 0.98) 60%, #000000 100%)',
           color: '#ffffff',
           overflow: 'hidden',
           position: 'fixed',
@@ -548,7 +549,7 @@ export default function SettingsPage({
           boxSizing: 'border-box'
         }}
       >
-        {/* TOP BAR / HEADER */}
+        {/* TOP BAR / HEADER - Borderless design */}
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
@@ -558,7 +559,6 @@ export default function SettingsPage({
           minHeight: '50px',
           maxHeight: '80px',
           boxSizing: 'border-box',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
           flexShrink: 0
         }}>
           <div style={{ display: 'flex', alignItems: 'center' }}>
@@ -608,15 +608,14 @@ export default function SettingsPage({
           boxSizing: 'border-box',
           position: 'relative'
         }}>
-          {/* COLUMN 1: Profiles list */}
+          {/* COLUMN 1: Profiles list - Borderless & Transparent */}
           <div style={{
             width: '24vw',
             maxWidth: '280px',
             minWidth: '200px',
             height: '100%',
             overflowY: 'auto',
-            background: 'rgba(2, 2, 4, 0.4)',
-            borderRight: '1px solid rgba(255,255,255,0.06)',
+            background: 'transparent',
             padding: '3vh 1.5vw',
             boxSizing: 'border-box',
             display: 'flex',
@@ -767,14 +766,14 @@ export default function SettingsPage({
             </div>
           </div>
 
-          {/* COLUMN 2: Active Profile Summary details */}
+          {/* COLUMN 2: Active Profile Summary details - Borderless & Transparent */}
           <div style={{
             width: '32vw',
             maxWidth: '380px',
             minWidth: '240px',
             height: '100%',
             overflowY: 'auto',
-            borderRight: '1px solid rgba(255,255,255,0.06)',
+            background: 'transparent',
             padding: '3vh 2vw',
             boxSizing: 'border-box',
             display: 'flex',
@@ -899,7 +898,7 @@ export default function SettingsPage({
             </div>
           </div>
 
-          {/* COLUMN 3: Profile Settings / SubPage Editor */}
+          {/* COLUMN 3: Profile Settings / SubPage Editor - Borderless & Transparent */}
           <div 
             className="tv-settings-right-panel no-scrollbar"
             onKeyDown={(e) => {
@@ -918,7 +917,7 @@ export default function SettingsPage({
               flex: 1,
               height: '100%',
               overflowY: 'auto',
-              background: 'rgba(5, 5, 8, 0.2)',
+              background: 'transparent',
               padding: '3vh 2.5vw 8vh 2.5vw',
               boxSizing: 'border-box'
             }}
