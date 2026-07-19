@@ -1799,9 +1799,9 @@ button.tv-focusable:focus-visible {
   transform: scale(1.08) translate3d(0, 0, 0) !important;
   box-shadow: none !important;
   border: none !important;
-  outline: 2.5px solid #ffffff !important;
-  outline-offset: 1.5px !important;
-  border-radius: 50% !important;
+  outline: 3px solid #ffffff !important;
+  outline-offset: 2.5px !important;
+  border-radius: 12px !important;
 }
 
 .cinemovie-header-search-btn.tv-focusable:focus,

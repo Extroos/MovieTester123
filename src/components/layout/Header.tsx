@@ -231,8 +231,8 @@ function Header({
                 style={{
                   width: '32px',
                   height: '32px',
-                  borderRadius: '50%',
-                  overflow: 'hidden',
+                  borderRadius: '12px',
+                  background: 'transparent',
                   border: 'none',
                   cursor: 'pointer',
                   padding: 0
@@ -241,7 +241,7 @@ function Header({
                 <img
                   src={activeProfile.avatar}
                   alt={activeProfile.name}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '12px' }}
                 />
               </button>
             )}
