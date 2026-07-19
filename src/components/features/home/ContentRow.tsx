@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import type { Movie, TVShow } from '../../../types';
 import { getPosterUrl, getBackdropUrl, API_KEY, getMovieDetails, getMovieInTheaters } from '../../../services/tmdb';
 import { triggerHaptic } from '../../../utils/haptics';
@@ -550,7 +550,24 @@ const ContentRow = React.memo(function ContentRow({
  }: ContentRowProps) {
   const rowRef = useRef<HTMLDivElement>(null);
 
-  const isTVMode = typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
+  const [isTVMode, setIsTVMode] = useState(() => {
+    if (typeof document !== 'undefined') {
+      return document.body.classList.contains('tv-mode');
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      if (typeof document !== 'undefined') {
+        setIsTVMode(document.body.classList.contains('tv-mode'));
+      }
+    });
+    if (typeof document !== 'undefined') {
+      observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    }
+    return () => observer.disconnect();
+  }, []);
 
   if ((!movies || movies.length === 0) && (!tabs || tabs.length === 0)) return null;
 
