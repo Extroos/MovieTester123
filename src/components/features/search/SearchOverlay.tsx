@@ -712,7 +712,366 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                 const label = tag === 'Trending' ? t('trending') :
                               tag === 'New' ? t('new') :
                               tag === 'Oscar Winners' ? t('oscar_winners') : tag;
-                return (
+                  const isTV = localStorage.getItem('cinemovie_device_mode') === 'tv';
+
+  const keyboardRows = [
+    ['A', 'B', 'C', 'D', 'E', 'F'],
+    ['G', 'H', 'I', 'J', 'K', 'L'],
+    ['M', 'N', 'O', 'P', 'Q', 'R'],
+    ['S', 'T', 'U', 'V', 'W', 'X'],
+    ['Y', 'Z', '1', '2', '3', '4'],
+    ['5', '6', '7', '8', '9', '0'],
+    ['Space', 'Backspace', 'Clear']
+  ];
+
+  const handleKeyClick = (key: string) => {
+    triggerHaptic('light');
+    if (key === 'Space') {
+      setQuery(prev => prev + ' ');
+    } else if (key === 'Backspace') {
+      setQuery(prev => prev.slice(0, -1));
+    } else if (key === 'Clear') {
+      setQuery('');
+    } else {
+      setQuery(prev => prev + key);
+    }
+  };
+
+  if (isTV) {
+    return (
+      <div 
+        className="search-overlay-container"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 2000,
+          background: 'radial-gradient(circle at 12% 15%, rgba(229, 9, 20, 0.08) 0%, rgba(9, 9, 11, 1) 50%, rgba(0, 0, 0, 1) 100%)',
+          display: 'flex',
+          flexDirection: 'row',
+          padding: '4vh 4vw',
+          boxSizing: 'border-box',
+          gap: '4vw',
+          overflow: 'hidden'
+        }}
+      >
+        {/* LEFT COLUMN: On-Screen D-Pad Keyboard */}
+        <div style={{
+          width: '32vw',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'flex-start',
+          gap: '2.5vh',
+          height: '100%',
+          flexShrink: 0
+        }}>
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <button 
+              onClick={onClose}
+              className="tv-focusable"
+              tabIndex={0}
+              style={{
+                background: 'rgba(255,255,255,0.06)',
+                border: 'none',
+                color: '#fff',
+                borderRadius: '50%',
+                width: 'clamp(32px, 6vh, 48px)',
+                height: 'clamp(32px, 6vh, 48px)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                outline: 'none'
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+            <span style={{ fontSize: 'clamp(1rem, 2.5vh, 1.25rem)', fontWeight: 800, color: '#fff' }}>
+              Search CineMovie
+            </span>
+          </div>
+
+          {/* Keyboard Grid */}
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1vh',
+            background: 'rgba(255,255,255,0.02)',
+            border: '1px solid rgba(255,255,255,0.04)',
+            borderRadius: '16px',
+            padding: '2vh 1.2vw',
+            boxSizing: 'border-box'
+          }}>
+            {keyboardRows.map((row, rIdx) => (
+              <div key={rIdx} style={{ display: 'flex', gap: '0.6vw', width: '100%' }}>
+                {row.map((key) => {
+                  const isSpecial = ['Space', 'Backspace', 'Clear'].includes(key);
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => handleKeyClick(key)}
+                      className="tv-focusable"
+                      tabIndex={0}
+                      style={{
+                        flex: isSpecial ? (key === 'Space' ? 2 : 1.5) : 1,
+                        height: 'clamp(32px, 5.5vh, 46px)',
+                        background: 'rgba(255,255,255,0.06)',
+                        border: '1px solid rgba(255,255,255,0.05)',
+                        color: '#fff',
+                        borderRadius: '8px',
+                        fontSize: isSpecial ? 'clamp(0.7rem, 1.6vh, 0.85rem)' : 'clamp(0.95rem, 2.2vh, 1.15rem)',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        outline: 'none',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      {key === 'Backspace' ? (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z" />
+                          <line x1="18" y1="9" x2="12" y2="15" />
+                          <line x1="12" y1="9" x2="18" y2="15" />
+                        </svg>
+                      ) : key}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN: Search Input & Results Grid */}
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '2.5vh',
+          height: '100%',
+          minWidth: 0
+        }}>
+          {/* Large Search Input Area */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: '16px',
+            padding: '1.5vh 1.6vw',
+            width: '100%',
+            boxSizing: 'border-box',
+            gap: '12px'
+          }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2.5" style={{ flexShrink: 0 }}>
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <div style={{
+              flex: 1,
+              fontSize: 'clamp(1rem, 2.8vh, 1.4rem)',
+              fontWeight: 700,
+              color: query ? '#fff' : 'rgba(255,255,255,0.25)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              display: 'flex',
+              alignItems: 'center'
+            }}>
+              {query || t('search_placeholder')}
+              <span style={{ 
+                width: '2px', 
+                height: '1.2em', 
+                background: COLORS.primary || '#e50914', 
+                marginLeft: '4px',
+                animation: 'blink 1s step-end infinite'
+              }} />
+            </div>
+            {query && (
+              <button
+                onClick={() => setQuery('')}
+                className="tv-focusable"
+                tabIndex={0}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'rgba(255,255,255,0.5)',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  outline: 'none',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            )}
+          </div>
+
+          {/* Filter Pills */}
+          <div style={{ display: 'flex', gap: '0.6vw', overflowX: 'auto', scrollbarWidth: 'none', flexShrink: 0 }}>
+            {([
+              { id: 'all', label: t('all') },
+              { id: 'movie', label: t('movies') },
+              { id: 'tv', label: t('series') },
+              { id: 'anime', label: t('anime_corner') }
+            ] as const).map(pill => {
+              const isActive = filterType === pill.id;
+              return (
+                <button
+                  key={pill.id}
+                  className="tv-focusable"
+                  tabIndex={0}
+                  onClick={() => { triggerHaptic('light'); setFilterType(pill.id); }}
+                  style={{
+                    flexShrink: 0,
+                    background: isActive ? '#ffffff' : 'rgba(255,255,255,0.05)',
+                    color: isActive ? '#000000' : '#ffffff',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    padding: '0.8vh 1.2vw',
+                    borderRadius: '20px',
+                    fontSize: 'clamp(0.7rem, 1.8vh, 0.82rem)',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    outline: 'none',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  {pill.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Results Area */}
+          <div 
+            className="no-scrollbar"
+            style={{
+              flex: 1,
+              overflowY: 'auto',
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column'
+            }}
+          >
+            {searching ? (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                <div style={{ width: '32px', height: '32px', border: '3px solid rgba(255,255,255,0.1)', borderTopColor: COLORS.primary || '#e50914', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+              </div>
+            ) : filteredSuggestions.length === 0 ? (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: '100%',
+                gap: '12px',
+                textAlign: 'center',
+                color: 'rgba(255,255,255,0.4)'
+              }}>
+                <p style={{ fontSize: 'clamp(0.85rem, 2vh, 1.05rem)', fontWeight: 700, margin: 0 }}>
+                  {query.trim() ? `${t('no_results_for')} "${query}"` : 'Type to search movies & series'}
+                </p>
+                <p style={{ fontSize: 'clamp(0.72rem, 1.7vh, 0.85rem)', margin: 0 }}>
+                  {query.trim() ? t('check_spelling_or_tag') : 'Use the keyboard on the left to enter title keywords'}
+                </p>
+              </div>
+            ) : (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(clamp(80px, 12vw, 120px), 1fr))',
+                gap: '12px',
+                paddingBottom: '6vh'
+              }}>
+                {filteredSuggestions.map((movie) => {
+                  const imageUrl = getPosterUrl(movie.posterPath || (movie as any).poster_path, 'small') || '/movie-placeholder.png';
+                  return (
+                    <div
+                      key={movie.id}
+                      onClick={() => {
+                        addToRecent(movie.title || (movie as any).name || query);
+                        onMovieClick(movie);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          addToRecent(movie.title || (movie as any).name || query);
+                          onMovieClick(movie);
+                        }
+                      }}
+                      className="tv-focusable"
+                      tabIndex={0}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        cursor: 'pointer',
+                        borderRadius: '8px',
+                        overflow: 'hidden',
+                        background: 'rgba(255,255,255,0.03)',
+                        border: '1px solid rgba(255,255,255,0.05)',
+                        outline: 'none',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <div style={{ position: 'relative', width: '100%', aspectRatio: '2/3', overflow: 'hidden' }}>
+                        <img 
+                          src={imageUrl} 
+                          alt="" 
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          onError={(e) => {
+                            e.currentTarget.src = '/movie-placeholder.png';
+                          }}
+                        />
+                      </div>
+                      <div style={{ padding: '8px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '4px' }}>
+                        <div style={{ 
+                          fontWeight: 700, 
+                          fontSize: 'clamp(0.68rem, 1.6vh, 0.8rem)', 
+                          color: '#fff',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          lineHeight: '1.2',
+                          textAlign: 'left'
+                        }}>
+                          {movie.title || (movie as any).name}
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 'clamp(0.55rem, 1.3vh, 0.68rem)', color: 'rgba(255,255,255,0.4)', fontWeight: 600 }}>
+                          <span>{(movie.releaseDate || (movie as any).firstAirDate || '').split('-')[0] || 'N/A'}</span>
+                          <span style={{ 
+                            fontSize: 'clamp(0.5rem, 1.2vh, 0.6rem)', 
+                            fontWeight: 800,
+                            padding: '1px 4px',
+                            borderRadius: '3px',
+                            background: (movie as any).name ? 'rgba(99, 102, 241, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                            color: (movie as any).name ? '#a5b4fc' : '#fca5a5'
+                          }}>
+                            {(movie as any).name ? 'TV' : 'MOVIE'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+
                   <button 
                     key={tag} 
                     onClick={() => { triggerHaptic('medium'); setQuery(tag); }} 
