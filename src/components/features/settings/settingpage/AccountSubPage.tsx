@@ -294,7 +294,7 @@ export default function AccountSubPage({
         </button>
       </SettingRow>
 
-      {!isGuest && (
+      {!isGuest && isMobile && (
         <>
           <div style={sectionHeaderStyle()}>{t('danger_zone')}</div>
           <SettingRow 

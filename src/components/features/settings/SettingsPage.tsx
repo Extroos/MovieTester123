@@ -12,7 +12,7 @@ import WatchHistory from './WatchHistory';
 import { supabase } from '../../../utils/supabase';
 import VersionHistory from './VersionHistory';
 import { getLocalServerUrl, setLocalServerUrl } from '../../../services/LocalStreamService';
-import { Play, Languages, Sliders, Shield, Users, Copy, Check, Download, Eye, EyeOff, ChevronRight, ChevronLeft, List, BarChart2, LogOut, User } from 'lucide-react';
+import { Play, Languages, Sliders, Shield, Users, Copy, Check, Download, Eye, EyeOff, ChevronRight, ChevronLeft, List, BarChart2, LogOut, User, LogIn } from 'lucide-react';
 import { useFriends } from '../../../hooks/useFriends';
 import { StatsService } from '../../../services/user/stats';
 
@@ -949,35 +949,40 @@ export default function SettingsPage({
                 </h2>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1vh', width: '100%' }}>
-                  {[
-                    { id: 'Viewing Restrictions', label: 'Viewing Restrictions', desc: 'Set maturity rating and title restrictions', value: activeProfile?.isKids ? '7+' : '18+', icon: <Shield size={16} />, subpage: 'account' },
-                    { id: 'Audio & Subtitle Preferences', label: 'Audio & Subtitle Preferences', desc: 'Choose your default language', value: 'English', icon: <Languages size={16} />, subpage: 'subtitles' },
-                    { id: 'Playback Settings', label: 'Playback Settings', desc: 'Autoplay, previews and data usage', icon: <Play size={16} />, subpage: 'streaming' },
-                    { id: 'Download Settings', label: 'Download Settings', desc: 'Quality and storage for downloads', value: 'Standard', icon: <Download size={16} />, subpage: 'streaming' },
-                    { id: 'Viewing Activity', label: 'Viewing Activity', desc: 'See and manage your watch history', icon: <Eye size={16} />, subpage: 'statistics' },
-                    { id: 'Privacy & Data', label: 'Privacy & Data', desc: 'Manage profile privacy and recommendations', icon: <Shield size={16} />, subpage: 'account' },
-                    { id: 'Transfer Profile', label: 'Transfer Profile', desc: 'Move this profile to another account', icon: <Users size={16} />, subpage: 'social' },
-                    { id: 'Delete Profile', label: 'Delete Profile', desc: 'Permanently remove this profile', icon: <LogOut size={16} />, subpage: 'delete', isDanger: true }
-                  ].map(opt => {
-                    return (
-                      <button
-                        key={opt.id}
-                        onClick={() => {
-                          triggerHaptic('light');
-                          if (opt.subpage === 'delete') {
-                            handleDeleteProfile();
-                          } else {
-                            setActiveSubPage(opt.subpage as any);
-                          }
-                        }}
-                        className="tv-focusable settings-tv-row-card"
-                        tabIndex={0}
-                        style={{
-                          width: '100%',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '12px',
-                          padding: '1.4vh 1.4vw',
+                  {(() => {
+                    const isGuestUser = localStorage.getItem('cinemovie_is_guest') === 'true';
+                    const optionsList = [
+                      { id: 'Viewing Restrictions', label: 'Viewing Restrictions', desc: 'Set maturity rating and title restrictions', value: activeProfile?.isKids ? '7+' : '18+', icon: <Shield size={16} />, subpage: 'account' },
+                      { id: 'Audio & Subtitle Preferences', label: 'Audio & Subtitle Preferences', desc: 'Choose your default language', value: 'English', icon: <Languages size={16} />, subpage: 'subtitles' },
+                      { id: 'Playback Settings', label: 'Playback Settings', desc: 'Autoplay, previews and data usage', icon: <Play size={16} />, subpage: 'streaming' },
+                      { id: 'Download Settings', label: 'Download Settings', desc: 'Quality and storage for downloads', value: 'Standard', icon: <Download size={16} />, subpage: 'streaming' },
+                      { id: 'Viewing Activity', label: 'Viewing Activity', desc: 'See and manage your watch history', icon: <Eye size={16} />, subpage: 'statistics' },
+                      { id: 'Privacy & Data', label: 'Privacy & Data', desc: 'Manage profile privacy and recommendations', icon: <Shield size={16} />, subpage: 'account' },
+                      { id: 'Transfer Profile', label: 'Transfer Profile', desc: 'Move this profile to another account', icon: <Users size={16} />, subpage: 'social' },
+                      isGuestUser 
+                        ? { id: 'Login', label: 'Login', desc: 'Connect to account to save watch list and progress', icon: <LogIn size={16} />, subpage: 'login', isDanger: false }
+                        : { id: 'Logout', label: 'Logout', desc: 'Sign out of your CineMovie account', icon: <LogOut size={16} />, subpage: 'logout', isDanger: true }
+                    ];
+                    return optionsList.map(opt => {
+                      return (
+                        <button
+                          key={opt.id}
+                          onClick={() => {
+                            triggerHaptic('light');
+                            if (opt.subpage === 'login' || opt.subpage === 'logout') {
+                              onLogout();
+                            } else {
+                              setActiveSubPage(opt.subpage as any);
+                            }
+                          }}
+                          className="tv-focusable settings-tv-row-card"
+                          tabIndex={0}
+                          style={{
+                            width: '100%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px',
+                            padding: '1.4vh 1.4vw',
                           background: 'rgba(255, 255, 255, 0.02)',
                           border: '1px solid rgba(255, 255, 255, 0.04)',
                           borderRadius: '10px',
@@ -1032,7 +1037,8 @@ export default function SettingsPage({
                         </div>
                       </button>
                     );
-                  })}
+                  })
+                  })()}
                 </div>
               </div>
             ) : (
