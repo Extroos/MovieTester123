@@ -893,13 +893,14 @@ export default function SettingsPage({
                       <div 
                         key={m.id}
                         style={{ 
-                          flex: 1, 
+                          width: 'calc(33.33% - 6px)',
                           aspectRatio: '2/3', 
                           borderRadius: '4px', 
                           overflow: 'hidden', 
                           background: 'rgba(255,255,255,0.05)',
                           position: 'relative',
-                          height: 'clamp(60px, 12vh, 100px)'
+                          height: 'clamp(60px, 12vh, 100px)',
+                          flexShrink: 0
                         }}
                       >
                         <img 
