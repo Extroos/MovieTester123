@@ -261,8 +261,9 @@ export function useTVNavigation() {
           }
         }
 
-        // 2. Header Focus Memory override
-        if (isHeaderEl(bestElement) && lastFocusedHeaderElement && focusableElements.includes(lastFocusedHeaderElement)) {
+        // 2. Header Focus Memory override (only when entering the header from outside)
+        const isActiveHeader = activeEl ? isHeaderEl(activeEl) : false;
+        if (!isActiveHeader && isHeaderEl(bestElement) && lastFocusedHeaderElement && focusableElements.includes(lastFocusedHeaderElement)) {
           bestElement = lastFocusedHeaderElement;
         }
 
