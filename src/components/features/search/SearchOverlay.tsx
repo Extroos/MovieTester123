@@ -895,9 +895,9 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                       overflow: 'hidden'
                     }}
                   >
-                    {cat.id === 'Disney+' ? (
+                    {['Disney+', 'Netflix', 'Oscar Winners'].includes(cat.id) ? (
                       <img 
-                        src="/disney-logo.png" 
+                        src={cat.id === 'Disney+' ? '/disney-logo.png' : cat.id === 'Netflix' ? '/netflix-logo.png' : '/oscar-logo.png'} 
                         style={{ 
                           width: '100%', 
                           height: '100%', 
