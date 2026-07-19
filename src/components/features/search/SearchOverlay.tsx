@@ -414,7 +414,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
           background: 'radial-gradient(circle at 12% 15%, rgba(229, 9, 20, 0.08) 0%, rgba(9, 9, 11, 1) 50%, rgba(0, 0, 0, 1) 100%)',
           display: 'flex',
           flexDirection: 'column',
-          padding: '4vh 4vw 4vh calc(4vw + 56px)',
+          padding: '4vh 4vw',
           boxSizing: 'border-box',
           gap: '2.5vh',
           overflow: 'hidden'
@@ -448,7 +448,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
             width: '100%',
             boxSizing: 'border-box',
             gap: '1vw',
-            transition: 'all 0.2s',
+            transition: 'transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.15s ease, box-shadow 0.15s ease',
             flexShrink: 0
           }}
         >
@@ -652,7 +652,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                 })}
               </div>
 
-              <div className="no-scrollbar" style={{ flex: 1, overflowY: 'auto' }}>
+              <div className="no-scrollbar" style={{ flex: 1, overflowY: 'auto', paddingLeft: '8px', paddingRight: '8px', paddingTop: '8px' }}>
                 {searching ? (
                   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80%' }}>
                     <div style={{ width: '32px', height: '32px', border: '3px solid rgba(255,255,255,0.1)', borderTopColor: '#e50914', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
@@ -684,7 +684,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                             background: 'rgba(255,255,255,0.03)',
                             border: '2px solid rgba(255,255,255,0.05)',
                             outline: 'none',
-                            transition: 'all 0.2s'
+                            transition: 'transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.15s ease, box-shadow 0.15s ease'
                           }}
                         >
                           <div style={{ position: 'relative', width: '100%', aspectRatio: '2/3', overflow: 'hidden' }}>
@@ -711,7 +711,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
           </div>
         ) : (
           /* TV SEARCH HOME DASHBOARD (NO QUERY & KEYBOARD HIDDEN) */
-          <div className="no-scrollbar" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4.5vh', paddingBottom: '8vh' }}>
+          <div className="no-scrollbar" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4.5vh', paddingBottom: '8vh', paddingLeft: '8px', paddingRight: '8px', paddingTop: '8px' }}>
             
             {/* SECTION 1: QUICK ACCESS */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5vh', textAlign: 'left' }}>
@@ -753,7 +753,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                         color: '#fff',
                         cursor: 'pointer',
                         outline: 'none',
-                        transition: 'all 0.2s',
+                        transition: 'transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.15s ease, box-shadow 0.15s ease',
                         fontSize: 'clamp(0.85rem, 2vh, 1rem)',
                         fontWeight: 700
                       }}
@@ -802,7 +802,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                         color: '#fff',
                         cursor: 'pointer',
                         outline: 'none',
-                        transition: 'all 0.2s',
+                        transition: 'transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.15s ease, box-shadow 0.15s ease',
                         fontSize: 'clamp(0.72rem, 1.7vh, 0.85rem)',
                         fontWeight: 600
                       }}
@@ -842,7 +842,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                         color: '#fff',
                         cursor: 'pointer',
                         outline: 'none',
-                        transition: 'all 0.2s',
+                        transition: 'transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.15s ease, box-shadow 0.15s ease',
                         fontSize: 'clamp(0.72rem, 1.7vh, 0.85rem)',
                         fontWeight: 600
                       }}
@@ -890,7 +890,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                       outline: 'none',
                       fontWeight: 800,
                       fontSize: 'clamp(0.8rem, 2.2vh, 1.05rem)',
-                      transition: 'all 0.2s',
+                      transition: 'transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.15s ease, box-shadow 0.15s ease',
                       boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
                       overflow: 'hidden'
                     }}
