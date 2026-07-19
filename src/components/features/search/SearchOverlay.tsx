@@ -411,7 +411,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
           position: 'fixed',
           inset: 0,
           zIndex: 2000,
-          background: 'radial-gradient(circle at 12% 15%, rgba(229, 9, 20, 0.08) 0%, rgba(9, 9, 11, 1) 50%, rgba(0, 0, 0, 1) 100%)',
+          background: 'radial-gradient(circle at 12% 15%, rgba(255, 255, 255, 0.03) 0%, rgba(9, 9, 11, 1) 50%, rgba(0, 0, 0, 1) 100%)',
           display: 'flex',
           flexDirection: 'column',
           padding: '4vh 4vw',
@@ -486,6 +486,14 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
 
           <div 
             onClick={() => setShowKeyboard(true)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setShowKeyboard(true);
+              }
+            }}
+            className="tv-focusable"
+            tabIndex={0}
             style={{
               flex: 1,
               fontSize: 'clamp(1rem, 2.5vh, 1.2rem)',
@@ -494,7 +502,10 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              userSelect: 'none'
+              userSelect: 'none',
+              borderRadius: '8px',
+              padding: '4px 8px',
+              outline: 'none'
             }}
           >
             {query || 'Search movies, TV shows...'}
