@@ -899,7 +899,6 @@ export default function SettingsPage({
                           overflow: 'hidden', 
                           background: 'rgba(255,255,255,0.05)',
                           position: 'relative',
-                          height: 'clamp(60px, 12vh, 100px)',
                           flexShrink: 0
                         }}
                       >
