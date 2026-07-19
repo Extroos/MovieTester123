@@ -1832,7 +1832,8 @@ body.tv-mode input.tv-focusable:not(.login-input-optimized):focus-visible {
 /* Poster and Card Specific Focus States */
 body.tv-mode .movie-card.tv-focusable:focus,
 body.tv-mode .movie-card.tv-focusable:focus-visible {
-  border: 3px solid #ffffff !important;
+  outline: 3px solid #ffffff !important;
+  outline-offset: -3px !important;
   box-shadow: none !important;
   transform: scale(1.08) translate3d(0, 0, 0) !important;
   border-radius: 16px !important;
@@ -1840,7 +1841,8 @@ body.tv-mode .movie-card.tv-focusable:focus-visible {
 
 body.tv-mode .search-grid-card.tv-focusable:focus,
 body.tv-mode .search-result-row.tv-focusable:focus {
-  border: 3.5px solid #ffffff !important;
+  outline: 3.5px solid #ffffff !important;
+  outline-offset: -3.5px !important;
   box-shadow: none !important;
   transform: scale(1.05) translate3d(0, 0, 0) !important;
   z-index: 15 !important;
