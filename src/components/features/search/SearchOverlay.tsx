@@ -878,7 +878,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                     style={{
                       flex: 1,
                       aspectRatio: '16/10',
-                      background: cat.bg,
+                      background: ['Disney+', 'Netflix', 'Oscar Winners'].includes(cat.id) ? '#000000' : cat.bg,
                       border: '2px solid transparent',
                       borderRadius: '12px',
                       position: 'relative',
