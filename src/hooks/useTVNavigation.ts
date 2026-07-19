@@ -194,18 +194,37 @@ export function useTVNavigation() {
           // Horizontal moves: search ONLY siblings inside the active row scroll container
           targetFocusables = focusableElements.filter(el => el.closest('.content-row-scroll') === activeRow);
         } else {
-          // Vertical moves: search ONLY adjacent rows, the hero card, and the header
+          // Vertical moves (ArrowUp or ArrowDown):
           const rowContainers = Array.from(document.querySelectorAll('.content-row-container'));
           const activeRowContainer = activeEl.closest('.content-row-container') as HTMLElement | null;
           const activeRowIndex = activeRowContainer ? rowContainers.indexOf(activeRowContainer) : -1;
           
+          let targetRowIndex = -1;
+          if (activeRowIndex !== -1) {
+            targetRowIndex = e.key === 'ArrowUp' ? activeRowIndex - 1 : activeRowIndex + 1;
+          }
+
           targetFocusables = focusableElements.filter(el => {
             const elRowContainer = el.closest('.content-row-container') as HTMLElement | null;
+            
+            // If the element belongs to a row container:
             if (elRowContainer) {
               const elRowIndex = rowContainers.indexOf(elRowContainer);
-              return Math.abs(elRowIndex - activeRowIndex) <= 1;
+              // If there is an adjacent target row, strictly only allow elements inside it
+              if (targetRowIndex >= 0 && targetRowIndex < rowContainers.length) {
+                return elRowIndex === targetRowIndex;
+              }
+              // If there is no target row index (e.g. going up from row 0), allow index 0 elements
+              return elRowIndex === activeRowIndex;
             }
-            return el.classList.contains('tv-hero-card') || isHeaderEl(el);
+
+            // If going up from topmost row index 0, allow hero card and header
+            if (e.key === 'ArrowUp' && activeRowIndex === 0) {
+              return el.classList.contains('tv-hero-card') || isHeaderEl(el);
+            }
+
+            // Otherwise, block hero card/header to prevent skipping rows
+            return false;
           });
         }
       }
@@ -291,11 +310,16 @@ export function useTVNavigation() {
             const rowTitle = rowTitleEl ? rowTitleEl.textContent || '' : '';
             if (rowTitle) {
               const savedCardIndex = lastFocusedCardIndexPerRow.get(rowTitle);
+              const cardsInTargetRow = Array.from(bestRowContainer.querySelectorAll('.movie-card.tv-focusable')) as HTMLElement[];
               if (savedCardIndex !== undefined) {
-                const cardsInTargetRow = Array.from(bestRowContainer.querySelectorAll('.movie-card.tv-focusable')) as HTMLElement[];
                 if (cardsInTargetRow[savedCardIndex]) {
                   bestElement = cardsInTargetRow[savedCardIndex];
                 } else if (cardsInTargetRow.length > 0) {
+                  bestElement = cardsInTargetRow[0];
+                }
+              } else {
+                // Stabilizer: Default to the very first movie card (index 0) if the row hasn't been visited yet
+                if (cardsInTargetRow.length > 0) {
                   bestElement = cardsInTargetRow[0];
                 }
               }
