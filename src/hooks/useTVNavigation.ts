@@ -1,6 +1,19 @@
 import { useEffect, useState } from 'react';
 import { isTVMode } from '../utils/tv';
 
+// TV Mode Focus Memory Store
+let lastFocusedHeaderElement: HTMLElement | null = null;
+const lastFocusedCardIndexPerRow = new Map<string, number>();
+
+function isHeaderEl(el: HTMLElement): boolean {
+  return (
+    !!el.closest('header') ||
+    el.classList.contains('cinemovie-header-nav-btn') ||
+    el.classList.contains('cinemovie-header-profile-btn') ||
+    el.classList.contains('cinemovie-header-search-btn')
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Focusable element cache — rebuilt by MutationObserver, NOT on every keypress.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -154,11 +167,6 @@ export function useTVNavigation() {
       let bestElement: HTMLElement | null = null;
       let minDistance = Infinity;
 
-      const isHeaderEl = (el: HTMLElement) =>
-        !!el.closest('header') ||
-        el.classList.contains('cinemovie-header-nav-btn') ||
-        el.classList.contains('cinemovie-header-profile-btn') ||
-        el.classList.contains('cinemovie-header-search-btn');
 
       const isActiveHeader = isHeaderEl(activeEl);
       const isActiveHeroCard = activeEl.classList.contains('tv-hero-card');
@@ -207,8 +215,9 @@ export function useTVNavigation() {
           case 'ArrowUp':
             isMatch = dy < -5;
             if (isHeaderEl(el) && !isActiveHeroCard) {
-              const heroCard = document.querySelector('.tv-hero-card') as HTMLElement | null;
-              const hasHeroCardOnPage = heroCard && heroCard.offsetParent !== null;
+              const heroCards = Array.from(document.querySelectorAll('.tv-hero-card'));
+              const visibleHeroCard = heroCards.find(hc => (hc as HTMLElement).offsetParent !== null) as HTMLElement | null;
+              const hasHeroCardOnPage = !!visibleHeroCard;
               if (hasHeroCardOnPage) {
                 isMatch = false;
               } else {
@@ -231,6 +240,29 @@ export function useTVNavigation() {
       }
 
       if (bestElement) {
+        // 1. Content Row Focus Memory override
+        const bestRowContainer = bestElement.closest('.content-row-container') as HTMLElement | null;
+        if (bestRowContainer) {
+          const rowTitleEl = bestRowContainer.querySelector('h2');
+          const rowTitle = rowTitleEl ? rowTitleEl.textContent || '' : '';
+          if (rowTitle) {
+            const savedCardIndex = lastFocusedCardIndexPerRow.get(rowTitle);
+            if (savedCardIndex !== undefined) {
+              const cardsInTargetRow = Array.from(bestRowContainer.querySelectorAll('.movie-card.tv-focusable')) as HTMLElement[];
+              if (cardsInTargetRow[savedCardIndex]) {
+                bestElement = cardsInTargetRow[savedCardIndex];
+              } else if (cardsInTargetRow.length > 0) {
+                bestElement = cardsInTargetRow[0];
+              }
+            }
+          }
+        }
+
+        // 2. Header Focus Memory override
+        if (isHeaderEl(bestElement) && lastFocusedHeaderElement && focusableElements.includes(lastFocusedHeaderElement)) {
+          bestElement = lastFocusedHeaderElement;
+        }
+
         bestElement.focus();
 
         const isHeroOrHeader =
@@ -277,12 +309,38 @@ export function useTVNavigation() {
       }
     };
 
+    const handleFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+
+      if (isHeaderEl(target)) {
+        lastFocusedHeaderElement = target;
+      }
+
+      if (target.classList.contains('movie-card') && target.classList.contains('tv-focusable')) {
+        const activeRowContainer = target.closest('.content-row-container') as HTMLElement | null;
+        if (activeRowContainer) {
+          const rowTitleEl = activeRowContainer.querySelector('h2');
+          const rowTitle = rowTitleEl ? rowTitleEl.textContent || '' : '';
+          if (rowTitle) {
+            const cardsInRow = Array.from(activeRowContainer.querySelectorAll('.movie-card.tv-focusable'));
+            const cardIndex = cardsInRow.indexOf(target);
+            if (cardIndex !== -1) {
+              lastFocusedCardIndexPerRow.set(rowTitle, cardIndex);
+            }
+          }
+        }
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keypress', handleKeyPress);
+    window.addEventListener('focusin', handleFocusIn);
     
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keypress', handleKeyPress);
+      window.removeEventListener('focusin', handleFocusIn);
       domObserver.disconnect();
       cachedFocusables = [];
       if (activeScrollAnimationId !== null) {
