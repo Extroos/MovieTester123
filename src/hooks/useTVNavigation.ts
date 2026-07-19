@@ -355,7 +355,6 @@ export function useTVNavigation() {
           const scrollContainer = findScrollContainer(bestElement);
           smoothScrollTo(scrollContainer, 0, 200);
         } else {
-          // Premium centered vertical scrolling at 42% viewport height for film rows/cards
           const container = findScrollContainer(bestElement);
           const containerRect = container.getBoundingClientRect();
           const elRect = bestElement.getBoundingClientRect();
@@ -363,7 +362,11 @@ export function useTVNavigation() {
           const containerTop = container === document.documentElement ? 0 : containerRect.top;
           const elOffsetTop = elRect.top - containerTop + container.scrollTop;
           
-          const targetScrollTop = elOffsetTop - (container.clientHeight * 0.42) + (elRect.height / 2);
+          // If it is a download page card, align precisely in the vertical center of the viewport (50%), otherwise use 42%
+          const isDownloadCard = bestElement.classList.contains('download-tv-card');
+          const targetPercent = isDownloadCard ? 0.50 : 0.42;
+          
+          const targetScrollTop = elOffsetTop - (container.clientHeight * targetPercent) + (elRect.height / 2);
           const maxScroll = container.scrollHeight - container.clientHeight;
           const boundedTarget = Math.max(0, Math.min(maxScroll, targetScrollTop));
           

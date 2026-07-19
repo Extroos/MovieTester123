@@ -284,17 +284,20 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
     ];
 
     return (
-      <div style={{
-        minHeight: '100vh',
-        background: '#09090b',
-        color: '#fff',
-        paddingTop: '120px',
-        paddingBottom: '80px',
-        paddingLeft: '6%',
-        paddingRight: '6%',
-        boxSizing: 'border-box',
-        overflowY: tvItemsList.length === 0 ? 'hidden' : 'auto'
-      }}>
+      <div
+        className="downloads-container"
+        style={{
+          minHeight: '100vh',
+          background: '#09090b',
+          color: '#fff',
+          paddingTop: '120px',
+          paddingBottom: '80px',
+          paddingLeft: '6%',
+          paddingRight: '6%',
+          boxSizing: 'border-box',
+          overflowY: tvItemsList.length === 0 ? 'hidden' : 'auto'
+        }}
+      >
         {/* Header Block */}
         <div style={{
           display: 'flex',
