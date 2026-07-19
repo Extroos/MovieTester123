@@ -240,19 +240,22 @@ export function useTVNavigation() {
       }
 
       if (bestElement) {
-        // 1. Content Row Focus Memory override
-        const bestRowContainer = bestElement.closest('.content-row-container') as HTMLElement | null;
-        if (bestRowContainer) {
-          const rowTitleEl = bestRowContainer.querySelector('h2');
-          const rowTitle = rowTitleEl ? rowTitleEl.textContent || '' : '';
-          if (rowTitle) {
-            const savedCardIndex = lastFocusedCardIndexPerRow.get(rowTitle);
-            if (savedCardIndex !== undefined) {
-              const cardsInTargetRow = Array.from(bestRowContainer.querySelectorAll('.movie-card.tv-focusable')) as HTMLElement[];
-              if (cardsInTargetRow[savedCardIndex]) {
-                bestElement = cardsInTargetRow[savedCardIndex];
-              } else if (cardsInTargetRow.length > 0) {
-                bestElement = cardsInTargetRow[0];
+        // 1. Content Row Focus Memory override (only when moving vertically between rows)
+        const isVerticalMove = e.key === 'ArrowUp' || e.key === 'ArrowDown';
+        if (isVerticalMove) {
+          const bestRowContainer = bestElement.closest('.content-row-container') as HTMLElement | null;
+          if (bestRowContainer) {
+            const rowTitleEl = bestRowContainer.querySelector('h2');
+            const rowTitle = rowTitleEl ? rowTitleEl.textContent || '' : '';
+            if (rowTitle) {
+              const savedCardIndex = lastFocusedCardIndexPerRow.get(rowTitle);
+              if (savedCardIndex !== undefined) {
+                const cardsInTargetRow = Array.from(bestRowContainer.querySelectorAll('.movie-card.tv-focusable')) as HTMLElement[];
+                if (cardsInTargetRow[savedCardIndex]) {
+                  bestElement = cardsInTargetRow[savedCardIndex];
+                } else if (cardsInTargetRow.length > 0) {
+                  bestElement = cardsInTargetRow[0];
+                }
               }
             }
           }
