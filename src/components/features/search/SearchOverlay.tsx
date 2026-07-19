@@ -414,7 +414,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
           background: 'radial-gradient(circle at 12% 15%, rgba(229, 9, 20, 0.08) 0%, rgba(9, 9, 11, 1) 50%, rgba(0, 0, 0, 1) 100%)',
           display: 'flex',
           flexDirection: 'column',
-          padding: '4vh 4vw',
+          padding: '4vh 4vw 4vh calc(4vw + 56px)',
           boxSizing: 'border-box',
           gap: '2.5vh',
           overflow: 'hidden'
@@ -682,7 +682,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                             borderRadius: '8px',
                             overflow: 'hidden',
                             background: 'rgba(255,255,255,0.03)',
-                            border: '1px solid rgba(255,255,255,0.05)',
+                            border: '2px solid rgba(255,255,255,0.05)',
                             outline: 'none',
                             transition: 'all 0.2s'
                           }}
@@ -743,7 +743,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                       style={{
                         flex: 1,
                         background: 'rgba(255,255,255,0.03)',
-                        border: '1px solid rgba(255,255,255,0.06)',
+                        border: '2px solid rgba(255,255,255,0.06)',
                         borderRadius: '12px',
                         padding: '2.2vh 1.5vw',
                         display: 'flex',
@@ -793,7 +793,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                       tabIndex={0}
                       style={{
                         background: 'rgba(255,255,255,0.03)',
-                        border: '1px solid rgba(255,255,255,0.05)',
+                        border: '2px solid rgba(255,255,255,0.05)',
                         borderRadius: '10px',
                         padding: '1.2vh 1.2vw',
                         display: 'flex',
@@ -833,7 +833,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                       tabIndex={0}
                       style={{
                         background: 'rgba(255,255,255,0.03)',
-                        border: '1px solid rgba(255,255,255,0.05)',
+                        border: '2px solid rgba(255,255,255,0.05)',
                         borderRadius: '10px',
                         padding: '1.2vh 1.2vw',
                         display: 'flex',
@@ -879,7 +879,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                       flex: 1,
                       aspectRatio: '16/10',
                       background: cat.bg,
-                      border: 'none',
+                      border: '2px solid transparent',
                       borderRadius: '12px',
                       position: 'relative',
                       cursor: 'pointer',
