@@ -426,9 +426,9 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
             background: rgba(255,255,255,0.06) !important;
           }
           .tv-search-card:focus {
-            outline: 2.5px solid #e50914 !important;
+            outline: 2.5px solid #ffffff !important;
             outline-offset: -2.5px !important;
-            box-shadow: 0 0 15px rgba(229, 9, 20, 0.4) !important;
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.25) !important;
             transform: scale(1.03);
           }
           @keyframes blink {
