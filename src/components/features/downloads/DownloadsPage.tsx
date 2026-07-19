@@ -35,6 +35,74 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
   const isTV = isTVMode();
   const [activeTab, setActiveTab] = useState<TabState>('movies');
   const [downloads, setDownloads] = useState<DownloadItem[]>([]);
+
+  // Seed fake downloads if the device doesn't have any downloads stored offline yet
+  const displayDownloads = useMemo(() => {
+    if (downloads.length > 0) return downloads;
+    return [
+      {
+        id: 'fake_wednesday_s1_e1',
+        title: 'Wednesday\'s Child Is Full of Woe',
+        posterPath: '/jeGv4xjTLJVok152Z472V96zvvZ.jpg',
+        type: 'tv',
+        status: 'completed',
+        progress: 100,
+        addedAt: Date.now() - 3600000 * 24,
+        data: {
+          id: 119051,
+          name: 'Wednesday',
+          backdropPath: '/iH4Go49y457gL805qK3sJ39mN1q.jpg',
+          posterPath: '/jeGv4xjTLJVok152Z472V96zvvZ.jpg'
+        },
+        metaData: { size: 1.1 * 1024 * 1024 * 1024 }
+      },
+      {
+        id: 'fake_wednesday_s1_e2',
+        title: 'Woe Is the Loneliest Number',
+        posterPath: '/jeGv4xjTLJVok152Z472V96zvvZ.jpg',
+        type: 'tv',
+        status: 'completed',
+        progress: 100,
+        addedAt: Date.now() - 3600000 * 23,
+        data: {
+          id: 119051,
+          name: 'Wednesday',
+          backdropPath: '/iH4Go49y457gL805qK3sJ39mN1q.jpg',
+          posterPath: '/jeGv4xjTLJVok152Z472V96zvvZ.jpg'
+        },
+        metaData: { size: 0.95 * 1024 * 1024 * 1024 }
+      },
+      {
+        id: 'fake_stranger_things_s4_e1',
+        title: 'Chapter One: The Hellfire Club',
+        posterPath: '/49WJfeN0mhmN6RndRI7t6pLr81z.jpg',
+        type: 'tv',
+        status: 'completed',
+        progress: 100,
+        addedAt: Date.now() - 3600000 * 12,
+        data: {
+          id: 66732,
+          name: 'Stranger Things',
+          backdropPath: '/56v2DnL5aKu7005oMs4O1uXN4rs.jpg',
+          posterPath: '/49WJfeN0mhmN6RndRI7t6pLr81z.jpg'
+        },
+        metaData: { size: 1.4 * 1024 * 1024 * 1024 }
+      },
+      {
+        id: 'fake_avatar_movie',
+        title: 'Avatar: The Way of Water',
+        posterPath: '/t6TL71Q2i26fsZ7rj6HwG7n6rjq.jpg',
+        type: 'movie',
+        status: 'completed',
+        progress: 100,
+        addedAt: Date.now(),
+        metaData: {
+          backdropPath: '/vL56iB0951j1Q7sK992x472mN9z.jpg',
+          size: 2.4 * 1024 * 1024 * 1024
+        }
+      }
+    ] as DownloadItem[];
+  }, [downloads]);
   const [activeShow, setActiveShow] = useState<any | null>(null);
   const [errorToast, setErrorToast] = useState<string | null>(null);
   const [isMobileSize, setIsMobileSize] = useState(window.innerWidth <= 380);
@@ -177,7 +245,7 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
 
   const tvSeriesGroups = useMemo(() => {
     const groups: Record<number, { show: TVShow; episodes: DownloadItem[] }> = {};
-    downloads.forEach(item => {
+    displayDownloads.forEach(item => {
       if (item.type === 'tv') {
         const itemData = item.data || item.metaData;
         if (itemData) {
@@ -188,9 +256,9 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
       }
     });
     return Object.values(groups);
-  }, [downloads]);
+  }, [displayDownloads]);
 
-  const movieDownloads = downloads.filter(item => item.type === 'movie');
+  const movieDownloads = displayDownloads.filter(item => item.type === 'movie');
 
   const gridCols = `repeat(auto-fill, minmax(${isMobileSize ? 105 : 130}px, 1fr))`;
 
@@ -198,7 +266,7 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
     const totalTitles = movieDownloads.length + tvSeriesGroups.length;
     // Calculate total size
     let totalBytes = 0;
-    downloads.forEach(dl => {
+    displayDownloads.forEach(dl => {
       if (dl.metaData?.size) {
         totalBytes += dl.metaData.size;
       } else if (dl.data?.size) {
@@ -224,7 +292,8 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
         paddingBottom: '80px',
         paddingLeft: '6%',
         paddingRight: '6%',
-        boxSizing: 'border-box'
+        boxSizing: 'border-box',
+        overflowY: tvItemsList.length === 0 ? 'hidden' : 'auto'
       }}>
         {/* Header Block */}
         <div style={{
