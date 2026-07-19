@@ -553,14 +553,16 @@ export default function SettingsPage({
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          padding: '24px 4% 12px 4%',
-          height: '80px',
+          padding: '0 4%',
+          height: '10vh',
+          minHeight: '50px',
+          maxHeight: '80px',
           boxSizing: 'border-box',
           borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
           flexShrink: 0
         }}>
           <div style={{ display: 'flex', alignItems: 'center' }}>
-            <span style={{ color: '#E50914', fontSize: '2.2rem', fontWeight: 950, letterSpacing: '-0.06em', fontFamily: 'sans-serif' }}>NETFLIX</span>
+            <span style={{ color: '#E50914', fontSize: 'clamp(1.5rem, 4.5vh, 2.2rem)', fontWeight: 950, letterSpacing: '-0.06em', fontFamily: 'sans-serif' }}>NETFLIX</span>
             <button
               onClick={() => { triggerHaptic('light'); onNavigate('home'); }}
               className="tv-focusable"
@@ -569,14 +571,14 @@ export default function SettingsPage({
                 background: 'transparent',
                 border: 'none',
                 color: 'rgba(255,255,255,0.7)',
-                fontSize: '1rem',
+                fontSize: 'clamp(0.8rem, 2.2vh, 1rem)',
                 fontWeight: 700,
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
                 cursor: 'pointer',
                 outline: 'none',
-                marginLeft: '40px',
+                marginLeft: '4vw',
                 padding: '6px 12px',
                 borderRadius: '6px',
                 transition: 'all 0.2s'
@@ -587,13 +589,13 @@ export default function SettingsPage({
             </button>
           </div>
           
-          <div style={{ display: 'flex', alignItems: 'center', gap: '24px', color: 'rgba(255,255,255,0.8)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '2vw', color: 'rgba(255,255,255,0.8)' }}>
             {/* Search Icon */}
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ opacity: 0.8, cursor: 'pointer' }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ opacity: 0.8, cursor: 'pointer' }}>
               <circle cx="11" cy="11" r="8"></circle>
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
             </svg>
-            <span style={{ fontSize: '1.2rem', fontWeight: 700, letterSpacing: '0.04em' }}>{currentTime}</span>
+            <span style={{ fontSize: 'clamp(0.9rem, 2.5vh, 1.2rem)', fontWeight: 700, letterSpacing: '0.04em' }}>{currentTime}</span>
           </div>
         </div>
 
@@ -608,30 +610,32 @@ export default function SettingsPage({
         }}>
           {/* COLUMN 1: Profiles list */}
           <div style={{
-            width: '280px',
+            width: '24vw',
+            maxWidth: '280px',
+            minWidth: '200px',
             height: '100%',
             overflowY: 'auto',
             background: 'rgba(2, 2, 4, 0.4)',
             borderRight: '1px solid rgba(255,255,255,0.06)',
-            padding: '40px 24px',
+            padding: '3vh 1.5vw',
             boxSizing: 'border-box',
             display: 'flex',
             flexDirection: 'column',
             flexShrink: 0
           }} className="no-scrollbar">
             <div style={{
-              fontSize: '0.8rem',
+              fontSize: 'clamp(0.7rem, 1.8vh, 0.8rem)',
               color: 'rgba(255,255,255,0.4)',
               textTransform: 'uppercase',
               fontWeight: 800,
               letterSpacing: '0.08em',
-              marginBottom: '20px',
-              paddingLeft: '12px'
+              marginBottom: '2vh',
+              paddingLeft: '8px'
             }}>
               Profiles
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1vh' }}>
               {profiles.map(p => {
                 const isActive = activeProfile?.id === p.id;
                 return (
@@ -647,11 +651,11 @@ export default function SettingsPage({
                       width: '100%',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '14px',
-                      padding: '12px 14px',
+                      gap: '1vw',
+                      padding: '1.2vh 1vw',
                       background: isActive ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
                       border: 'none',
-                      borderRadius: '10px',
+                      borderRadius: '8px',
                       cursor: 'pointer',
                       color: '#fff',
                       textAlign: 'left',
@@ -663,16 +667,17 @@ export default function SettingsPage({
                       src={p.avatar}
                       alt=""
                       style={{
-                        width: '38px',
-                        height: '38px',
-                        borderRadius: '8px',
-                        border: isActive ? '2px solid #007aff' : 'none'
+                        width: 'clamp(32px, 5vh, 42px)',
+                        height: 'clamp(32px, 5vh, 42px)',
+                        borderRadius: '6px',
+                        border: isActive ? '2px solid #007aff' : 'none',
+                        objectFit: 'cover'
                       }}
                     />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{
                         fontWeight: 800,
-                        fontSize: '1rem',
+                        fontSize: 'clamp(0.85rem, 2.2vh, 1rem)',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap'
@@ -682,7 +687,7 @@ export default function SettingsPage({
                     </div>
                     {p.isKids && (
                       <span style={{
-                        fontSize: '0.65rem',
+                        fontSize: 'clamp(0.55rem, 1.4vh, 0.65rem)',
                         background: 'rgba(255,255,255,0.1)',
                         padding: '2px 6px',
                         borderRadius: '4px',
@@ -708,11 +713,11 @@ export default function SettingsPage({
                   width: '100%',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '14px',
-                  padding: '12px 14px',
+                  gap: '1vw',
+                  padding: '1.2vh 1vw',
                   background: 'transparent',
                   border: 'none',
-                  borderRadius: '10px',
+                  borderRadius: '8px',
                   cursor: 'pointer',
                   color: 'rgba(255,255,255,0.5)',
                   textAlign: 'left',
@@ -721,20 +726,20 @@ export default function SettingsPage({
                 }}
               >
                 <div style={{
-                  width: '38px',
-                  height: '38px',
-                  borderRadius: '8px',
+                  width: 'clamp(32px, 5vh, 42px)',
+                  height: 'clamp(32px, 5vh, 42px)',
+                  borderRadius: '6px',
                   background: 'rgba(255,255,255,0.05)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   color: '#fff',
-                  fontSize: '1.4rem',
+                  fontSize: '1.2rem',
                   fontWeight: 700
                 }}>
                   +
                 </div>
-                <span style={{ fontWeight: 800, fontSize: '1rem' }}>Add Profile</span>
+                <span style={{ fontWeight: 800, fontSize: 'clamp(0.85rem, 2.2vh, 1rem)' }}>Add Profile</span>
               </button>
             </div>
 
@@ -743,32 +748,34 @@ export default function SettingsPage({
               marginTop: 'auto',
               background: 'rgba(255,255,255,0.03)',
               border: '1px solid rgba(255,255,255,0.08)',
-              padding: '10px 16px',
-              borderRadius: '24px',
-              fontSize: '0.8rem',
+              padding: '1vh 1vw',
+              borderRadius: '20px',
+              fontSize: 'clamp(0.65rem, 1.8vh, 0.8rem)',
               fontWeight: 700,
               display: 'flex',
               alignItems: 'center',
-              gap: '8px',
-              color: 'rgba(255,255,255,0.6)'
+              gap: '6px',
+              color: 'rgba(255,255,255,0.6)',
+              boxSizing: 'border-box'
             }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <circle cx="12" cy="12" r="10"></circle>
                 <line x1="12" y1="16" x2="12" y2="12"></line>
                 <line x1="12" y1="8" x2="12.01" y2="8"></line>
               </svg>
-              Need help? <span style={{ color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>Visit netflix.com/help</span>
+              <span>Need help? <span style={{ color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>netflix.com/help</span></span>
             </div>
           </div>
 
           {/* COLUMN 2: Active Profile Summary details */}
           <div style={{
-            width: '34vw',
-            maxWidth: '440px',
+            width: '32vw',
+            maxWidth: '380px',
+            minWidth: '240px',
             height: '100%',
             overflowY: 'auto',
             borderRight: '1px solid rgba(255,255,255,0.06)',
-            padding: '40px 32px',
+            padding: '3vh 2vw',
             boxSizing: 'border-box',
             display: 'flex',
             flexDirection: 'column',
@@ -776,7 +783,7 @@ export default function SettingsPage({
             flexShrink: 0
           }} className="no-scrollbar">
             {/* Big avatar image */}
-            <div style={{ position: 'relative', width: '160px', height: '160px', marginBottom: '20px' }}>
+            <div style={{ position: 'relative', width: 'clamp(100px, 20vh, 150px)', height: 'clamp(100px, 20vh, 150px)', marginBottom: '2vh' }}>
               <img
                 src={activeProfile?.avatar}
                 alt=""
@@ -793,10 +800,10 @@ export default function SettingsPage({
                 tabIndex={0}
                 style={{
                   position: 'absolute',
-                  bottom: '-8px',
-                  right: '-8px',
-                  width: '36px',
-                  height: '36px',
+                  bottom: '-6px',
+                  right: '-6px',
+                  width: 'clamp(28px, 5vh, 34px)',
+                  height: 'clamp(28px, 5vh, 34px)',
                   borderRadius: '50%',
                   background: '#1a1a1a',
                   border: '2px solid #333',
@@ -808,7 +815,7 @@ export default function SettingsPage({
                   outline: 'none'
                 }}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
                   <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4z"></path>
                 </svg>
@@ -816,20 +823,20 @@ export default function SettingsPage({
             </div>
 
             {/* Profile Name */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-              <h2 style={{ margin: 0, fontSize: '1.8rem', fontWeight: 900 }}>{activeProfile?.name}</h2>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2.5" style={{ cursor: 'pointer' }} onClick={() => setIsEditingName(true)}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '1.5vh' }}>
+              <h2 style={{ margin: 0, fontSize: 'clamp(1.2rem, 3.2vh, 1.6rem)', fontWeight: 900 }}>{activeProfile?.name}</h2>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2.5" style={{ cursor: 'pointer' }} onClick={() => setIsEditingName(true)}>
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
                 <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4z"></path>
               </svg>
             </div>
 
             {/* Badges */}
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '24px' }}>
-              <span style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '2vh' }}>
+              <span style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', padding: '4px 8px', borderRadius: '4px', fontSize: 'clamp(0.65rem, 1.6vh, 0.75rem)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 Primary Profile
               </span>
-              <span style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 700 }}>
+              <span style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', padding: '4px 8px', borderRadius: '4px', fontSize: 'clamp(0.65rem, 1.6vh, 0.75rem)', fontWeight: 700 }}>
                 {activeProfile?.isKids ? 'Kids 7+' : 'Adult 18+'}
               </span>
             </div>
@@ -841,43 +848,44 @@ export default function SettingsPage({
               tabIndex={0}
               style={{
                 width: '100%',
-                padding: '12px 20px',
+                padding: '1.2vh 1.5vw',
                 background: 'rgba(255, 255, 255, 0.05)',
                 border: '1px solid rgba(255,255,255,0.08)',
                 color: '#fff',
                 borderRadius: '8px',
-                fontSize: '0.9rem',
+                fontSize: 'clamp(0.75rem, 2vh, 0.9rem)',
                 fontWeight: 700,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '8px',
+                gap: '6px',
                 outline: 'none',
-                marginBottom: '40px',
+                marginBottom: '3vh',
                 transition: 'all 0.2s'
               }}
             >
-              <User size={16} />
+              <User size={14} />
               Change Avatar
             </button>
 
             {/* Recently Watched on this Profile */}
-            <div style={{ width: '100%', textAlign: 'left' }}>
-              <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.06em', marginBottom: '12px' }}>
+            <div style={{ width: '100%', textAlign: 'left', minHeight: 0 }}>
+              <div style={{ fontSize: 'clamp(0.6rem, 1.6vh, 0.72rem)', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.06em', marginBottom: '1vh' }}>
                 Recently Watched on this Profile
               </div>
-              <div style={{ display: 'flex', gap: '12px', width: '100%' }}>
+              <div style={{ display: 'flex', gap: '8px', width: '100%', minHeight: 0 }}>
                 {recentlyWatched.map(m => (
                   <div 
                     key={m.id}
                     style={{ 
                       flex: 1, 
                       aspectRatio: '2/3', 
-                      borderRadius: '6px', 
+                      borderRadius: '4px', 
                       overflow: 'hidden', 
                       background: 'rgba(255,255,255,0.05)',
-                      position: 'relative'
+                      position: 'relative',
+                      height: 'clamp(60px, 12vh, 100px)'
                     }}
                   >
                     <img 
@@ -896,7 +904,6 @@ export default function SettingsPage({
             className="tv-settings-right-panel no-scrollbar"
             onKeyDown={(e) => {
               if (e.key === 'ArrowLeft') {
-                // If subpage is active, ArrowLeft on container goes back to the column base
                 if (activeSubPage) {
                   e.preventDefault();
                   setActiveSubPage(null);
@@ -912,26 +919,26 @@ export default function SettingsPage({
               height: '100%',
               overflowY: 'auto',
               background: 'rgba(5, 5, 8, 0.2)',
-              padding: '40px 4% 80px 4%',
+              padding: '3vh 2.5vw 8vh 2.5vw',
               boxSizing: 'border-box'
             }}
           >
             {activeSubPage === null ? (
               <div style={{ width: '100%' }}>
-                <h2 style={{ margin: '0 0 24px 0', fontSize: '1.6rem', fontWeight: 900 }}>
+                <h2 style={{ margin: '0 0 2vh 0', fontSize: 'clamp(1.1rem, 3vh, 1.4rem)', fontWeight: 900 }}>
                   Profile Settings
                 </h2>
                 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1vh', width: '100%' }}>
                   {[
-                    { id: 'Viewing Restrictions', label: 'Viewing Restrictions', desc: 'Set maturity rating and title restrictions', value: activeProfile?.isKids ? '7+' : '18+', icon: <Shield size={18} />, subpage: 'account' },
-                    { id: 'Audio & Subtitle Preferences', label: 'Audio & Subtitle Preferences', desc: 'Choose your default language', value: 'English', icon: <Languages size={18} />, subpage: 'subtitles' },
-                    { id: 'Playback Settings', label: 'Playback Settings', desc: 'Autoplay, previews and data usage', icon: <Play size={18} />, subpage: 'streaming' },
-                    { id: 'Download Settings', label: 'Download Settings', desc: 'Quality and storage for downloads', value: 'Standard', icon: <Download size={18} />, subpage: 'streaming' },
-                    { id: 'Viewing Activity', label: 'Viewing Activity', desc: 'See and manage your watch history', icon: <Eye size={18} />, subpage: 'statistics' },
-                    { id: 'Privacy & Data', label: 'Privacy & Data', desc: 'Manage profile privacy and recommendations', icon: <Shield size={18} />, subpage: 'account' },
-                    { id: 'Transfer Profile', label: 'Transfer Profile', desc: 'Move this profile to another account', icon: <Users size={18} />, subpage: 'social' },
-                    { id: 'Delete Profile', label: 'Delete Profile', desc: 'Permanently remove this profile', icon: <LogOut size={18} />, subpage: 'delete', isDanger: true }
+                    { id: 'Viewing Restrictions', label: 'Viewing Restrictions', desc: 'Set maturity rating and title restrictions', value: activeProfile?.isKids ? '7+' : '18+', icon: <Shield size={16} />, subpage: 'account' },
+                    { id: 'Audio & Subtitle Preferences', label: 'Audio & Subtitle Preferences', desc: 'Choose your default language', value: 'English', icon: <Languages size={16} />, subpage: 'subtitles' },
+                    { id: 'Playback Settings', label: 'Playback Settings', desc: 'Autoplay, previews and data usage', icon: <Play size={16} />, subpage: 'streaming' },
+                    { id: 'Download Settings', label: 'Download Settings', desc: 'Quality and storage for downloads', value: 'Standard', icon: <Download size={16} />, subpage: 'streaming' },
+                    { id: 'Viewing Activity', label: 'Viewing Activity', desc: 'See and manage your watch history', icon: <Eye size={16} />, subpage: 'statistics' },
+                    { id: 'Privacy & Data', label: 'Privacy & Data', desc: 'Manage profile privacy and recommendations', icon: <Shield size={16} />, subpage: 'account' },
+                    { id: 'Transfer Profile', label: 'Transfer Profile', desc: 'Move this profile to another account', icon: <Users size={16} />, subpage: 'social' },
+                    { id: 'Delete Profile', label: 'Delete Profile', desc: 'Permanently remove this profile', icon: <LogOut size={16} />, subpage: 'delete', isDanger: true }
                   ].map(opt => {
                     return (
                       <button
@@ -950,11 +957,11 @@ export default function SettingsPage({
                           width: '100%',
                           display: 'flex',
                           alignItems: 'center',
-                          gap: '16px',
-                          padding: '16px 20px',
+                          gap: '12px',
+                          padding: '1.4vh 1.4vw',
                           background: 'rgba(255, 255, 255, 0.02)',
                           border: '1px solid rgba(255, 255, 255, 0.04)',
-                          borderRadius: '12px',
+                          borderRadius: '10px',
                           cursor: 'pointer',
                           textAlign: 'left',
                           color: '#fff',
@@ -972,31 +979,37 @@ export default function SettingsPage({
                         </div>
 
                         {/* Title and Description */}
-                        <div style={{ flex: 1 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{
                             fontWeight: 800,
-                            fontSize: '1rem',
-                            color: opt.isDanger ? '#ef4444' : '#fff'
+                            fontSize: 'clamp(0.85rem, 2.2vh, 1rem)',
+                            color: opt.isDanger ? '#ef4444' : '#fff',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
                           }}>
                             {opt.label}
                           </div>
                           <div style={{
-                            fontSize: '0.85rem',
+                            fontSize: 'clamp(0.7rem, 1.8vh, 0.82rem)',
                             color: 'rgba(255,255,255,0.4)',
-                            marginTop: '2px'
+                            marginTop: '1px',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
                           }}>
                             {opt.desc}
                           </div>
                         </div>
 
                         {/* Value and Chevron */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'rgba(255,255,255,0.4)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'rgba(255,255,255,0.4)', flexShrink: 0 }}>
                           {opt.value && (
-                            <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>
+                            <span style={{ fontSize: 'clamp(0.75rem, 1.9vh, 0.88rem)', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>
                               {opt.value}
                             </span>
                           )}
-                          <ChevronRight size={18} />
+                          <ChevronRight size={16} />
                         </div>
                       </button>
                     );
@@ -1015,25 +1028,25 @@ export default function SettingsPage({
                     background: 'transparent',
                     border: 'none',
                     color: 'rgba(255,255,255,0.6)',
-                    fontSize: '0.95rem',
+                    fontSize: 'clamp(0.8rem, 2.2vh, 0.95rem)',
                     fontWeight: 700,
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px',
+                    gap: '4px',
                     cursor: 'pointer',
                     outline: 'none',
-                    padding: '8px 12px',
+                    padding: '6px 10px',
                     borderRadius: '6px',
-                    marginBottom: '20px'
+                    marginBottom: '2vh'
                   }}
                 >
-                  <ChevronLeft size={16} />
+                  <ChevronLeft size={14} />
                   Back
                 </button>
 
                 <h2 style={{ 
-                  margin: '0 0 24px 0', 
-                  fontSize: '1.6rem', 
+                  margin: '0 0 2vh 0', 
+                  fontSize: 'clamp(1.1rem, 3vh, 1.4rem)', 
                   fontWeight: 900,
                   textTransform: 'uppercase', 
                   letterSpacing: '0.06em'
