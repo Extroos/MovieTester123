@@ -527,17 +527,17 @@ export default function SettingsPage({
     useEffect(() => {
       const timer = setInterval(() => {
         const d = new Date();
-        setTime(d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+        setCurrentTime(d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
       }, 30000);
       return () => clearInterval(timer);
     }, []);
 
-    // Fetch real watch history for the active profile
+    // Fetch real watch history for the active profile using getContinueWatching
     const [realHistory, setRealHistory] = useState<any[]>([]);
     useEffect(() => {
       if (activeProfile) {
-        WatchProgressService.getWatchHistory(0, 3).then(res => {
-          setRealHistory(res || []);
+        WatchProgressService.getContinueWatching().then(res => {
+          setRealHistory((res || []).slice(0, 3));
         });
       }
     }, [activeProfile]);
@@ -550,8 +550,8 @@ export default function SettingsPage({
           flexDirection: 'column',
           height: '100vh',
           width: '100vw',
-          // Premium royal purple glow aura (random brand color change)
-          background: 'radial-gradient(circle at 10% 12%, rgba(124, 58, 237, 0.15) 0%, rgba(9, 9, 11, 0.98) 60%, #000000 100%)',
+          // Premium white glow aura gradient
+          background: 'radial-gradient(circle at 10% 12%, rgba(255, 255, 255, 0.05) 0%, rgba(9, 9, 11, 0.98) 60%, #000000 100%)',
           color: '#ffffff',
           overflow: 'hidden',
           position: 'fixed',
@@ -573,7 +573,11 @@ export default function SettingsPage({
           flexShrink: 0
         }}>
           <div style={{ display: 'flex', alignItems: 'center' }}>
-            <span style={{ color: '#7c3aed', fontSize: 'clamp(1.5rem, 4.5vh, 2.2rem)', fontWeight: 950, letterSpacing: '-0.04em', fontFamily: 'sans-serif' }}>CineMovie</span>
+            <img 
+              src="/cinemovie-logo.png" 
+              alt="CineMovie" 
+              style={{ height: 'clamp(28px, 5vh, 40px)', width: 'auto', objectFit: 'contain' }} 
+            />
             <button
               onClick={() => { triggerHaptic('light'); onNavigate('home'); }}
               className="tv-focusable"
@@ -680,7 +684,7 @@ export default function SettingsPage({
                         width: 'clamp(32px, 5vh, 42px)',
                         height: 'clamp(32px, 5vh, 42px)',
                         borderRadius: '8px',
-                        border: isActive ? '2px solid #7c3aed' : 'none',
+                        border: isActive ? '2px solid #ffffff' : 'none',
                         objectFit: 'cover'
                       }}
                     />
@@ -861,7 +865,7 @@ export default function SettingsPage({
               Change Avatar
             </button>
 
-            {/* Recently Watched on this Profile - REAL Watch History mapping */}
+            {/* Recently Watched on this Profile */}
             <div style={{ width: '100%', textAlign: 'left', minHeight: 0 }}>
               <div style={{ fontSize: 'clamp(0.6rem, 1.6vh, 0.72rem)', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.06em', marginBottom: '1vh' }}>
                 Recently Watched on this Profile
@@ -883,8 +887,8 @@ export default function SettingsPage({
               ) : (
                 <div style={{ display: 'flex', gap: '8px', width: '100%', minHeight: 0 }}>
                   {realHistory.map(m => {
-                    const posterPath = m.data?.poster_path || m.data?.posterPath || '';
-                    const imageUrl = posterPath ? `https://image.tmdb.org/t/p/w185${posterPath}` : '/movie-placeholder.png';
+                    const posterPath = m.poster_path || m.posterPath || '';
+                    const imageUrl = posterPath ? (posterPath.startsWith('http') ? posterPath : `https://image.tmdb.org/t/p/w185${posterPath}`) : '/movie-placeholder.png';
                     return (
                       <div 
                         key={m.id}
