@@ -341,12 +341,16 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
             onKeyDown={(e) => {
               if (e.key === 'ArrowDown') {
                 e.preventDefault();
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
                 const firstCard = document.querySelector('.download-tv-card') as HTMLElement | null;
                 if (firstCard) {
                   firstCard.focus();
                 }
               } else if (e.key === 'ArrowUp') {
                 e.preventDefault();
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
                 const activeHeaderBtn = document.querySelector('.cinemovie-header-nav-btn.active') as HTMLElement | null;
                 if (activeHeaderBtn) {
                   activeHeaderBtn.focus();
@@ -458,6 +462,8 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
                       }
                     } else if (e.key === 'ArrowUp' && index === 0) {
                       e.preventDefault();
+                      e.stopPropagation();
+                      e.nativeEvent.stopImmediatePropagation();
                       const optionsBtn = document.querySelector('.downloads-options-btn') as HTMLElement | null;
                       if (optionsBtn) {
                         optionsBtn.focus();
