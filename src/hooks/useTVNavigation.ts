@@ -168,13 +168,37 @@ export function useTVNavigation() {
       let minDistance = Infinity;
 
 
+      // Optimize D-pad search space to prevent browser layout reflow/thrashing on slow TV processors
+      let targetFocusables = focusableElements;
+      const activeRow = activeEl.closest('.content-row-scroll');
+      if (activeRow) {
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          // Horizontal moves: search ONLY siblings inside the active row scroll container
+          targetFocusables = focusableElements.filter(el => el.closest('.content-row-scroll') === activeRow);
+        } else {
+          // Vertical moves: search ONLY adjacent rows, the hero card, and the header
+          const rowContainers = Array.from(document.querySelectorAll('.content-row-container'));
+          const activeRowContainer = activeEl.closest('.content-row-container') as HTMLElement | null;
+          const activeRowIndex = activeRowContainer ? rowContainers.indexOf(activeRowContainer) : -1;
+          
+          targetFocusables = focusableElements.filter(el => {
+            const elRowContainer = el.closest('.content-row-container') as HTMLElement | null;
+            if (elRowContainer) {
+              const elRowIndex = rowContainers.indexOf(elRowContainer);
+              return Math.abs(elRowIndex - activeRowIndex) <= 1;
+            }
+            return el.classList.contains('tv-hero-card') || isHeaderEl(el);
+          });
+        }
+      }
+
       const isActiveHeader = isHeaderEl(activeEl);
       const isActiveHeroCard = activeEl.classList.contains('tv-hero-card');
       const isActiveContentCard = activeEl.classList.contains('movie-card') ||
                                    activeEl.classList.contains('search-grid-card') ||
                                    activeEl.classList.contains('search-result-row');
 
-      for (const el of focusableElements) {
+      for (const el of targetFocusables) {
         if (el === activeEl) continue;
 
         const rect = el.getBoundingClientRect();
