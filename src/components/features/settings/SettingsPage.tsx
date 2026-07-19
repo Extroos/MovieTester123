@@ -527,17 +527,20 @@ export default function SettingsPage({
     useEffect(() => {
       const timer = setInterval(() => {
         const d = new Date();
-        setCurrentTime(d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+        setTime(d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
       }, 30000);
       return () => clearInterval(timer);
     }, []);
 
-    // Filter recently watched or use Mock posters (Wednesday, Witcher, Money Heist)
-    const recentlyWatched = [
-      { id: 'wednesday', title: 'Wednesday', poster: 'https://image.tmdb.org/t/p/w342/jeGv4xjTLJVok152Z472V96zvvZ.jpg' },
-      { id: 'witcher', title: 'The Witcher', poster: 'https://image.tmdb.org/t/p/w342/7vgi7md1RkmrSBx2jFWZ5T4kEmd.jpg' },
-      { id: 'moneyheist', title: 'Money Heist', poster: 'https://image.tmdb.org/t/p/w342/reKs84JYWt3j1t029t7p7p7L81z.jpg' }
-    ];
+    // Fetch real watch history for the active profile
+    const [realHistory, setRealHistory] = useState<any[]>([]);
+    useEffect(() => {
+      if (activeProfile) {
+        WatchProgressService.getWatchHistory(0, 3).then(res => {
+          setRealHistory(res || []);
+        });
+      }
+    }, [activeProfile]);
 
     return (
       <div 
@@ -547,8 +550,8 @@ export default function SettingsPage({
           flexDirection: 'column',
           height: '100vh',
           width: '100vw',
-          // Subtle glowing red aura on the top-left corner
-          background: 'radial-gradient(circle at 10% 12%, rgba(229, 9, 20, 0.15) 0%, rgba(9, 9, 11, 0.98) 60%, #000000 100%)',
+          // Premium royal purple glow aura (random brand color change)
+          background: 'radial-gradient(circle at 10% 12%, rgba(124, 58, 237, 0.15) 0%, rgba(9, 9, 11, 0.98) 60%, #000000 100%)',
           color: '#ffffff',
           overflow: 'hidden',
           position: 'fixed',
@@ -570,7 +573,7 @@ export default function SettingsPage({
           flexShrink: 0
         }}>
           <div style={{ display: 'flex', alignItems: 'center' }}>
-            <span style={{ color: '#E50914', fontSize: 'clamp(1.5rem, 4.5vh, 2.2rem)', fontWeight: 950, letterSpacing: '-0.06em', fontFamily: 'sans-serif' }}>NETFLIX</span>
+            <span style={{ color: '#7c3aed', fontSize: 'clamp(1.5rem, 4.5vh, 2.2rem)', fontWeight: 950, letterSpacing: '-0.04em', fontFamily: 'sans-serif' }}>CineMovie</span>
             <button
               onClick={() => { triggerHaptic('light'); onNavigate('home'); }}
               className="tv-focusable"
@@ -677,7 +680,7 @@ export default function SettingsPage({
                         width: 'clamp(32px, 5vh, 42px)',
                         height: 'clamp(32px, 5vh, 42px)',
                         borderRadius: '8px',
-                        border: isActive ? '2px solid #007aff' : 'none',
+                        border: isActive ? '2px solid #7c3aed' : 'none',
                         objectFit: 'cover'
                       }}
                     />
@@ -748,29 +751,6 @@ export default function SettingsPage({
                 </div>
                 <span style={{ fontWeight: 800, fontSize: 'clamp(0.85rem, 2.2vh, 1rem)' }}>Add Profile</span>
               </button>
-            </div>
-
-            {/* Need Help footer */}
-            <div style={{
-              marginTop: 'auto',
-              background: 'rgba(255,255,255,0.03)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              padding: '1.2vh 1.2vw',
-              borderRadius: '24px',
-              fontSize: 'clamp(0.65rem, 1.8vh, 0.8rem)',
-              fontWeight: 700,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              color: 'rgba(255,255,255,0.6)',
-              boxSizing: 'border-box'
-            }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="16" x2="12" y2="12"></line>
-                <line x1="12" y1="8" x2="12.01" y2="8"></line>
-              </svg>
-              <span>Need help? <span style={{ color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>netflix.com/help</span></span>
             </div>
           </div>
 
@@ -848,7 +828,7 @@ export default function SettingsPage({
               </span>
             </div>
 
-            {/* Change Avatar button - Pill styling */}
+            {/* Change Avatar button */}
             <button
               onClick={() => { triggerHaptic('light'); setShowAvatarPicker(true); }}
               className="tv-focusable"
@@ -881,33 +861,56 @@ export default function SettingsPage({
               Change Avatar
             </button>
 
-            {/* Recently Watched on this Profile */}
+            {/* Recently Watched on this Profile - REAL Watch History mapping */}
             <div style={{ width: '100%', textAlign: 'left', minHeight: 0 }}>
               <div style={{ fontSize: 'clamp(0.6rem, 1.6vh, 0.72rem)', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.06em', marginBottom: '1vh' }}>
                 Recently Watched on this Profile
               </div>
-              <div style={{ display: 'flex', gap: '8px', width: '100%', minHeight: 0 }}>
-                {recentlyWatched.map(m => (
-                  <div 
-                    key={m.id}
-                    style={{ 
-                      flex: 1, 
-                      aspectRatio: '2/3', 
-                      borderRadius: '4px', 
-                      overflow: 'hidden', 
-                      background: 'rgba(255,255,255,0.05)',
-                      position: 'relative',
-                      height: 'clamp(60px, 12vh, 100px)'
-                    }}
-                  >
-                    <img 
-                      src={m.poster} 
-                      alt={m.title} 
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                    />
-                  </div>
-                ))}
-              </div>
+              
+              {realHistory.length === 0 ? (
+                <div style={{ 
+                  background: 'rgba(255,255,255,0.02)', 
+                  border: '1px dashed rgba(255,255,255,0.1)', 
+                  borderRadius: '6px', 
+                  padding: '2vh 12px', 
+                  textAlign: 'center',
+                  color: 'rgba(255,255,255,0.4)',
+                  fontSize: 'clamp(0.7rem, 1.8vh, 0.85rem)',
+                  fontWeight: 600
+                }}>
+                  NO WATCH HISTORY ON THIS PROFILE
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: '8px', width: '100%', minHeight: 0 }}>
+                  {realHistory.map(m => {
+                    const posterPath = m.data?.poster_path || m.data?.posterPath || '';
+                    const imageUrl = posterPath ? `https://image.tmdb.org/t/p/w185${posterPath}` : '/movie-placeholder.png';
+                    return (
+                      <div 
+                        key={m.id}
+                        style={{ 
+                          flex: 1, 
+                          aspectRatio: '2/3', 
+                          borderRadius: '4px', 
+                          overflow: 'hidden', 
+                          background: 'rgba(255,255,255,0.05)',
+                          position: 'relative',
+                          height: 'clamp(60px, 12vh, 100px)'
+                        }}
+                      >
+                        <img 
+                          src={imageUrl} 
+                          alt="" 
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          onError={(e) => {
+                            e.currentTarget.src = '/movie-placeholder.png';
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
 
