@@ -35,6 +35,7 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
   const isTV = isTVMode();
   const [activeTab, setActiveTab] = useState<TabState>('movies');
   const [downloads, setDownloads] = useState<DownloadItem[]>([]);
+  const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
 
   // Seed fake downloads if the device doesn't have any downloads stored offline yet
   const displayDownloads = useMemo(() => {
@@ -498,22 +499,63 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
                     borderTopLeftRadius: '11px',
                     borderBottomLeftRadius: '11px',
                     overflow: 'hidden',
-                    background: '#1a1a1a',
+                    background: 'linear-gradient(135deg, #1f1f23 0%, #0d0d0f 100%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '12px',
+                    boxSizing: 'border-box',
                     flexShrink: 0,
-                    position: 'relative'
+                    position: 'relative',
+                    borderRight: '1px solid rgba(255, 255, 255, 0.05)'
                   }}>
-                    <img
-                      src={imageUrl}
-                      alt={title}
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover'
-                      }}
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                      }}
-                    />
+                    {!imageErrors[item.key] && imageUrl && (
+                      <img
+                        src={imageUrl}
+                        alt={title}
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover'
+                        }}
+                        onError={() => {
+                          setImageErrors(prev => ({ ...prev, [item.key]: true }));
+                        }}
+                      />
+                    )}
+                    
+                    {/* Glassmorphic overlay card styling if the server image fails to load */}
+                    {(imageErrors[item.key] || !imageUrl) && (
+                      <div style={{
+                        textAlign: 'center',
+                        color: 'rgba(255, 255, 255, 0.8)',
+                        fontWeight: 800,
+                        fontSize: '0.95rem',
+                        lineHeight: 1.2,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.04em',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2.5">
+                          <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
+                          <line x1="7" y1="2" x2="7" y2="22"></line>
+                          <line x1="17" y1="2" x2="17" y2="22"></line>
+                          <line x1="2" y1="12" x2="22" y2="12"></line>
+                          <line x1="2" y1="7" x2="7" y2="7"></line>
+                          <line x1="2" y1="17" x2="7" y2="17"></line>
+                          <line x1="17" y1="17" x2="22" y2="17"></line>
+                          <line x1="17" y1="7" x2="22" y2="7"></line>
+                        </svg>
+                        <span style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                          {title}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Middle Left Info */}
