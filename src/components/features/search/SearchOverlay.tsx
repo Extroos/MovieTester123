@@ -62,21 +62,6 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
     inputRef.current?.focus();
     const saved = localStorage.getItem('recent_searches');
     if (saved) setRecentSearches(JSON.parse(saved));
-
-    // Fetch real backdrop images for Trending and New cards
-    Promise.all([
-      getTrending('week').catch(() => []),
-      getUpcoming().catch(() => [])
-    ]).then(([trendingList, newList]) => {
-      if (trendingList && trendingList.length > 0) {
-        const p = (trendingList[0] as any).backdrop_path || (trendingList[0] as any).backdropPath;
-        if (p) setTrendingBackdrop(`https://image.tmdb.org/t/p/w300${p}`);
-      }
-      if (newList && newList.length > 0) {
-        const p = (newList[0] as any).backdrop_path || (newList[0] as any).backdropPath;
-        if (p) setNewBackdrop(`https://image.tmdb.org/t/p/w300${p}`);
-      }
-    }).catch(() => {});
     
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -434,6 +419,8 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
 
   const isTV = typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
   const [showKeyboard, setShowKeyboard] = useState(false);
+  const [trendingPoster, setTrendingPoster] = useState<string>('');
+  const [newPoster, setNewPoster] = useState<string>('');
   const [trendingBackdrop, setTrendingBackdrop] = useState<string>('');
   const [newBackdrop, setNewBackdrop] = useState<string>('');
 
@@ -965,11 +952,11 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
               </span>
               <div style={{ display: 'flex', gap: '1.2vw', width: '100%' }}>
                 {[
-                  { id: 'Trending', label: 'Trending', bg: trendingBackdrop ? `url(${trendingBackdrop})` : 'linear-gradient(135deg, #ef4444 0%, #7f1d1d 100%)', graphic: <Flame size={32} style={{ color: 'rgba(255,255,255,0.4)', position: 'absolute', right: '12px', bottom: '12px', zIndex: 2 }} /> },
-                  { id: 'New', label: 'New', bg: newBackdrop ? `url(${newBackdrop})` : 'linear-gradient(135deg, #3b82f6 0%, #1e3a8a 100%)', graphic: <Star size={32} style={{ color: 'rgba(255,255,255,0.4)', position: 'absolute', right: '12px', bottom: '12px', zIndex: 2 }} /> },
-                  { id: 'Oscar Winners', label: 'Oscar Winners', bg: 'linear-gradient(135deg, #eab308 0%, #713f12 100%)', graphic: <Film size={32} style={{ color: 'rgba(255,255,255,0.15)', position: 'absolute', right: '12px', bottom: '12px' }} /> },
-                  { id: 'Disney+', label: 'Disney+', bg: 'linear-gradient(135deg, #0d1b2a 0%, #1b4965 100%)', graphic: <span style={{ fontSize: '1.5rem', fontWeight: 900, color: 'rgba(255,255,255,0.15)', position: 'absolute', right: '12px', bottom: '12px', fontFamily: 'sans-serif' }}>D+</span> },
-                  { id: 'Netflix', label: 'Netflix', bg: 'linear-gradient(135deg, #111 0%, #e50914 100%)', graphic: <span style={{ fontSize: '1.8rem', fontWeight: 900, color: 'rgba(255,255,255,0.15)', position: 'absolute', right: '12px', bottom: '12px', fontFamily: 'sans-serif' }}>N</span> }
+                  { id: 'Trending', label: 'Trending', bg: '#0f0f0f' },
+                  { id: 'New', label: 'New', bg: '#0f0f0f' },
+                  { id: 'Oscar Winners', label: 'Oscar Winners', bg: '#0f0f0f' },
+                  { id: 'Disney+', label: 'Disney+', bg: '#0f0f0f' },
+                  { id: 'Netflix', label: 'Netflix', bg: '#0f0f0f' }
                 ].map((cat) => (
                   <button
                     key={cat.id}
@@ -1000,26 +987,23 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                       overflow: 'hidden'
                     }}
                   >
-                    {['Disney+', 'Netflix', 'Oscar Winners'].includes(cat.id) ? (
-                      <img 
-                        src={cat.id === 'Disney+' ? '/disney-logo.png' : cat.id === 'Netflix' ? '/netflix-logo.png' : '/oscar-logo.png'} 
-                        style={{ 
-                          width: '100%', 
-                          height: '100%', 
-                          objectFit: 'cover',
-                          position: 'absolute',
-                          inset: 0
-                        }} 
-                      />
-                    ) : (
-                      <>
-                        {['Trending', 'New'].includes(cat.id) && (
-                          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.25) 100%)', zIndex: 1 }} />
-                        )}
-                        <span style={{ zIndex: 2, position: 'relative' }}>{cat.label}</span>
-                        {cat.graphic}
-                      </>
-                    )}
+                    <img 
+                      src={
+                        cat.id === 'Trending' ? '/trending-logo.png' :
+                        cat.id === 'New' ? '/new-logo.png' :
+                        cat.id === 'Disney+' ? '/disney-logo.png' : 
+                        cat.id === 'Netflix' ? '/netflix-logo.png' : 
+                        '/oscar-logo.png'
+                      } 
+                      alt=""
+                      style={{ 
+                        width: '100%', 
+                        height: '100%', 
+                        objectFit: 'cover',
+                        position: 'absolute',
+                        inset: 0
+                      }} 
+                    />
                   </button>
                 ))}
               </div>
