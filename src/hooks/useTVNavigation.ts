@@ -104,9 +104,27 @@ export function useTVNavigation() {
     const isFirstRunSelectorActive = typeof document !== 'undefined' && !!document.querySelector('button.tv-focusable');
     if (!tvMode && !isFirstRunSelectorActive) return;
 
-    rebuildCache();
+    const triggerInitialFocus = () => {
+      if (typeof document === 'undefined') return;
+      const activeEl = document.activeElement;
+      if (!activeEl || activeEl === document.body) {
+        const activeTab = document.querySelector('.cinemovie-header-nav-btn.active.tv-focusable') as HTMLElement | null;
+        if (activeTab && isElementFocusable(activeTab)) {
+          activeTab.focus();
+        } else if (cachedFocusables.length > 0) {
+          cachedFocusables[0].focus();
+        }
+      }
+    };
 
-    const domObserver = new MutationObserver(() => scheduleRebuild());
+    rebuildCache();
+    triggerInitialFocus();
+
+    const domObserver = new MutationObserver(() => {
+      scheduleRebuild();
+      // Auto-restore focus if lost during page transition mutations
+      setTimeout(triggerInitialFocus, 50);
+    });
     domObserver.observe(document.body, {
       childList: true,
       subtree: true,

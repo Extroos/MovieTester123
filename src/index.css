@@ -1796,16 +1796,22 @@ button.tv-focusable:focus-visible {
 
 .cinemovie-header-profile-btn.tv-focusable:focus,
 .cinemovie-header-profile-btn.tv-focusable:focus-visible {
-  transform: none !important;
+  transform: scale(1.08) translate3d(0, 0, 0) !important;
   box-shadow: none !important;
   border: none !important;
+  outline: 2.5px solid #ffffff !important;
+  outline-offset: 1.5px !important;
+  border-radius: 50% !important;
 }
 
 .cinemovie-header-search-btn.tv-focusable:focus,
 .cinemovie-header-search-btn.tv-focusable:focus-visible {
-  transform: none !important;
+  transform: scale(1.08) translate3d(0, 0, 0) !important;
   box-shadow: none !important;
   border: none !important;
+  outline: none !important;
+  background-color: rgba(255, 255, 255, 0.15) !important;
+  border-radius: 50% !important;
   color: #ffffff !important;
 }
 
