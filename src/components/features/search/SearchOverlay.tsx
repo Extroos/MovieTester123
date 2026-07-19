@@ -6,7 +6,6 @@ import { COLORS, GENRES } from '../../../constants';
 import { triggerHaptic } from '../../../utils/haptics';
 import { t } from '../../../utils/i18n';
 import { SpeechRecognition } from '@capacitor-community/speech-recognition';
-import { SpeechRecognition } from '@capacitor-community/speech-recognition';
 
 interface SearchOverlayProps {
   onClose: () => void;
