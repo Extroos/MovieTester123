@@ -502,7 +502,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
               <span style={{ 
                 width: '2px', 
                 height: '1.1em', 
-                background: '#e50914', 
+                background: '#ffffff', 
                 marginLeft: '4px',
                 animation: 'blink 1s step-end infinite'
               }} />
@@ -515,9 +515,9 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
             className="tv-focusable"
             tabIndex={0}
             style={{
-              background: showKeyboard ? 'rgba(229, 9, 20, 0.2)' : 'rgba(255,255,255,0.06)',
-              border: showKeyboard ? '1px solid #e50914' : 'none',
-              color: showKeyboard ? '#e50914' : '#fff',
+              background: showKeyboard ? 'rgba(255, 255, 255, 0.15)' : 'rgba(255,255,255,0.06)',
+              border: showKeyboard ? '1px solid rgba(255, 255, 255, 0.3)' : 'none',
+              color: '#fff',
               borderRadius: '12px',
               padding: '8px 12px',
               display: 'flex',
@@ -656,7 +656,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
               <div className="no-scrollbar" style={{ flex: 1, overflowY: 'auto', paddingLeft: '8px', paddingRight: '8px', paddingTop: '8px' }}>
                 {searching ? (
                   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80%' }}>
-                    <div style={{ width: '32px', height: '32px', border: '3px solid rgba(255,255,255,0.1)', borderTopColor: '#e50914', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                    <div style={{ width: '32px', height: '32px', border: '3px solid rgba(255,255,255,0.1)', borderTopColor: '#ffffff', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
                   </div>
                 ) : filteredSuggestions.length === 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '80%', gap: '8px', color: 'rgba(255,255,255,0.4)', textAlign: 'center' }}>
@@ -737,8 +737,14 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                         triggerHaptic('medium');
                         if (item.id === 'top') {
                           setHighRatingOnly(prev => !prev);
+                          if (!query) setQuery('Trending');
                         } else {
                           setFilterType(item.id as any);
+                          if (item.id === 'anime') {
+                            setQuery('Anime');
+                          } else {
+                            setQuery('Trending');
+                          }
                         }
                       }}
                       style={{
@@ -759,7 +765,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                         fontWeight: 700
                       }}
                     >
-                      <div style={{ color: isActive ? '#e50914' : 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center' }}>
+                      <div style={{ color: isActive ? '#ffffff' : 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center' }}>
                         {item.icon}
                       </div>
                       {item.label}
