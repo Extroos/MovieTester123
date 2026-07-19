@@ -425,11 +425,11 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
             border: 1px solid rgba(255,255,255,0.2) !important;
             background: rgba(255,255,255,0.06) !important;
           }
-          .tv-search-card:focus {
+          body.tv-mode .tv-focusable.tv-search-card:focus {
             outline: 2.5px solid #ffffff !important;
             outline-offset: -2.5px !important;
             box-shadow: 0 0 15px rgba(255, 255, 255, 0.25) !important;
-            transform: scale(1.03);
+            transform: scale(1.03) !important;
           }
           @keyframes blink {
             50% { opacity: 0; }
