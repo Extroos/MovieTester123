@@ -1533,6 +1533,7 @@ export default function App() {
                                 onMovieClick={handleMovieClick} 
                                 onReaction={homeActiveProgressTab === 'friends' ? handleActivityReaction : undefined}
                                 onSeeAll={getSeeAllCallback('home-continue', homeActiveProgressTab === 'continue' ? t('continue_watching') : t('what_were_watching'), homeActiveProgressTab === 'continue' ? continueWatching : friendActivityItems)}
+                                isContinueRow={homeActiveProgressTab === 'continue'}
                                 tabs={isGuest ? undefined : [
                                   { id: 'continue', label: t('me') || 'Me' },
                                   { id: 'friends', label: t('friends') || 'Friends' }

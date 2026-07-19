@@ -24,6 +24,7 @@ interface ContentRowProps {
   onTabChange?: (tabId: string) => void;
   tabs?: { id: string; label: string }[];
   isWide?: boolean;
+  isContinueRow?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -545,7 +546,7 @@ const ContentCard = React.memo(({ movie, onClick, onReaction, index, isWide = fa
 // ─────────────────────────────────────────────────────────────────────────────
 const ContentRow = React.memo(function ContentRow({ 
   title, movies, onMovieClick, onSeeAll, onReaction,
-  activeTab, onTabChange, tabs, isWide = false
+  activeTab, onTabChange, tabs, isWide = false, isContinueRow = false
  }: ContentRowProps) {
   const rowRef = useRef<HTMLDivElement>(null);
 
@@ -719,7 +720,7 @@ const ContentRow = React.memo(function ContentRow({
           )}
 
           {/* Append custom See All card inside category list if on TV Mode */}
-          {isTVMode && onSeeAll && (
+          {isTVMode && onSeeAll && !(isContinueRow && movies.length <= 4) && (
             <div
               className="tv-focusable movie-card"
               tabIndex={0}
@@ -738,38 +739,47 @@ const ContentRow = React.memo(function ContentRow({
               style={{
                 flexShrink: 0,
                 width: isWide ? '240px' : '120px',
-                height: isWide ? '135px' : '180px',
-                borderRadius: '16px',
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.06)',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
                 cursor: 'pointer',
-                gap: '8px',
-                transition: 'all 0.2s ease',
+                position: 'relative',
                 scrollSnapAlign: 'start',
                 outline: 'none',
                 boxSizing: 'border-box'
               }}
             >
-              <div style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '50%',
-                background: 'rgba(255, 255, 255, 0.1)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#ffffff' }}>
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
+              <div
+                className="content-card-inner"
+                style={{
+                  position: 'relative',
+                  aspectRatio: isWide ? '16/9' : '2/3',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.06)',
+                  borderRadius: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  transition: 'border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                  boxSizing: 'border-box'
+                }}
+              >
+                <div style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#ffffff' }}>
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                </div>
+                <span style={{ fontSize: '10px', fontWeight: 900, color: '#ffffff', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                  {t('see_all')}
+                </span>
               </div>
-              <span style={{ fontSize: '10px', fontWeight: 900, color: '#ffffff', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                {t('see_all')}
-              </span>
             </div>
           )}
 
