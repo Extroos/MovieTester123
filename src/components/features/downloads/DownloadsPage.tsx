@@ -194,6 +194,528 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
 
   const gridCols = `repeat(auto-fill, minmax(${isMobileSize ? 105 : 130}px, 1fr))`;
 
+  if (isTV) {
+    const totalTitles = movieDownloads.length + tvSeriesGroups.length;
+    // Calculate total size
+    let totalBytes = 0;
+    downloads.forEach(dl => {
+      if (dl.metaData?.size) {
+        totalBytes += dl.metaData.size;
+      } else if (dl.data?.size) {
+        totalBytes += dl.data.size;
+      } else {
+        totalBytes += dl.type === 'movie' ? 1.2 * 1024 * 1024 * 1024 : 0.45 * 1024 * 1024 * 1024;
+      }
+    });
+    const totalSizeGB = (totalBytes / (1024 * 1024 * 1024)).toFixed(1);
+
+    // Combine all list items
+    const tvItemsList = [
+      ...movieDownloads.map(m => ({ type: 'movie' as const, raw: m, key: `movie-${m.id}` })),
+      ...tvSeriesGroups.map(s => ({ type: 'tv' as const, raw: s, key: `tv-${s.show.id}` }))
+    ];
+
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: '#09090b',
+        color: '#fff',
+        paddingTop: '120px',
+        paddingBottom: '80px',
+        paddingLeft: '6%',
+        paddingRight: '6%',
+        boxSizing: 'border-box'
+      }}>
+        {/* Header Block */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          marginBottom: '36px',
+        }}>
+          <div>
+            <h1 style={{
+              fontSize: '3rem',
+              fontWeight: 800,
+              color: '#fff',
+              margin: 0,
+              letterSpacing: '-0.02em'
+            }}>
+              Library Offline
+            </h1>
+            <div style={{
+              fontSize: '1.05rem',
+              color: 'rgba(255,255,255,0.6)',
+              marginTop: '8px',
+              fontWeight: 500
+            }}>
+              {totalTitles} titles • {totalSizeGB} GB
+            </div>
+            <p style={{
+              fontSize: '1rem',
+              color: 'rgba(255,255,255,0.4)',
+              margin: '16px 0 0'
+            }}>
+              Watch downloads on this TV without an internet connection.
+            </p>
+          </div>
+
+          {/* Options button */}
+          <button
+            onClick={() => {
+              triggerHaptic('light');
+              if (window.confirm("Do you want to clear all offline downloads?")) {
+                localStorage.removeItem('cinemovie_downloads');
+                window.dispatchEvent(new Event('downloadsChanged'));
+              }
+            }}
+            className="tv-focusable"
+            tabIndex={0}
+            style={{
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: '8px',
+              padding: '10px 20px',
+              color: '#fff',
+              fontSize: '0.9rem',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              cursor: 'pointer',
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              outline: 'none',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ transform: 'rotate(90deg)' }}>
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+            OPTIONS
+          </button>
+        </div>
+
+        {/* Content list block */}
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '16px',
+          maxWidth: '1200px',
+          margin: '0 auto'
+        }}>
+          {tvItemsList.length === 0 ? (
+            <div style={{
+              textAlign: 'center',
+              padding: '80px 20px',
+              color: 'rgba(255, 255, 255, 0.4)',
+              fontSize: '1.2rem'
+            }}>
+              No downloads stored on this device.
+            </div>
+          ) : (
+            tvItemsList.map(item => {
+              const title = item.type === 'movie' ? item.raw.title : item.raw.show.name;
+              const subtitle = item.type === 'movie' ? 'Movie' : (() => {
+                const parts = item.raw.episodes[0].id.split('_');
+                const seasonNum = parts.length >= 4 ? parts[2] : '1';
+                return `Season ${seasonNum}`;
+              })();
+
+              const episodesCount = item.type === 'tv' ? item.raw.episodes.length : 1;
+              
+              let itemBytes = 0;
+              if (item.type === 'movie') {
+                itemBytes = item.raw.metaData?.size || item.raw.data?.size || 1.2 * 1024 * 1024 * 1024;
+              } else {
+                item.raw.episodes.forEach(ep => {
+                  itemBytes += ep.metaData?.size || ep.data?.size || 0.45 * 1024 * 1024 * 1024;
+                });
+              }
+              const itemSizeGB = (itemBytes / (1024 * 1024 * 1024)).toFixed(1);
+
+              const details = item.type === 'movie' 
+                ? `${itemSizeGB} GB` 
+                : `${episodesCount} Episode${episodesCount > 1 ? 's' : ''} • ${itemSizeGB} GB`;
+
+              const imagePath = item.type === 'movie' 
+                ? (item.raw.metaData?.backdropPath || item.raw.metaData?.backdrop_path || item.raw.posterPath || '')
+                : (item.raw.show.backdropPath || item.raw.show.backdrop_path || item.raw.show.posterPath || '');
+              
+              const imageUrl = imagePath ? `https://image.tmdb.org/t/p/w500${imagePath}` : '/movie-placeholder.png';
+
+              return (
+                <div
+                  key={item.key}
+                  onClick={() => {
+                    if (item.type === 'movie') {
+                      handlePlay(item.raw);
+                    } else {
+                      setActiveShow(item.raw);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      if (item.type === 'movie') {
+                        handlePlay(item.raw);
+                      } else {
+                        setActiveShow(item.raw);
+                      }
+                    }
+                  }}
+                  className="tv-focusable"
+                  tabIndex={0}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    border: '1px solid rgba(255, 255, 255, 0.04)',
+                    borderRadius: '12px',
+                    padding: '16px 24px',
+                    gap: '24px',
+                    cursor: 'pointer',
+                    outline: 'none',
+                    transition: 'all 0.2s ease-out',
+                    position: 'relative'
+                  }}
+                >
+                  {/* Left Widescreen Image */}
+                  <div style={{
+                    width: '180px',
+                    aspectRatio: '16/10',
+                    borderRadius: '8px',
+                    overflow: 'hidden',
+                    background: '#1a1a1a',
+                    flexShrink: 0,
+                    position: 'relative'
+                  }}>
+                    <img
+                      src={imageUrl}
+                      alt={title}
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover'
+                      }}
+                    />
+                    <div style={{
+                      position: 'absolute',
+                      top: '8px',
+                      left: '8px',
+                      background: '#E50914',
+                      color: '#fff',
+                      fontSize: '0.65rem',
+                      fontWeight: 900,
+                      padding: '2px 5px',
+                      borderRadius: '2px',
+                      letterSpacing: '0.04em'
+                    }}>
+                      N
+                    </div>
+                  </div>
+
+                  {/* Middle Left Info */}
+                  <div style={{ flex: 1 }}>
+                    <h2 style={{
+                      fontSize: '1.4rem',
+                      fontWeight: 800,
+                      color: '#fff',
+                      margin: 0
+                    }}>
+                      {title}
+                    </h2>
+                    <div style={{
+                      fontSize: '0.95rem',
+                      color: 'rgba(255, 255, 255, 0.5)',
+                      marginTop: '4px',
+                      fontWeight: 600
+                    }}>
+                      {subtitle}
+                    </div>
+                    <div style={{
+                      fontSize: '0.9rem',
+                      color: 'rgba(255, 255, 255, 0.4)',
+                      marginTop: '6px'
+                    }}>
+                      {details}
+                    </div>
+                  </div>
+
+                  {/* Right Icons */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '20px'
+                  }}>
+                    {/* Circle Checkmark Icon */}
+                    <div style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '50%',
+                      background: 'rgba(255, 255, 255, 0.08)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#fff'
+                    }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    </div>
+
+                    {/* Arrow Right Icon */}
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'rgba(255, 255, 255, 0.3)' }}>
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+
+                    {item.type === 'movie' && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(item.raw, e);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            handleDelete(item.raw, e);
+                          }
+                        }}
+                        className="tv-focusable"
+                        tabIndex={0}
+                        style={{
+                          background: 'rgba(239, 68, 68, 0.1)',
+                          border: '1px solid rgba(239, 68, 68, 0.2)',
+                          borderRadius: '8px',
+                          width: '40px',
+                          height: '40px',
+                          color: '#ef4444',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          outline: 'none'
+                        }}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <polyline points="3 6 5 6 21 6"></polyline>
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Episode details overlay */}
+        {activeShow && (
+          <div className="tv-modal-container" style={{
+            position: 'fixed', inset: 0, zIndex: 2000,
+            background: '#09090b', display: 'flex', flexDirection: 'column',
+            paddingTop: '0'
+          }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '16px',
+              padding: '28px 6%',
+              borderBottom: '1px solid rgba(255,255,255,0.05)',
+              background: 'rgba(9,9,11,0.95)', flexShrink: 0,
+            }}>
+              <button
+                onClick={() => setActiveShow(null)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveShow(null); } }}
+                className="tv-focusable"
+                tabIndex={0}
+                style={{
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  color: '#fff', cursor: 'pointer',
+                  padding: '10px 20px',
+                  borderRadius: '10px',
+                  display: 'flex', alignItems: 'center', gap: '8px',
+                  fontSize: '0.9rem',
+                  fontWeight: 700, outline: 'none',
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="15 18 9 12 15 6" />
+                </svg>
+                Back
+              </button>
+              <h2 style={{ margin: 0, fontSize: '1.6rem', fontWeight: 800 }}>
+                {activeShow.show.name}
+              </h2>
+            </div>
+
+            <div style={{
+              flex: 1, overflowY: 'auto',
+              padding: '28px 6%',
+              display: 'flex', flexDirection: 'column', gap: '24px',
+            }}>
+              {(() => {
+                const seasonsMap: Record<number, DownloadItem[]> = {};
+                activeShow.episodes.forEach((ep: DownloadItem) => {
+                  const parts = ep.id.split('_');
+                  const seasonNum = parts.length >= 4 ? parseInt(parts[2]) : 1;
+                  if (!seasonsMap[seasonNum]) seasonsMap[seasonNum] = [];
+                  seasonsMap[seasonNum].push(ep);
+                });
+                const sortedSeasons = Object.keys(seasonsMap).map(Number).sort((a, b) => a - b);
+                return sortedSeasons.map((seasonNum) => {
+                  const eps = seasonsMap[seasonNum].sort((a, b) => {
+                    const partsA = a.id.split('_'); const partsB = b.id.split('_');
+                    const epA = partsA.length >= 4 ? parseInt(partsA[3]) : 0;
+                    const epB = partsB.length >= 4 ? parseInt(partsB[3]) : 0;
+                    return epA - epB;
+                  });
+                  return (
+                    <div key={seasonNum} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{
+                        fontSize: '0.85rem', fontWeight: 800,
+                        color: 'rgba(255,255,255,0.4)', letterSpacing: '0.08em',
+                        textTransform: 'uppercase', borderBottom: '1px solid rgba(255,255,255,0.05)',
+                        paddingBottom: '6px', marginTop: '6px',
+                      }}>
+                        Season {seasonNum}
+                      </div>
+                      {eps.map((ep: DownloadItem) => {
+                        const parts = ep.id.split('_');
+                        const epNum = parts.length >= 4 ? parseInt(parts[3]) : 1;
+                        return (
+                          <EpisodeRow
+                            key={ep.id}
+                            ep={ep}
+                            epNum={epNum}
+                            isTV={true}
+                            isMobileSize={false}
+                            loadingItemId={loadingItemId}
+                            backdropPath={activeShow.show.backdropPath}
+                            onPlay={handlePlay}
+                            onDelete={handleDelete}
+                          />
+                        );
+                      })}
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </div>
+        )}
+
+        {/* Video Player overlay */}
+        {showPlayer && (
+          <VideoPlayer
+            src={playerUrl}
+            title={playerTitle}
+            onClose={() => setShowPlayer(false)}
+            tracks={playerTracks}
+            isOfflineMode={true}
+            item={playerItem}
+            season={playerSeason}
+            episode={playerEpisode}
+          />
+        )}
+
+        {/* Delete Confirmation Dialog */}
+        {deleteConfirmationItem && (
+          <div
+            onClick={() => setDeleteConfirmationItem(null)}
+            className="tv-modal-container"
+            style={{
+              position: 'fixed', inset: 0, zIndex: 4000,
+              background: 'rgba(0,0,0,0.8)',
+              backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <div
+              ref={deleteModalRef}
+              onClick={e => e.stopPropagation()}
+              style={{
+                width: '100%', maxWidth: '560px',
+                background: '#1a1a1e',
+                borderRadius: '20px',
+                border: '1px solid rgba(255,255,255,0.1)',
+                boxShadow: '0 0 80px rgba(0,0,0,0.8)',
+                padding: '36px',
+                display: 'flex', flexDirection: 'column', gap: '20px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <div style={{
+                  width: '64px', height: '64px',
+                  borderRadius: '50%', background: 'rgba(239,68,68,0.12)',
+                  border: '1px solid rgba(239,68,68,0.25)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  </svg>
+                </div>
+              </div>
+
+              <div style={{ textAlign: 'center' }}>
+                <h3 style={{ margin: '0 0 10px', fontSize: '1.4rem', fontWeight: 800, color: '#fff' }}>
+                  Delete Downloaded Content?
+                </h3>
+                <p style={{ margin: 0, fontSize: '0.95rem', color: 'rgba(255,255,255,0.5)', lineHeight: 1.5 }}>
+                  Permanently delete <strong style={{ color: '#fff' }}>{deleteConfirmationItem.title}</strong> from your device? This cannot be undone.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', marginTop: '4px' }}>
+                <button
+                  onClick={() => setDeleteConfirmationItem(null)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDeleteConfirmationItem(null); }
+                    if (e.key === 'ArrowRight') { e.preventDefault(); (e.currentTarget.nextElementSibling as HTMLElement)?.focus(); }
+                  }}
+                  className="tv-focusable"
+                  tabIndex={0}
+                  style={{
+                    flex: 1, padding: '16px', borderRadius: '12px',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    background: 'rgba(255,255,255,0.05)', color: '#fff',
+                    fontWeight: 700, fontSize: '1rem',
+                    cursor: 'pointer', transition: 'background 0.2s', outline: 'none',
+                  }}
+                >
+                  Keep
+                </button>
+                <button
+                  onClick={confirmDelete}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); confirmDelete(); }
+                    if (e.key === 'ArrowLeft') { e.preventDefault(); (e.currentTarget.previousElementSibling as HTMLElement)?.focus(); }
+                  }}
+                  className="tv-focusable"
+                  tabIndex={0}
+                  style={{
+                    flex: 1, padding: '16px', borderRadius: '12px',
+                    border: 'none', background: '#ef4444', color: '#fff',
+                    fontWeight: 800, fontSize: '1rem',
+                    cursor: 'pointer', transition: 'background 0.2s', outline: 'none',
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div style={{
       minHeight: '100vh',
