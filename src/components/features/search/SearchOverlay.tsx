@@ -5,6 +5,7 @@ import { Mic, Keyboard as KeyboardIcon, LayoutGrid, Clapperboard, Tv, Star, Clou
 import { COLORS, GENRES } from '../../../constants';
 import { triggerHaptic } from '../../../utils/haptics';
 import { t } from '../../../utils/i18n';
+import { SpeechRecognition } from '@capacitor-community/speech-recognition';
 
 interface SearchOverlayProps {
   onClose: () => void;
@@ -455,11 +456,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
         >
           {/* Speech Button */}
           <button
-            className="tv-focusable"
-            tabIndex={0}
-            onClick={() => {
-              triggerHaptic('medium');
-            }}
+            onClick={startVoiceSearch}
             style={{
               background: 'rgba(255,255,255,0.06)',
               border: 'none',
@@ -508,7 +505,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
               outline: 'none'
             }}
           >
-            {query || 'Search movies, TV shows...'}
+            {query ? query : (showKeyboard ? '' : 'Search movies, TV shows...')}
             {(showKeyboard || query) && (
               <span style={{ 
                 width: '2px', 
@@ -523,8 +520,6 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
           {/* Keyboard Icon Toggle Button */}
           <button
             onClick={() => { triggerHaptic('light'); setShowKeyboard(!showKeyboard); }}
-            className="tv-focusable"
-            tabIndex={0}
             style={{
               background: showKeyboard ? 'rgba(255, 255, 255, 0.15)' : 'rgba(255,255,255,0.06)',
               border: showKeyboard ? '1px solid rgba(255, 255, 255, 0.3)' : 'none',
