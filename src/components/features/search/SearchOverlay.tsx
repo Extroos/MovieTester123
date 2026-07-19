@@ -165,10 +165,26 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
       let results: Movie[] = [];
       if (term === 'Trending') {
         const movies = await getTrending('week');
-        results = movies;
+        results = movies.map(item => {
+          const isTV = (item as any).name !== undefined || (item as any).mediaType === 'tv';
+          return {
+            ...item,
+            title: (item as any).title || (item as any).name || 'Untitled',
+            releaseDate: (item as any).releaseDate || (item as any).firstAirDate || '',
+            mediaType: isTV ? 'tv' : 'movie'
+          } as unknown as Movie;
+        });
       } else if (term === 'New') {
         const movies = await getUpcoming();
-        results = movies;
+        results = movies.map(item => {
+          const isTV = (item as any).name !== undefined || (item as any).mediaType === 'tv';
+          return {
+            ...item,
+            title: (item as any).title || (item as any).name || 'Untitled',
+            releaseDate: (item as any).releaseDate || (item as any).firstAirDate || '',
+            mediaType: isTV ? 'tv' : 'movie'
+          } as unknown as Movie;
+        });
       } else if (term === 'Oscar Winners') {
         const movies = await getDiscoverOscars(controller.signal);
         results = movies;
