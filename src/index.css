@@ -1859,4 +1859,9 @@ body.tv-mode .add-profile-btn.tv-focusable:focus-visible {
   outline: none !important;
 }
 
+/* Authoritatively hide mobile header See All buttons in TV Mode */
+body.tv-mode .see-all-btn {
+  display: none !important;
+}
+
 
