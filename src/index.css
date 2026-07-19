@@ -1872,4 +1872,19 @@ body.tv-mode .see-all-btn {
   display: none !important;
 }
 
+/* Style for TV offline page options button so it is invisible/borderless until focused */
+body.tv-mode .downloads-options-btn.tv-focusable {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+body.tv-mode .downloads-options-btn.tv-focusable:focus {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+  outline: 3px solid #ffffff !important;
+  outline-offset: 2.5px !important;
+}
+
 

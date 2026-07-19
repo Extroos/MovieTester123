@@ -338,11 +338,20 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
                 window.dispatchEvent(new Event('downloadsChanged'));
               }
             }}
-            className="tv-focusable"
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                const firstCard = document.querySelector('.download-tv-card') as HTMLElement | null;
+                if (firstCard) {
+                  firstCard.focus();
+                }
+              }
+            }}
+            className="tv-focusable downloads-options-btn"
             tabIndex={0}
             style={{
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
+              background: 'transparent',
+              border: '1px solid transparent',
               borderRadius: '8px',
               padding: '10px 20px',
               color: '#fff',
@@ -385,7 +394,7 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
               No downloads stored on this device.
             </div>
           ) : (
-            tvItemsList.map(item => {
+            tvItemsList.map((item, index) => {
               const title = item.type === 'movie' ? item.raw.title : item.raw.show.name;
               const subtitle = item.type === 'movie' ? 'Movie' : (() => {
                 const parts = item.raw.episodes[0].id.split('_');
@@ -410,8 +419,8 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
                 : `${episodesCount} Episode${episodesCount > 1 ? 's' : ''} • ${itemSizeGB} GB`;
 
               const imagePath = item.type === 'movie' 
-                ? (item.raw.metaData?.backdropPath || item.raw.metaData?.backdrop_path || item.raw.posterPath || '')
-                : (item.raw.show.backdropPath || item.raw.show.backdrop_path || item.raw.show.posterPath || '');
+                ? (item.raw.posterPath || item.raw.metaData?.posterPath || item.raw.metaData?.poster_path || item.raw.poster_path || '')
+                : (item.raw.show.posterPath || item.raw.show.poster_path || item.raw.show.backdropPath || '');
               
               const imageUrl = imagePath ? `https://image.tmdb.org/t/p/w500${imagePath}` : '/movie-placeholder.png';
 
@@ -433,9 +442,15 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
                       } else {
                         setActiveShow(item.raw);
                       }
+                    } else if (e.key === 'ArrowUp' && index === 0) {
+                      e.preventDefault();
+                      const optionsBtn = document.querySelector('.downloads-options-btn') as HTMLElement | null;
+                      if (optionsBtn) {
+                        optionsBtn.focus();
+                      }
                     }
                   }}
-                  className="tv-focusable"
+                  className="tv-focusable download-tv-card"
                   tabIndex={0}
                   style={{
                     display: 'flex',
@@ -451,10 +466,10 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
                     position: 'relative'
                   }}
                 >
-                  {/* Left Widescreen Image */}
+                  {/* Left Portrait Poster */}
                   <div style={{
-                    width: '180px',
-                    aspectRatio: '16/10',
+                    width: '120px',
+                    aspectRatio: '2/3',
                     borderRadius: '8px',
                     overflow: 'hidden',
                     background: '#1a1a1a',
@@ -470,20 +485,6 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
                         objectFit: 'cover'
                       }}
                     />
-                    <div style={{
-                      position: 'absolute',
-                      top: '8px',
-                      left: '8px',
-                      background: '#E50914',
-                      color: '#fff',
-                      fontSize: '0.65rem',
-                      fontWeight: 900,
-                      padding: '2px 5px',
-                      borderRadius: '2px',
-                      letterSpacing: '0.04em'
-                    }}>
-                      N
-                    </div>
                   </div>
 
                   {/* Middle Left Info */}
