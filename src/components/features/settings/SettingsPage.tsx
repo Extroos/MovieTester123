@@ -224,6 +224,13 @@ export default function SettingsPage({
   const [internalActiveSubPage, setInternalActiveSubPage] = useState<'streaming' | 'subtitles' | 'appearance' | 'account' | 'social' | 'statistics' | 'mylist' | null>(null);
   const activeSubPage = propActiveSubPage !== undefined ? propActiveSubPage : internalActiveSubPage;
   const setActiveSubPage = onActiveSubPageChange || setInternalActiveSubPage;
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  useEffect(() => {
+    ProfileService.getProfiles().then(res => {
+      setProfiles(res);
+    });
+  }, []);
+
 
   useEffect(() => {
     if (activeProfile && activeSubPage === 'statistics') {
@@ -504,399 +511,720 @@ export default function SettingsPage({
   }
 
   if (isTV) {
+    // Dynamic clock display
+    const [currentTime, setCurrentTime] = useState(() => {
+      const d = new Date();
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    });
+    useEffect(() => {
+      const timer = setInterval(() => {
+        const d = new Date();
+        setCurrentTime(d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+      }, 30000);
+      return () => clearInterval(timer);
+    }, []);
+
+    // Filter recently watched or use Mock posters (Wednesday, Witcher, Money Heist)
+    const recentlyWatched = [
+      { id: 'wednesday', title: 'Wednesday', poster: 'https://image.tmdb.org/t/p/w342/jeGv4xjTLJVok152Z472V96zvvZ.jpg' },
+      { id: 'witcher', title: 'The Witcher', poster: 'https://image.tmdb.org/t/p/w342/7vgi7md1RkmrSBx2jFWZ5T4kEmd.jpg' },
+      { id: 'moneyheist', title: 'Money Heist', poster: 'https://image.tmdb.org/t/p/w342/reKs84JYWt3j1t029t7p7p7L81z.jpg' }
+    ];
+
     return (
       <div 
         className="tv-settings-container"
         style={{
           display: 'flex',
+          flexDirection: 'column',
           height: '100vh',
           width: '100vw',
-          background: 'radial-gradient(circle at 10% 20%, rgba(20, 20, 25, 0.98) 0%, rgba(10, 10, 12, 0.99) 100%)',
+          background: '#09090b',
           color: '#ffffff',
           overflow: 'hidden',
           position: 'fixed',
           top: 0, left: 0, right: 0, bottom: 0,
-          zIndex: 2000
+          zIndex: 2000,
+          boxSizing: 'border-box'
         }}
       >
-        {/* LEFT PANEL: Settings Navigation list (Smart width & premium layout spacing) */}
+        {/* TOP BAR / HEADER */}
         <div style={{
-          width: '32vw',
-          maxWidth: '360px',
-          minWidth: '280px',
-          height: '100%',
-          overflowY: 'auto',
-          background: 'rgba(2, 2, 4, 0.4)',
-          backdropFilter: 'blur(30px)',
-          WebkitBackdropFilter: 'blur(30px)',
-          borderRight: '1px solid rgba(255,255,255,0.08)',
-          padding: '4vh 2.5vw 6vh 3vw',
-          boxSizing: 'border-box',
           display: 'flex',
-          flexDirection: 'column',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '24px 4% 12px 4%',
+          height: '80px',
+          boxSizing: 'border-box',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
           flexShrink: 0
-        }} className="no-scrollbar">
-          {/* Profile Info Card with Leave/Back Button */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.8vw', marginBottom: '2.5vh', flexShrink: 0 }}>
-            {/* Leave Button */}
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <span style={{ color: '#E50914', fontSize: '2.2rem', fontWeight: 950, letterSpacing: '-0.06em', fontFamily: 'sans-serif' }}>NETFLIX</span>
             <button
               onClick={() => { triggerHaptic('light'); onNavigate('home'); }}
               className="tv-focusable"
-              aria-label="Back to Home"
+              tabIndex={0}
               style={{
-                background: 'rgba(255,255,255,0.04)',
-                border: '1px solid rgba(255,255,255,0.08)',
-                color: '#ffffff',
-                width: '36px',
-                height: '36px',
-                borderRadius: '50%',
+                background: 'transparent',
+                border: 'none',
+                color: 'rgba(255,255,255,0.7)',
+                fontSize: '1rem',
+                fontWeight: 700,
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
+                gap: '8px',
                 cursor: 'pointer',
-                marginRight: '6px',
                 outline: 'none',
-                flexShrink: 0
+                marginLeft: '40px',
+                padding: '6px 12px',
+                borderRadius: '6px',
+                transition: 'all 0.2s'
               }}
             >
               <ChevronLeft size={18} />
+              Back to Profiles
             </button>
+          </div>
+          
+          <div style={{ display: 'flex', alignItems: 'center', gap: '24px', color: 'rgba(255,255,255,0.8)' }}>
+            {/* Search Icon */}
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ opacity: 0.8, cursor: 'pointer' }}>
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <span style={{ fontSize: '1.2rem', fontWeight: 700, letterSpacing: '0.04em' }}>{currentTime}</span>
+          </div>
+        </div>
 
-            <img src={activeProfile?.avatar} alt="" style={{ width: 'clamp(40px, 6vh, 52px)', height: 'clamp(40px, 6vh, 52px)', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.1)', flexShrink: 0 }} />
-            <div style={{ textAlign: 'left', minWidth: 0, marginLeft: '4px' }}>
-              <h3 style={{ margin: 0, fontSize: 'clamp(0.85rem, 2vh, 1rem)', fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeProfile?.name}</h3>
-              <span style={{ fontSize: 'clamp(0.6rem, 1.4vh, 0.72rem)', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', fontWeight: 800 }}>{activeProfile?.isKids ? 'Kids' : 'Adult'}</span>
+        {/* THREE COLUMNS WRAPPER */}
+        <div style={{
+          display: 'flex',
+          flex: 1,
+          width: '100%',
+          overflow: 'hidden',
+          boxSizing: 'border-box',
+          position: 'relative'
+        }}>
+          {/* COLUMN 1: Profiles list */}
+          <div style={{
+            width: '280px',
+            height: '100%',
+            overflowY: 'auto',
+            background: 'rgba(2, 2, 4, 0.4)',
+            borderRight: '1px solid rgba(255,255,255,0.06)',
+            padding: '40px 24px',
+            boxSizing: 'border-box',
+            display: 'flex',
+            flexDirection: 'column',
+            flexShrink: 0
+          }} className="no-scrollbar">
+            <div style={{
+              fontSize: '0.8rem',
+              color: 'rgba(255,255,255,0.4)',
+              textTransform: 'uppercase',
+              fontWeight: 800,
+              letterSpacing: '0.08em',
+              marginBottom: '20px',
+              paddingLeft: '12px'
+            }}>
+              Profiles
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {profiles.map(p => {
+                const isActive = activeProfile?.id === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => {
+                      triggerHaptic('light');
+                      onSwitchProfile();
+                    }}
+                    className={"tv-focusable" + (isActive ? " active-profile-btn" : "")}
+                    tabIndex={0}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '14px',
+                      padding: '12px 14px',
+                      background: isActive ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                      border: 'none',
+                      borderRadius: '10px',
+                      cursor: 'pointer',
+                      color: '#fff',
+                      textAlign: 'left',
+                      outline: 'none',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <img
+                      src={p.avatar}
+                      alt=""
+                      style={{
+                        width: '38px',
+                        height: '38px',
+                        borderRadius: '8px',
+                        border: isActive ? '2px solid #007aff' : 'none'
+                      }}
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontWeight: 800,
+                        fontSize: '1rem',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {p.name}
+                      </div>
+                    </div>
+                    {p.isKids && (
+                      <span style={{
+                        fontSize: '0.65rem',
+                        background: 'rgba(255,255,255,0.1)',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        color: 'rgba(255,255,255,0.6)',
+                        fontWeight: 700
+                      }}>
+                        Kids
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+
+              {/* Add Profile */}
+              <button
+                onClick={() => {
+                  triggerHaptic('light');
+                  onSwitchProfile();
+                }}
+                className="tv-focusable"
+                tabIndex={0}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '14px',
+                  padding: '12px 14px',
+                  background: 'transparent',
+                  border: 'none',
+                  borderRadius: '10px',
+                  cursor: 'pointer',
+                  color: 'rgba(255,255,255,0.5)',
+                  textAlign: 'left',
+                  outline: 'none',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <div style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '8px',
+                  background: 'rgba(255,255,255,0.05)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#fff',
+                  fontSize: '1.4rem',
+                  fontWeight: 700
+                }}>
+                  +
+                </div>
+                <span style={{ fontWeight: 800, fontSize: '1rem' }}>Add Profile</span>
+              </button>
+            </div>
+
+            {/* Need Help footer */}
+            <div style={{
+              marginTop: 'auto',
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              padding: '10px 16px',
+              borderRadius: '24px',
+              fontSize: '0.8rem',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              color: 'rgba(255,255,255,0.6)'
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+              Need help? <span style={{ color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>Visit netflix.com/help</span>
             </div>
           </div>
 
-          {updateAvailable && (
+          {/* COLUMN 2: Active Profile Summary details */}
+          <div style={{
+            width: '34vw',
+            maxWidth: '440px',
+            height: '100%',
+            overflowY: 'auto',
+            borderRight: '1px solid rgba(255,255,255,0.06)',
+            padding: '40px 32px',
+            boxSizing: 'border-box',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            flexShrink: 0
+          }} className="no-scrollbar">
+            {/* Big avatar image */}
+            <div style={{ position: 'relative', width: '160px', height: '160px', marginBottom: '20px' }}>
+              <img
+                src={activeProfile?.avatar}
+                alt=""
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  borderRadius: '12px',
+                  objectFit: 'cover'
+                }}
+              />
+              <button
+                onClick={() => { triggerHaptic('light'); setShowAvatarPicker(true); }}
+                className="tv-focusable"
+                tabIndex={0}
+                style={{
+                  position: 'absolute',
+                  bottom: '-8px',
+                  right: '-8px',
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  background: '#1a1a1a',
+                  border: '2px solid #333',
+                  color: '#fff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  outline: 'none'
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                  <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4z"></path>
+                </svg>
+              </button>
+            </div>
+
+            {/* Profile Name */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+              <h2 style={{ margin: 0, fontSize: '1.8rem', fontWeight: 900 }}>{activeProfile?.name}</h2>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2.5" style={{ cursor: 'pointer' }} onClick={() => setIsEditingName(true)}>
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4z"></path>
+              </svg>
+            </div>
+
+            {/* Badges */}
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '24px' }}>
+              <span style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Primary Profile
+              </span>
+              <span style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 700 }}>
+                {activeProfile?.isKids ? 'Kids 7+' : 'Adult 18+'}
+              </span>
+            </div>
+
+            {/* Change Avatar button */}
             <button
-              onClick={() => {
-                triggerHaptic('medium');
-                setShowUpdateModal(true);
-              }}
+              onClick={() => { triggerHaptic('light'); setShowAvatarPicker(true); }}
               className="tv-focusable"
               tabIndex={0}
               style={{
                 width: '100%',
-                padding: '1.2vh 1vw',
-                background: '#007aff',
-                color: '#ffffff',
-                border: 'none',
+                padding: '12px 20px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                color: '#fff',
                 borderRadius: '8px',
-                fontSize: 'clamp(0.72rem, 1.7vh, 0.84rem)',
-                fontWeight: 900,
+                fontSize: '0.9rem',
+                fontWeight: 700,
                 cursor: 'pointer',
-                marginBottom: '1.5vh',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
                 outline: 'none',
-                boxShadow: '0 4px 15px rgba(0, 122, 255, 0.3)',
-                boxSizing: 'border-box'
+                marginBottom: '40px',
+                transition: 'all 0.2s'
               }}
             >
-              <Download size={14} />
-              <span>Update Available</span>
+              <User size={16} />
+              Change Avatar
             </button>
-          )}
 
-          {/* Menu List */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1vh' }}>
-            {[
-              { id: 'streaming', label: t('streaming_settings'), icon: <Play size={14} /> },
-              { id: 'subtitles', label: t('subtitle_engine'), icon: <Languages size={14} /> },
-              { id: 'appearance', label: t('appearance_theme'), icon: <Sliders size={14} /> },
-              { id: 'social', label: t('social_friends'), icon: <Users size={14} /> },
-              { id: 'account', label: t('account_privacy'), icon: <Shield size={14} /> },
-              { id: 'statistics', label: t('statistics_insights'), icon: <BarChart2 size={14} /> },
-              { id: 'mylist', label: t('watchlist'), icon: <List size={14} /> }
-            ].map(opt => {
-              const isActive = activeSubPage === opt.id;
-              return (
+            {/* Recently Watched on this Profile */}
+            <div style={{ width: '100%', textAlign: 'left' }}>
+              <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.06em', marginBottom: '12px' }}>
+                Recently Watched on this Profile
+              </div>
+              <div style={{ display: 'flex', gap: '12px', width: '100%' }}>
+                {recentlyWatched.map(m => (
+                  <div 
+                    key={m.id}
+                    style={{ 
+                      flex: 1, 
+                      aspectRatio: '2/3', 
+                      borderRadius: '6px', 
+                      overflow: 'hidden', 
+                      background: 'rgba(255,255,255,0.05)',
+                      position: 'relative'
+                    }}
+                  >
+                    <img 
+                      src={m.poster} 
+                      alt={m.title} 
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* COLUMN 3: Profile Settings / SubPage Editor */}
+          <div 
+            className="tv-settings-right-panel no-scrollbar"
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowLeft') {
+                // If subpage is active, ArrowLeft on container goes back to the column base
+                if (activeSubPage) {
+                  e.preventDefault();
+                  setActiveSubPage(null);
+                  setTimeout(() => {
+                    const firstOpt = document.querySelector('.settings-tv-row-card') as HTMLElement | null;
+                    if (firstOpt) firstOpt.focus();
+                  }, 100);
+                }
+              }
+            }}
+            style={{
+              flex: 1,
+              height: '100%',
+              overflowY: 'auto',
+              background: 'rgba(5, 5, 8, 0.2)',
+              padding: '40px 4% 80px 4%',
+              boxSizing: 'border-box'
+            }}
+          >
+            {activeSubPage === null ? (
+              <div style={{ width: '100%' }}>
+                <h2 style={{ margin: '0 0 24px 0', fontSize: '1.6rem', fontWeight: 900 }}>
+                  Profile Settings
+                </h2>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%' }}>
+                  {[
+                    { id: 'Viewing Restrictions', label: 'Viewing Restrictions', desc: 'Set maturity rating and title restrictions', value: activeProfile?.isKids ? '7+' : '18+', icon: <Shield size={18} />, subpage: 'account' },
+                    { id: 'Audio & Subtitle Preferences', label: 'Audio & Subtitle Preferences', desc: 'Choose your default language', value: 'English', icon: <Languages size={18} />, subpage: 'subtitles' },
+                    { id: 'Playback Settings', label: 'Playback Settings', desc: 'Autoplay, previews and data usage', icon: <Play size={18} />, subpage: 'streaming' },
+                    { id: 'Download Settings', label: 'Download Settings', desc: 'Quality and storage for downloads', value: 'Standard', icon: <Download size={18} />, subpage: 'streaming' },
+                    { id: 'Viewing Activity', label: 'Viewing Activity', desc: 'See and manage your watch history', icon: <Eye size={18} />, subpage: 'statistics' },
+                    { id: 'Privacy & Data', label: 'Privacy & Data', desc: 'Manage profile privacy and recommendations', icon: <Shield size={18} />, subpage: 'account' },
+                    { id: 'Transfer Profile', label: 'Transfer Profile', desc: 'Move this profile to another account', icon: <Users size={18} />, subpage: 'social' },
+                    { id: 'Delete Profile', label: 'Delete Profile', desc: 'Permanently remove this profile', icon: <LogOut size={18} />, subpage: 'delete', isDanger: true }
+                  ].map(opt => {
+                    return (
+                      <button
+                        key={opt.id}
+                        onClick={() => {
+                          triggerHaptic('light');
+                          if (opt.subpage === 'delete') {
+                            handleDeleteProfile();
+                          } else {
+                            setActiveSubPage(opt.subpage as any);
+                          }
+                        }}
+                        className="tv-focusable settings-tv-row-card"
+                        tabIndex={0}
+                        style={{
+                          width: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '16px',
+                          padding: '16px 20px',
+                          background: 'rgba(255, 255, 255, 0.02)',
+                          border: '1px solid rgba(255, 255, 255, 0.04)',
+                          borderRadius: '12px',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          color: '#fff',
+                          outline: 'none',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        {/* Option Icon */}
+                        <div style={{
+                          color: opt.isDanger ? '#ef4444' : 'rgba(255,255,255,0.7)',
+                          display: 'flex',
+                          alignItems: 'center'
+                        }}>
+                          {opt.icon}
+                        </div>
+
+                        {/* Title and Description */}
+                        <div style={{ flex: 1 }}>
+                          <div style={{
+                            fontWeight: 800,
+                            fontSize: '1rem',
+                            color: opt.isDanger ? '#ef4444' : '#fff'
+                          }}>
+                            {opt.label}
+                          </div>
+                          <div style={{
+                            fontSize: '0.85rem',
+                            color: 'rgba(255,255,255,0.4)',
+                            marginTop: '2px'
+                          }}>
+                            {opt.desc}
+                          </div>
+                        </div>
+
+                        {/* Value and Chevron */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'rgba(255,255,255,0.4)' }}>
+                          {opt.value && (
+                            <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>
+                              {opt.value}
+                            </span>
+                          )}
+                          <ChevronRight size={18} />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+                {/* Back to Settings Option */}
                 <button
-                  key={opt.id}
-                  onClick={() => { triggerHaptic('light'); onActiveSubPageChange?.(opt.id as any); }}
-                  onFocus={() => onActiveSubPageChange?.(opt.id as any)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'ArrowRight') {
-                      e.preventDefault();
-                      const rightPanel = document.querySelector('.tv-settings-right-panel');
-                      if (rightPanel) {
-                        const firstFocusable = rightPanel.querySelector('.tv-focusable') as HTMLElement | null;
-                        if (firstFocusable) {
-                          firstFocusable.focus();
-                        }
-                      }
-                    }
-                  }}
-                  className={`settings-tv-menu-btn tv-focusable${isActive ? ' active' : ''}`}
+                  onClick={() => setActiveSubPage(null)}
+                  className="tv-focusable"
+                  tabIndex={0}
                   style={{
-                    width: '100%',
-                    padding: '1.4vh 1.4vw',
-                    background: isActive ? 'rgba(255,255,255,0.06)' : 'transparent',
-                    color: isActive ? '#fff' : 'rgba(255,255,255,0.6)',
+                    alignSelf: 'flex-start',
+                    background: 'transparent',
                     border: 'none',
-                    borderRadius: '8px',
-                    fontSize: 'clamp(0.75rem, 1.9vh, 0.88rem)',
-                    fontWeight: 800,
-                    cursor: 'pointer',
+                    color: 'rgba(255,255,255,0.6)',
+                    fontSize: '0.95rem',
+                    fontWeight: 700,
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '0.8vw',
-                    textAlign: 'left',
+                    gap: '6px',
+                    cursor: 'pointer',
                     outline: 'none',
-                    boxSizing: 'border-box'
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    marginBottom: '20px'
                   }}
                 >
-                  {opt.icon}
-                  <span>{opt.label}</span>
+                  <ChevronLeft size={16} />
+                  Back
                 </button>
-              );
-            })}
 
-            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '1.5vh 0' }} />
+                <h2 style={{ 
+                  margin: '0 0 24px 0', 
+                  fontSize: '1.6rem', 
+                  fontWeight: 900,
+                  textTransform: 'uppercase', 
+                  letterSpacing: '0.06em'
+                }}>
+                  {activeSubPage === 'streaming' && t('streaming_settings')}
+                  {activeSubPage === 'subtitles' && t('subtitle_engine')}
+                  {activeSubPage === 'appearance' && t('appearance_theme')}
+                  {activeSubPage === 'social' && t('social_friends')}
+                  {activeSubPage === 'account' && t('account_privacy')}
+                  {activeSubPage === 'statistics' && t('statistics_insights')}
+                  {activeSubPage === 'mylist' && t('watchlist')}
+                </h2>
 
-            {/* Logout/Switch Profile Actions */}
-            <button
-              onClick={onSwitchProfile}
-              className="tv-focusable"
-              style={{
-                width: '100%', padding: '1.4vh 1.4vw', background: 'rgba(255,255,255,0.03)', color: '#fff', border: '1px solid rgba(255,255,255,0.08)',
-                borderRadius: '8px', fontSize: 'clamp(0.7rem, 1.7vh, 0.82rem)', fontWeight: 800, cursor: 'pointer', outline: 'none'
-              }}
-            >
-              {t('switch_profile')}
-            </button>
-            <button
-              onClick={onLogout}
-              className="tv-focusable"
-              style={{
-                width: '100%',
-                padding: '1.4vh 1.4vw',
-                background: isGuestMode ? '#ffffff' : 'rgba(239,68,68,0.08)',
-                color: isGuestMode ? '#000000' : '#f87171',
-                border: isGuestMode ? 'none' : '1px solid rgba(239,68,68,0.15)',
-                borderRadius: '8px',
-                fontSize: 'clamp(0.7rem, 1.7vh, 0.82rem)',
-                fontWeight: 800,
-                cursor: 'pointer',
-                outline: 'none'
-              }}
-            >
-              {isGuestMode ? 'Log In' : t('log_out')}
-            </button>
+                <div style={{ width: '100%' }}>
+                  {activeSubPage === 'streaming' && (
+                    <StreamingSubPage
+                      settings={settings}
+                      isMobile={isMobile}
+                      toggleAutoNext={toggleAutoNext}
+                      toggleHostControlsOnly={toggleHostControlsOnly}
+                      toggleAutoJoinParty={toggleAutoJoinParty}
+                      sectionHeaderStyle={sectionHeaderStyle}
+                      serverUrl={serverUrl}
+                      setServerUrl={setServerUrl}
+                      serverUrlSaved={serverUrlSaved}
+                      setServerUrlSaved={setServerUrlSaved}
+                      isTestingUrl={isTestingUrl}
+                      testStatus={testStatus}
+                      testError={testError}
+                      handleTestConnection={handleTestConnection}
+                      updateSetting={updateSetting}
+                      triggerHaptic={triggerHaptic}
+                    />
+                  )}
+
+                  {activeSubPage === 'subtitles' && (
+                    <SubtitlesSubPage
+                      settings={settings}
+                      updateSetting={updateSetting}
+                      isMobile={isMobile}
+                      osApiKey={osApiKey}
+                      setOsApiKey={setOsApiKey}
+                      osUsername={osUsername}
+                      setOsUsername={setOsUsername}
+                      osPassword={osPassword}
+                      setOsPassword={setOsPassword}
+                      osSaved={osSaved}
+                      setOsSaved={setOsSaved}
+                      showOsPassword={showOsPassword}
+                      setShowOsPassword={setShowOsPassword}
+                      triggerHaptic={triggerHaptic}
+                      sectionHeaderStyle={sectionHeaderStyle}
+                    />
+                  )}
+
+                  {activeSubPage === 'appearance' && (
+                    <AppearanceSubPage
+                      settings={settings}
+                      isMobile={isMobile}
+                      toggleMinimalHome={toggleMinimalHome}
+                      updateSetting={updateSetting}
+                      toggleHaptics={toggleHaptics}
+                      toggleDebug={toggleDebug}
+                      triggerHaptic={triggerHaptic}
+                      showToast={showToast}
+                      sectionHeaderStyle={sectionHeaderStyle}
+                    />
+                  )}
+
+                  {activeSubPage === 'account' && (
+                    <AccountSubPage
+                      currentUser={currentUser}
+                      authProvider={authProvider}
+                      isMobile={isMobile}
+                      activeProfile={activeProfile}
+                      newPassword={newPassword}
+                      setNewPassword={setNewPassword}
+                      confirmNewPassword={confirmNewPassword}
+                      setConfirmNewPassword={setConfirmNewPassword}
+                      showPasswordChangeForm={showPasswordChangeForm}
+                      setShowPasswordChangeForm={setShowPasswordChangeForm}
+                      handleClearHistory={handleClearHistory}
+                      handleClearSearchHistory={handleClearSearchHistory}
+                      handleDeleteProfile={handleDeleteProfile}
+                      handleDeleteAccount={handleDeleteAccount}
+                      setReauthAction={setReauthAction}
+                      showToast={showToast}
+                      triggerHaptic={triggerHaptic}
+                      onLogout={onLogout}
+                      sectionHeaderStyle={sectionHeaderStyle}
+                    />
+                  )}
+
+                  {activeSubPage === 'social' && (
+                    <SocialSubPage
+                      isMobile={isMobile}
+                      friends={friends}
+                      requests={requests}
+                      sentRequests={sentRequests}
+                      friendsLoading={friendsLoading}
+                      accountName={accountName}
+                      socialTab={socialTab}
+                      setSocialTab={setSocialTab}
+                      searchQuery={searchQuery}
+                      setSearchQuery={setSearchQuery}
+                      searchResults={searchResults}
+                      isSearching={isSearching}
+                      handleUserSearch={handleUserSearch}
+                      handleRemoveFriend={handleRemoveFriend}
+                      acceptFriend={acceptFriend}
+                      declineReceivedRequest={declineReceivedRequest}
+                      cancelSentRequest={cancelSentRequest}
+                      addFriend={addFriend}
+                      triggerHaptic={triggerHaptic}
+                      getFriendStatus={getFriendStatus}
+                      onLogout={onLogout}
+                      userId={userId}
+                      copied={copied}
+                      setCopied={setCopied}
+                      friendInput={friendInput}
+                      setFriendInput={setFriendInput}
+                      isSending={isSending}
+                      setIsSending={setIsSending}
+                      socialMessage={socialMessage}
+                      setSocialMessage={setSocialMessage}
+                      showToast={showToast}
+                    />
+                  )}
+
+                  {activeSubPage === 'statistics' && (
+                    <StatisticsSubPage
+                      profileStats={profileStats}
+                      isMobile={isMobile}
+                      onResetStatsClick={() => {
+                        setConfirmModal({
+                          type: 'reset_statistics',
+                          title: 'Reset Viewing Statistics?',
+                          message: 'Are you sure you want to completely clear your viewing history stats, streaks, and achievements? Your active watch progress in Continue Watching will remain, but analytics dashboards will be fully wiped.',
+                          actionText: 'Reset Stats',
+                          isDanger: true
+                        });
+                      }}
+                      triggerHaptic={triggerHaptic}
+                      getBackdropUrl={getBackdropUrl}
+                      getPosterUrl={getPosterUrl}
+                      COLORS={COLORS}
+                    />
+                  )}
+
+                  {activeSubPage === 'mylist' && (
+                    <MyListSubPage
+                      isMobile={isMobile}
+                      sectionHeaderStyle={sectionHeaderStyle}
+                      onMovieClick={onMovieClick}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* RIGHT PANEL: Focused subpage settings editor */}
-        <div 
-          className="tv-settings-right-panel no-scrollbar"
-          onKeyDown={(e) => {
-            if (e.key === 'ArrowLeft') {
-              // Pressing ArrowLeft in the editor panel always returns focus to the active menu category button on the left
-              const activeBtn = document.querySelector('.settings-tv-menu-btn.tv-focusable.active') as HTMLElement | null;
-              if (activeBtn) {
-                e.preventDefault();
-                activeBtn.focus();
-              }
-            }
-          }}
-          style={{
-            flex: 1,
-            height: '100%',
-            overflowY: 'auto',
-            background: 'rgba(5, 5, 8, 0.25)',
-            padding: '5vh 4vw 8vh 4vw',
-            boxSizing: 'border-box'
-          }}
-        >
-          {activeSubPage ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '3vh', width: '100%' }}>
-              <h2 style={{ 
-                margin: '0 0 2vh 0', 
-                fontSize: 'clamp(1.2rem, 3.2vh, 1.7rem)', 
-                fontWeight: 950, 
-                textTransform: 'uppercase', 
-                letterSpacing: '0.06em', 
-                textAlign: 'left',
-                background: 'linear-gradient(to right, #ffffff 0%, rgba(255,255,255,0.7) 100%)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.5))'
-              }}>
-                {activeSubPage === 'streaming' && t('streaming_settings')}
-                {activeSubPage === 'subtitles' && t('subtitle_engine')}
-                {activeSubPage === 'appearance' && t('appearance_theme')}
-                {activeSubPage === 'social' && t('social_friends')}
-                {activeSubPage === 'account' && t('account_privacy')}
-                {activeSubPage === 'statistics' && t('statistics_insights')}
-                {activeSubPage === 'mylist' && t('watchlist')}
-              </h2>
-
-              <div style={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
-                {activeSubPage === 'streaming' && (
-                  <StreamingSubPage
-                    settings={settings}
-                    isMobile={isMobile}
-                    toggleAutoNext={toggleAutoNext}
-                    toggleHostControlsOnly={toggleHostControlsOnly}
-                    toggleAutoJoinParty={toggleAutoJoinParty}
-                    sectionHeaderStyle={sectionHeaderStyle}
-                    serverUrl={serverUrl}
-                    setServerUrl={setServerUrl}
-                    serverUrlSaved={serverUrlSaved}
-                    setServerUrlSaved={setServerUrlSaved}
-                    isTestingUrl={isTestingUrl}
-                    testStatus={testStatus}
-                    testError={testError}
-                    handleTestConnection={handleTestConnection}
-                    updateSetting={updateSetting}
-                    triggerHaptic={triggerHaptic}
-                  />
-                )}
-
-                {activeSubPage === 'subtitles' && (
-                  <SubtitlesSubPage
-                    settings={settings}
-                    updateSetting={updateSetting}
-                    isMobile={isMobile}
-                    osApiKey={osApiKey}
-                    setOsApiKey={setOsApiKey}
-                    osUsername={osUsername}
-                    setOsUsername={setOsUsername}
-                    osPassword={osPassword}
-                    setOsPassword={setOsPassword}
-                    osSaved={osSaved}
-                    setOsSaved={setOsSaved}
-                    showOsPassword={showOsPassword}
-                    setShowOsPassword={setShowOsPassword}
-                    triggerHaptic={triggerHaptic}
-                    sectionHeaderStyle={sectionHeaderStyle}
-                  />
-                )}
-
-                {activeSubPage === 'appearance' && (
-                  <AppearanceSubPage
-                    settings={settings}
-                    isMobile={isMobile}
-                    toggleMinimalHome={toggleMinimalHome}
-                    updateSetting={updateSetting}
-                    toggleHaptics={toggleHaptics}
-                    toggleDebug={toggleDebug}
-                    triggerHaptic={triggerHaptic}
-                    showToast={showToast}
-                    sectionHeaderStyle={sectionHeaderStyle}
-                  />
-                )}
-
-                {activeSubPage === 'account' && (
-                  <AccountSubPage
-                    currentUser={currentUser}
-                    authProvider={authProvider}
-                    isMobile={isMobile}
-                    activeProfile={activeProfile}
-                    newPassword={newPassword}
-                    setNewPassword={setNewPassword}
-                    confirmNewPassword={confirmNewPassword}
-                    setConfirmNewPassword={setConfirmNewPassword}
-                    showPasswordChangeForm={showPasswordChangeForm}
-                    setShowPasswordChangeForm={setShowPasswordChangeForm}
-                    handleClearHistory={handleClearHistory}
-                    handleClearSearchHistory={handleClearSearchHistory}
-                    handleDeleteProfile={handleDeleteProfile}
-                    handleDeleteAccount={handleDeleteAccount}
-                    setReauthAction={setReauthAction}
-                    showToast={showToast}
-                    triggerHaptic={triggerHaptic}
-                    onLogout={onLogout}
-                    sectionHeaderStyle={sectionHeaderStyle}
-                  />
-                )}
-
-                {activeSubPage === 'social' && (
-                  <SocialSubPage
-                    isMobile={isMobile}
-                    friends={friends}
-                    requests={requests}
-                    sentRequests={sentRequests}
-                    friendsLoading={friendsLoading}
-                    accountName={accountName}
-                    socialTab={socialTab}
-                    setSocialTab={setSocialTab}
-                    searchQuery={searchQuery}
-                    setSearchQuery={setSearchQuery}
-                    searchResults={searchResults}
-                    isSearching={isSearching}
-                    handleUserSearch={handleUserSearch}
-                    handleRemoveFriend={handleRemoveFriend}
-                    acceptFriend={acceptFriend}
-                    declineReceivedRequest={declineReceivedRequest}
-                    cancelSentRequest={cancelSentRequest}
-                    addFriend={addFriend}
-                    triggerHaptic={triggerHaptic}
-                    getFriendStatus={getFriendStatus}
-                    onLogout={onLogout}
-                    userId={userId}
-                    copied={copied}
-                    setCopied={setCopied}
-                    friendInput={friendInput}
-                    setFriendInput={setFriendInput}
-                    isSending={isSending}
-                    setIsSending={setIsSending}
-                    socialMessage={socialMessage}
-                    setSocialMessage={setSocialMessage}
-                    showToast={showToast}
-                  />
-                )}
-
-                {activeSubPage === 'statistics' && (
-                  <StatisticsSubPage
-                    profileStats={profileStats}
-                    isMobile={isMobile}
-                    onResetStatsClick={() => {
-                      setConfirmModal({
-                        type: 'reset_statistics',
-                        title: 'Reset Viewing Statistics?',
-                        message: 'Are you sure you want to completely clear your viewing history stats, streaks, and achievements? Your active watch progress in Continue Watching will remain, but analytics dashboards will be fully wiped.',
-                        actionText: 'Reset Stats',
-                        isDanger: true
-                      });
-                    }}
-                    triggerHaptic={triggerHaptic}
-                    getBackdropUrl={getBackdropUrl}
-                    getPosterUrl={getPosterUrl}
-                    COLORS={COLORS}
-                  />
-                )}
-
-                {activeSubPage === 'mylist' && (
-                  <MyListSubPage
-                    isMobile={isMobile}
-                    sectionHeaderStyle={sectionHeaderStyle}
-                    onMovieClick={onMovieClick}
-                  />
-                )}
-              </div>
-            </div>
-          ) : (
-            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.2)' }}>
-              Select a category on the left to edit settings
-            </div>
-          )}
-        </div>
-        
         <style>{`
-          .settings-tv-menu-btn.tv-focusable:focus {
-            background: #ffffff !important;
-            color: #000000 !important;
-            box-shadow: 0 0 0 3px #ffffff !important;
+          .tv-focusable {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            outline: 2px solid transparent !important;
+            outline-offset: 2px !important;
           }
-          button.tv-focusable:focus {
+          .tv-focusable:focus {
             background: #ffffff !important;
             color: #000000 !important;
-            box-shadow: 0 0 0 3px #ffffff !important;
+            outline: 3px solid #ffffff !important;
+            outline-offset: 2.5px !important;
+            transform: scale(1.025);
+          }
+          .active-profile-btn.tv-focusable:focus {
+            background: rgba(255, 255, 255, 0.95) !important;
+            color: #000000 !important;
+          }
+          .active-profile-btn.tv-focusable:focus img {
+            border-color: #000000 !important;
+          }
+          .settings-tv-row-card.tv-focusable:focus {
+            background: #ffffff !important;
+            color: #000000 !important;
+            border-color: #ffffff !important;
+          }
+          .settings-tv-row-card.tv-focusable:focus div,
+          .settings-tv-row-card.tv-focusable:focus span,
+          .settings-tv-row-card.tv-focusable:focus svg {
+            color: #000000 !important;
           }
           /* TV layout overrides for subpages inputs and lists items */
           .settings-row-container.tv-focusable:focus {
@@ -907,186 +1235,6 @@ export default function SettingsPage({
             box-shadow: 0 0 0 2px #ffffff !important;
           }
         `}</style>
-
-        {/* Render updater modal overlay for TV Mode */}
-        {showUpdateModal && updateAvailable && (
-          <div
-            onClick={() => {
-              if (downloadState !== 'downloading') {
-                setShowUpdateModal(false);
-              }
-            }}
-            style={{
-              position: 'fixed',
-              inset: 0,
-              zIndex: 5600,
-              background: 'rgba(0,0,0,0.85)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '16px'
-            }}
-          >
-            <div
-              className="tv-updater-modal-content"
-              onClick={e => e.stopPropagation()}
-              onKeyDown={(e) => {
-                const buttons = e.currentTarget.querySelectorAll('.tv-focusable') as NodeListOf<HTMLElement>;
-                if (buttons.length > 0) {
-                  const activeEl = document.activeElement as HTMLElement;
-                  const activeIdx = Array.from(buttons).indexOf(activeEl);
-                  
-                  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const nextIdx = activeIdx === 0 ? 1 : 0;
-                    buttons[nextIdx].focus();
-                  }
-                }
-              }}
-              style={{
-                width: '100%',
-                maxWidth: '380px',
-                background: '#0a0a0c',
-                borderRadius: '16px',
-                border: '1px solid rgba(255,255,255,0.06)',
-                padding: '24px 20px',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                textAlign: 'center',
-                gap: '16px'
-              }}
-            >
-              <div style={{
-                color: '#007aff',
-                marginBottom: '2px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <Download size={32} />
-              </div>
-
-              <div>
-                <h3 style={{ margin: '0 0 6px', fontSize: '1.25rem', fontWeight: 900, color: '#fff', letterSpacing: '-0.02em' }}>
-                  New Update Available
-                </h3>
-                <p style={{ margin: 0, fontSize: '0.85rem', color: '#007aff', fontWeight: 700 }}>
-                  Version {updateAvailable.version}
-                </p>
-              </div>
-
-              {updateAvailable.releaseNotes && (
-                <div style={{
-                  width: '100%',
-                  maxHeight: '120px',
-                  overflowY: 'auto',
-                  background: 'rgba(255,255,255,0.02)',
-                  border: '1px solid rgba(255,255,255,0.05)',
-                  borderRadius: '12px',
-                  padding: '12px',
-                  textAlign: 'left',
-                  fontSize: '0.82rem',
-                  color: 'rgba(255,255,255,0.6)',
-                  lineHeight: 1.4,
-                  whiteSpace: 'pre-wrap'
-                }}>
-                  {updateAvailable.releaseNotes}
-                </div>
-              )}
-
-              {downloadState === 'downloading' && (
-                <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>
-                    <span>Downloading...</span>
-                    <span>{downloadProgress}%</span>
-                  </div>
-                  <div style={{ width: '100%', height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden' }}>
-                    <div style={{ width: `${downloadProgress}%`, height: '100%', background: '#007aff', transition: 'width 0.1s linear', borderRadius: '3px' }} />
-                  </div>
-                </div>
-              )}
-
-              {downloadState === 'installing' && (
-                <p style={{ margin: 0, fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>
-                  Launching Package Installer...
-                </p>
-              )}
-
-              {downloadState === 'error' && (
-                <p style={{ margin: 0, fontSize: '0.85rem', color: '#ef4444', fontWeight: 600 }}>
-                  Download failed. Please check network and storage permission.
-                </p>
-              )}
-
-              <div style={{ display: 'flex', width: '100%', gap: '12px', marginTop: '4px' }}>
-                {downloadState !== 'downloading' && downloadState !== 'installing' && (
-                  <>
-                    <button
-                      onClick={() => setShowUpdateModal(false)}
-                      className="tv-focusable"
-                      tabIndex={0}
-                      style={{
-                        flex: 1,
-                        padding: '14px',
-                        borderRadius: '14px',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        background: 'transparent',
-                        color: 'rgba(255,255,255,0.8)',
-                        fontWeight: 800,
-                        fontSize: '0.9rem',
-                        cursor: 'pointer',
-                        outline: 'none'
-                      }}
-                    >
-                      Not Now
-                    </button>
-                    <button
-                      onClick={async () => {
-                        triggerHaptic('medium');
-                        setDownloadState('downloading');
-                        setDownloadProgress(0);
-                        try {
-                          const { downloadAndInstallUpdate } = await import('../../../services/core/updater');
-                          const success = await downloadAndInstallUpdate(updateAvailable.downloadUrl, (prog) => {
-                            setDownloadProgress(prog.progress);
-                          });
-                          if (success) {
-                            setDownloadState('installing');
-                            setShowUpdateModal(false);
-                            if (onClearUpdate) onClearUpdate();
-                          } else {
-                            setDownloadState('error');
-                          }
-                        } catch (err) {
-                          setDownloadState('error');
-                        }
-                      }}
-                      className="tv-focusable"
-                      tabIndex={0}
-                      style={{
-                        flex: 1,
-                        padding: '14px',
-                        borderRadius: '14px',
-                        border: 'none',
-                        background: '#007aff',
-                        color: '#ffffff',
-                        fontWeight: 900,
-                        fontSize: '0.9rem',
-                        cursor: 'pointer',
-                        boxShadow: '0 4px 15px rgba(0, 122, 255, 0.3)',
-                        outline: 'none'
-                      }}
-                    >
-                      Install Now
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     );
   }
