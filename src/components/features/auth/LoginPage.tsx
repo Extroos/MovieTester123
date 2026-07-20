@@ -262,10 +262,10 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
       
       <BackgroundCards posters={backgroundPosters.length > 0 ? backgroundPosters : FALLBACK_POSTERS} />
       
-      {/* Vignette Overlay fading from left-to-right into OLED Black */}
+      {/* Centered Dark Radial Vignette Overlay over posters */}
       <div className="login-vignette" style={{
         position: 'absolute', inset: 0, zIndex: 1,
-        background: 'linear-gradient(to right, rgba(var(--bg-primary-rgb, 10,10,10),0.1) 0%, rgba(var(--bg-primary-rgb, 10,10,10),0.5) 40%, var(--bg-primary, #040405) 85%)',
+        background: 'radial-gradient(circle, rgba(0, 0, 0, 0.4) 0%, rgba(4, 4, 5, 0.75) 50%, #040405 95%)',
       }} />
 
       {/* Top-Left Logo Overlay */}
@@ -291,19 +291,19 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
         />
       </div>
 
-      {/* Main Container: Split Widescreen Row */}
+      {/* Main Container: Centered Layout */}
       <div
         className="login-container"
         style={{
           position: 'relative', zIndex: 10, width: '100%', height: '100%',
           display: 'flex', flexDirection: 'row', alignItems: 'center',
-          justifyContent: 'space-between', paddingLeft: '8%', paddingRight: '8%',
+          justifyContent: 'center', paddingLeft: '8%', paddingRight: '8%',
         }}
       >
-        {/* Left Side: Logo and Sign-In Card */}
+        {/* Centered Sign-In Card Container */}
         <div className="login-left-side" style={{
           width: '100%', maxWidth: '440px',
-          display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
         }}>
           {/* Premium Netflix-style Black Login Card */}
           <div className="login-card-content" style={{
@@ -561,7 +561,6 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
           </div>
         </div>
 
-        <PreviewPanel trailerMovie={trailerMovie} />
       </div>
 
       {/* Wide Screen/TV Layout Mode Selector Overlay */}
@@ -1097,34 +1096,6 @@ const StaticStyles = React.memo(() => (
         width: 12px !important;
         height: 12px !important;
       }
-      
-      /* Force side-by-side D-Pad layout on all TV screens */
-      body.tv-mode .login-container {
-        display: flex !important;
-        flex-direction: row !important;
-        align-items: center !important;
-        justify-content: center !important;
-        padding: 0 4vw !important;
-      }
-      body.tv-mode .login-left-side {
-        width: 45vw !important;
-        max-width: 440px !important;
-        display: flex !important;
-        flex-direction: column !important;
-        align-items: flex-start !important;
-      }
-      body.tv-mode .login-preview-panel {
-        display: flex !important;
-        flex: 1 !important;
-        max-width: 560px !important;
-        margin-left: 4vw !important;
-      }
-      body.tv-mode .login-bg-cards {
-        display: flex !important;
-        width: 65% !important;
-        left: 2% !important;
-        opacity: 0.85 !important;
-      }
     }
   `}</style>
 ));
@@ -1132,14 +1103,13 @@ StaticStyles.displayName = 'StaticStyles';
 
 
 const BackgroundCards = React.memo(({ posters }: { posters: string[] }) => {
-  const numColumns = 4;
-  // Cap at 60 posters (was 180+) — enough for seamless looping across 4 columns.
-  // Each column gets 15 posters × 2 (doubled for infinite scroll) = 30 DOM nodes per column.
+  const numColumns = 10;
+  // Cap at 150 posters — enough for seamless looping across 10 columns.
   let richPosters = [...posters];
-  while (richPosters.length < 60) {
+  while (richPosters.length < 150) {
     richPosters = [...richPosters, ...posters];
   }
-  const finalPosters = richPosters.slice(0, 60);
+  const finalPosters = richPosters.slice(0, 150);
   const columns = Array.from({ length: numColumns }, (_, colIdx) =>
     finalPosters.filter((_, imgIdx) => imgIdx % numColumns === colIdx)
   );
@@ -1152,8 +1122,8 @@ const BackgroundCards = React.memo(({ posters }: { posters: string[] }) => {
   return (
     <div className="login-bg-cards" style={{
       position: 'absolute',
-      top: '-15%', left: '2%',
-      width: '65%', height: '130%',
+      top: '-15%', left: '-5%',
+      width: '110%', height: '130%',
       display: 'flex',
       gap: gapValue,
       justifyContent: 'flex-start',
