@@ -62,6 +62,19 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
     inputRef.current?.focus();
     const saved = localStorage.getItem('recent_searches');
     if (saved) setRecentSearches(JSON.parse(saved));
+
+    // Fetch real backdrop images for Trending and New cards from TMDB
+    getTrending('week').then((trendingList) => {
+      if (trendingList && trendingList.length > 0) {
+        const p1 = trendingList[0].backdropPath || (trendingList[0] as any).backdrop_path;
+        if (p1) setTrendingBackdrop(getBackdropUrl(p1, 'medium'));
+
+        if (trendingList.length > 1) {
+          const p2 = trendingList[1].backdropPath || (trendingList[1] as any).backdrop_path;
+          if (p2) setNewBackdrop(getBackdropUrl(p2, 'medium'));
+        }
+      }
+    }).catch((err) => console.error('Error fetching trending backdrops:', err));
     
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
