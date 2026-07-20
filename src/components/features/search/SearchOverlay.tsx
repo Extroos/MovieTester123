@@ -987,61 +987,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                       overflow: 'hidden'
                     }}
                   >
-                    {['Trending', 'New'].includes(cat.id) ? (
-                      <div style={{ display: 'flex', width: '100%', height: '100%', zIndex: 2 }}>
-                        {/* Left Side: Movie Poster */}
-                        <div style={{ width: '40%', height: '100%', overflow: 'hidden', background: '#111', position: 'relative' }}>
-                          {cat.id === 'Trending' && trendingPoster && (
-                            <img 
-                              src={trendingPoster} 
-                              alt=""
-                              style={{ 
-                                width: '100%', 
-                                height: '100%', 
-                                objectFit: 'cover'
-                              }} 
-                            />
-                          )}
-                          {cat.id === 'New' && newPoster && (
-                            <img 
-                              src={newPoster} 
-                              alt=""
-                              style={{ 
-                                width: '100%', 
-                                height: '100%', 
-                                objectFit: 'cover'
-                              }} 
-                            />
-                          )}
-                        </div>
-                        {/* Right Side: Title & Icon */}
-                        <div style={{ 
-                          width: '60%', 
-                          height: '100%', 
-                          display: 'flex', 
-                          flexDirection: 'column', 
-                          justifyContent: 'center', 
-                          alignItems: 'flex-start',
-                          padding: '12px',
-                          boxSizing: 'border-box',
-                          gap: '6px',
-                          background: 'linear-gradient(90deg, rgba(0,0,0,0.85) 0%, rgba(20,20,20,0.95) 100%)',
-                          borderLeft: '1px solid rgba(255,255,255,0.08)'
-                        }}>
-                          <span style={{ 
-                            fontSize: 'clamp(0.72rem, 1.8vh, 0.9rem)', 
-                            fontWeight: 800,
-                            color: '#fff',
-                            letterSpacing: '0.5px'
-                          }}>
-                            {cat.label}
-                          </span>
-                          <div style={{ display: 'flex', alignItems: 'center' }}>
-                            {cat.graphic}
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
+                    {['Disney+', 'Netflix', 'Oscar Winners'].includes(cat.id) ? (
                       <img 
                         src={
                           cat.id === 'Disney+' ? '/disney-logo.png' : 
@@ -1057,6 +1003,31 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                           inset: 0
                         }} 
                       />
+                    ) : (
+                      <>
+                        <img 
+                          src={cat.id === 'Trending' ? trendingBackdrop : newBackdrop} 
+                          alt=""
+                          onError={(e) => {
+                            e.currentTarget.src = '/backdrop-placeholder.png';
+                          }}
+                          style={{ 
+                            width: '100%', 
+                            height: '100%', 
+                            objectFit: 'cover',
+                            position: 'absolute',
+                            inset: 0
+                          }} 
+                        />
+                        <div style={{ 
+                          position: 'absolute', 
+                          inset: 0, 
+                          background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.1) 100%)', 
+                          zIndex: 1 
+                        }} />
+                        <span style={{ zIndex: 2, position: 'relative' }}>{cat.label}</span>
+                        {cat.graphic}
+                      </>
                     )}
                   </button>
                 ))}
