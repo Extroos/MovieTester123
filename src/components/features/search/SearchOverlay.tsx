@@ -987,23 +987,67 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                       overflow: 'hidden'
                     }}
                   >
-                    <img 
-                      src={
-                        cat.id === 'Trending' ? '/trending-logo.png' :
-                        cat.id === 'New' ? '/new-logo.png' :
-                        cat.id === 'Disney+' ? '/disney-logo.png' : 
-                        cat.id === 'Netflix' ? '/netflix-logo.png' : 
-                        '/oscar-logo.png'
-                      } 
-                      alt=""
-                      style={{ 
-                        width: '100%', 
-                        height: '100%', 
-                        objectFit: 'cover',
-                        position: 'absolute',
-                        inset: 0
-                      }} 
-                    />
+                    {['Trending', 'New'].includes(cat.id) ? (
+                      <div style={{ display: 'flex', width: '100%', height: '100%', zIndex: 2 }}>
+                        {/* Left Side: Movie Poster */}
+                        <div style={{ width: '40%', height: '100%', overflow: 'hidden', background: '#111' }}>
+                          <img 
+                            src={cat.id === 'Trending' ? trendingPoster : newPoster} 
+                            alt=""
+                            style={{ 
+                              width: '100%', 
+                              height: '100%', 
+                              objectFit: 'cover'
+                            }} 
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                        </div>
+                        {/* Right Side: Title & Icon */}
+                        <div style={{ 
+                          width: '60%', 
+                          height: '100%', 
+                          display: 'flex', 
+                          flexDirection: 'column', 
+                          justifyContent: 'center', 
+                          alignItems: 'flex-start',
+                          padding: '12px',
+                          boxSizing: 'border-box',
+                          gap: '6px',
+                          background: 'linear-gradient(90deg, rgba(0,0,0,0.85) 0%, rgba(20,20,20,0.95) 100%)',
+                          borderLeft: '1px solid rgba(255,255,255,0.08)'
+                        }}>
+                          <span style={{ 
+                            fontSize: 'clamp(0.72rem, 1.8vh, 0.9rem)', 
+                            fontWeight: 800,
+                            color: '#fff',
+                            letterSpacing: '0.5px'
+                          }}>
+                            {cat.label}
+                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center' }}>
+                            {cat.graphic}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <img 
+                        src={
+                          cat.id === 'Disney+' ? '/disney-logo.png' : 
+                          cat.id === 'Netflix' ? '/netflix-logo.png' : 
+                          '/oscar-logo.png'
+                        } 
+                        alt=""
+                        style={{ 
+                          width: '100%', 
+                          height: '100%', 
+                          objectFit: 'cover',
+                          position: 'absolute',
+                          inset: 0
+                        }} 
+                      />
+                    )}
                   </button>
                 ))}
               </div>
