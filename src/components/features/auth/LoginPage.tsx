@@ -1097,6 +1097,34 @@ const StaticStyles = React.memo(() => (
         width: 12px !important;
         height: 12px !important;
       }
+      
+      /* Force side-by-side D-Pad layout on all TV screens */
+      body.tv-mode .login-container {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 0 4vw !important;
+      }
+      body.tv-mode .login-left-side {
+        width: 45vw !important;
+        max-width: 440px !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: flex-start !important;
+      }
+      body.tv-mode .login-preview-panel {
+        display: flex !important;
+        flex: 1 !important;
+        max-width: 560px !important;
+        margin-left: 4vw !important;
+      }
+      body.tv-mode .login-bg-cards {
+        display: flex !important;
+        width: 65% !important;
+        left: 2% !important;
+        opacity: 0.85 !important;
+      }
     }
   `}</style>
 ));
