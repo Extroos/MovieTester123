@@ -262,10 +262,10 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
       
       <BackgroundCards posters={backgroundPosters.length > 0 ? backgroundPosters : FALLBACK_POSTERS} />
       
-      {/* Centered Dark Radial Vignette Overlay over posters */}
+      {/* Vignette Overlay fading from left-to-right into OLED Black */}
       <div className="login-vignette" style={{
         position: 'absolute', inset: 0, zIndex: 1,
-        background: 'radial-gradient(circle, rgba(0, 0, 0, 0.4) 0%, rgba(4, 4, 5, 0.75) 50%, #040405 95%)',
+        background: 'linear-gradient(to right, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0.6) 40%, #040405 85%)',
       }} />
 
       {/* Top-Left Logo Overlay */}
@@ -291,30 +291,32 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
         />
       </div>
 
-      {/* Main Container: Centered Layout */}
+      {/* Main Container: Split Widescreen Row */}
       <div
         className="login-container"
         style={{
           position: 'relative', zIndex: 10, width: '100%', height: '100%',
           display: 'flex', flexDirection: 'row', alignItems: 'center',
-          justifyContent: 'center', paddingLeft: '8%', paddingRight: '8%',
+          justifyContent: 'space-between', paddingLeft: '8%', paddingRight: '8%',
         }}
       >
-        {/* Centered Sign-In Card Container */}
+        {/* Left Side: Sign-In Card Container */}
         <div className="login-left-side" style={{
           width: '100%', maxWidth: '440px',
-          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
         }}>
-          {/* Premium Netflix-style Black Login Card */}
+          {/* Premium semi-transparent login card */}
           <div className="login-card-content" style={{
             width: '100%', 
             display: 'flex', 
             flexDirection: 'column', 
-            padding: isSmallHeight ? '1.25rem 1rem' : '2rem 1.5rem',
-            borderRadius: '16px',
-            background: 'transparent',
-            border: 'none',
-            boxShadow: 'none',
+            padding: isSmallHeight ? '1.5rem 1.25rem' : '2.5rem 2rem',
+            borderRadius: '24px',
+            background: 'rgba(10, 10, 12, 0.75)',
+            backdropFilter: 'blur(24px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            boxShadow: '0 30px 70px rgba(0,0,0,0.95)',
             animation: 'fadeInScale 0.6s cubic-bezier(0.16, 1, 0.3, 1)',
             marginTop: '0px',
             position: 'relative',
@@ -561,6 +563,7 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
           </div>
         </div>
 
+        <PreviewPanel trailerMovie={trailerMovie} />
       </div>
 
       {/* Wide Screen/TV Layout Mode Selector Overlay */}
@@ -1096,6 +1099,34 @@ const StaticStyles = React.memo(() => (
         width: 12px !important;
         height: 12px !important;
       }
+      
+      /* Force side-by-side D-Pad layout on all TV screens */
+      body.tv-mode .login-container {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        padding: 0 8vw !important;
+      }
+      body.tv-mode .login-left-side {
+        width: 100% !important;
+        max-width: 440px !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: flex-start !important;
+      }
+      body.tv-mode .login-preview-panel {
+        display: flex !important;
+        flex: 1 !important;
+        max-width: 560px !important;
+        margin-left: 4vw !important;
+      }
+      body.tv-mode .login-bg-cards {
+        display: flex !important;
+        width: 110% !important;
+        left: -5% !important;
+        opacity: 0.85 !important;
+      }
     }
   `}</style>
 ));
@@ -1187,17 +1218,21 @@ const PreviewPanel = React.memo(({ trailerMovie }: { trailerMovie: any }) => {
       gap: '1.5rem',
       marginLeft: '4rem',
       animation: 'fadeInScale 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both',
+      perspective: '1200px',
     }}>
-      {/* Movie Preview Frame */}
+      {/* Movie Preview Frame with 3D perspective tilt */}
       <div style={{
         position: 'relative',
         width: '100%',
         aspectRatio: '16/9',
-        borderRadius: '16px',
+        borderRadius: '20px',
         overflow: 'hidden',
-        border: '1px solid rgba(255, 255, 255, 0.12)',
-        boxShadow: '0 25px 60px rgba(0, 0, 0, 0.95)',
+        border: '1px solid rgba(255, 255, 255, 0.18)',
+        boxShadow: '-20px 30px 60px rgba(0, 0, 0, 0.9), inset 0 0 20px rgba(255, 255, 255, 0.1)',
         background: '#0a0a0c',
+        transform: 'rotateY(-15deg) rotateX(6deg) rotateZ(-1deg) scale(1.03)',
+        transformStyle: 'preserve-3d',
+        transition: 'transform 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
       }}>
         {trailerMovie?.backdropPath ? (
           <img
