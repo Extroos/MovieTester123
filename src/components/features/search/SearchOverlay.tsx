@@ -990,19 +990,29 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                     {['Trending', 'New'].includes(cat.id) ? (
                       <div style={{ display: 'flex', width: '100%', height: '100%', zIndex: 2 }}>
                         {/* Left Side: Movie Poster */}
-                        <div style={{ width: '40%', height: '100%', overflow: 'hidden', background: '#111' }}>
-                          <img 
-                            src={cat.id === 'Trending' ? trendingPoster : newPoster} 
-                            alt=""
-                            style={{ 
-                              width: '100%', 
-                              height: '100%', 
-                              objectFit: 'cover'
-                            }} 
-                            onError={(e) => {
-                              e.currentTarget.style.display = 'none';
-                            }}
-                          />
+                        <div style={{ width: '40%', height: '100%', overflow: 'hidden', background: '#111', position: 'relative' }}>
+                          {cat.id === 'Trending' && trendingPoster && (
+                            <img 
+                              src={trendingPoster} 
+                              alt=""
+                              style={{ 
+                                width: '100%', 
+                                height: '100%', 
+                                objectFit: 'cover'
+                              }} 
+                            />
+                          )}
+                          {cat.id === 'New' && newPoster && (
+                            <img 
+                              src={newPoster} 
+                              alt=""
+                              style={{ 
+                                width: '100%', 
+                                height: '100%', 
+                                objectFit: 'cover'
+                              }} 
+                            />
+                          )}
                         </div>
                         {/* Right Side: Title & Icon */}
                         <div style={{ 
