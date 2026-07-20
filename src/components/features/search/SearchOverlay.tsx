@@ -419,8 +419,8 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
 
   const isTV = typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
   const [showKeyboard, setShowKeyboard] = useState(false);
-  const [trendingPoster, setTrendingPoster] = useState<string>('');
-  const [newPoster, setNewPoster] = useState<string>('');
+  const [trendingPoster, setTrendingPoster] = useState<string>('https://image.tmdb.org/t/p/w185/8cdWjvZ2Fwih26X7A7w53J4paEv.jpg');
+  const [newPoster, setNewPoster] = useState<string>('https://image.tmdb.org/t/p/w185/vpnVM9B6Vm7fjgYkmVfLLnqyMGt.jpg');
   const [trendingBackdrop, setTrendingBackdrop] = useState<string>('');
   const [newBackdrop, setNewBackdrop] = useState<string>('');
 
