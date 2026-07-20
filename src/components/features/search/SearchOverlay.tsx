@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { Movie } from '../../../types';
-import { searchMulti, getPosterUrl, getTrendingByGenre, getDiscoverNetflix, getDiscoverDisney, getDiscoverOscars, getTrending, getUpcoming } from '../../../services/tmdb';
+import { searchMulti, getPosterUrl, getBackdropUrl, getTrendingByGenre, getDiscoverNetflix, getDiscoverDisney, getDiscoverOscars, getTrending, getUpcoming } from '../../../services/tmdb';
 import { Mic, Keyboard as KeyboardIcon, LayoutGrid, Clapperboard, Tv, Star, Cloud, Zap, Smile, Moon, Sun, Skull, HelpCircle, Heart, Globe, Flame, Mountain, Palette, Film, Search, Users } from 'lucide-react';
 import { COLORS, GENRES } from '../../../constants';
 import { triggerHaptic } from '../../../utils/haptics';
