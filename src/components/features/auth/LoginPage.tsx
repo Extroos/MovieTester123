@@ -561,7 +561,7 @@ export default function LoginPage({ onLogin, onContinueAsGuest, prefetchedPoster
           </div>
         </div>
 
-        <PreviewPanel trailerKey={trailerKey} trailerMovie={trailerMovie} mountTrailer={mountTrailer} />
+        <PreviewPanel trailerMovie={trailerMovie} />
       </div>
 
       {/* Wide Screen/TV Layout Mode Selector Overlay */}
@@ -1179,7 +1179,7 @@ const BackgroundCards = React.memo(({ posters }: { posters: string[] }) => {
 });
 BackgroundCards.displayName = 'BackgroundCards';
 
-const PreviewPanel = React.memo(({ trailerKey, trailerMovie, mountTrailer }: { trailerKey: string; trailerMovie: any; mountTrailer: boolean }) => {
+const PreviewPanel = React.memo(({ trailerMovie }: { trailerMovie: any }) => {
   return (
     <div className="login-preview-panel" style={{
       flex: 1,
@@ -1190,7 +1190,7 @@ const PreviewPanel = React.memo(({ trailerKey, trailerMovie, mountTrailer }: { t
       marginLeft: '4rem',
       animation: 'fadeInScale 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both',
     }}>
-      {/* YouTube Video Frame */}
+      {/* Movie Preview Frame */}
       <div style={{
         position: 'relative',
         width: '100%',
@@ -1201,18 +1201,7 @@ const PreviewPanel = React.memo(({ trailerKey, trailerMovie, mountTrailer }: { t
         boxShadow: '0 25px 60px rgba(0, 0, 0, 0.95)',
         background: '#0a0a0c',
       }}>
-        {trailerKey && mountTrailer ? (
-          <iframe
-            title="Movie Preview"
-            src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1&mute=1&controls=0&loop=1&playlist=${trailerKey}&rel=0&modestbranding=1&iv_load_policy=3&showinfo=0&disablekb=1`}
-            style={{
-              width: '100%',
-              height: '100%',
-              border: 'none',
-            }}
-            allow="autoplay; encrypted-media"
-          />
-        ) : trailerMovie?.backdropPath ? (
+        {trailerMovie?.backdropPath ? (
           <img
             src={getBackdropUrl(trailerMovie.backdropPath, 'large')}
             alt=""
