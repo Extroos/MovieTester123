@@ -258,6 +258,9 @@ class GlobalDownloaderService {
       let playlistUrl = currentSrc;
       const SERVER_DISPLAY_NAMES: Record<string, string> = {
         'vidsrc-pm': 'VidSrc PM (.m3u8)',
+        'vidsrc-top-new': 'VidSrc Top (.m3u8)',
+        'vixsrc': 'VixSrc (.m3u8)',
+        'vidsrc-wtf-2': 'VidSrc Multi-Lang (.m3u8)',
         'universal': 'Universal Player (.m3u8)'
       };
 
@@ -268,9 +271,10 @@ class GlobalDownloaderService {
         const titleToUse = (item as any).title || (item as any).name || '';
         let resolvedUrl = '';
         let resolvedResult: any = null;
-        const preferredServer = (localStorage.getItem('cinemovie_download_server') || 'vidsrc-pm') as 'vidsrc-pm' | 'universal';
-        const serversToTry: ('vidsrc-pm' | 'universal')[] = [preferredServer];
-        (['vidsrc-pm', 'universal'] as const).forEach(srv => {
+        const preferredServer = (localStorage.getItem('cinemovie_download_server') || 'vidsrc-pm');
+        const allAvailableServers = ['vidsrc-pm', 'vidsrc-top-new', 'vixsrc', 'vidsrc-wtf-2', 'universal'];
+        const serversToTry: string[] = [preferredServer];
+        allAvailableServers.forEach(srv => {
           if (srv !== preferredServer) {
             serversToTry.push(srv);
           }
@@ -617,49 +621,79 @@ class GlobalDownloaderService {
       // Detect master playlist (contains quality variants, not raw segments)
       if (manifestText.includes('#EXT-X-STREAM-INF')) {
         this.updateStatus('Resolving best quality stream variant...');
-        // Parse all variant stream URIs and pick the highest bandwidth
+        // Parse all variant stream URIs
         const variantLines = manifestText.split('\n');
-        let bestBandwidth = -1;
-        let bestVariantUrl = '';
+        const allVariants: { bandwidth: number; url: string; resolution: string }[] = [];
         for (let i = 0; i < variantLines.length; i++) {
           const line = variantLines[i].trim();
           if (line.startsWith('#EXT-X-STREAM-INF')) {
             const bwMatch = line.match(/BANDWIDTH=(\d+)/);
+            const resMatch = line.match(/RESOLUTION=(\S+)/);
             const bw = bwMatch ? parseInt(bwMatch[1], 10) : 0;
+            const res = resMatch ? resMatch[1] : 'unknown';
             const nextLine = variantLines[i + 1]?.trim();
             if (nextLine && !nextLine.startsWith('#')) {
-              if (bw > bestBandwidth) {
-                bestBandwidth = bw;
-                bestVariantUrl = resolveAbsoluteUrl(targetUrl, nextLine);
-              }
+              allVariants.push({ bandwidth: bw, url: resolveAbsoluteUrl(targetUrl, nextLine), resolution: res });
             }
           }
         }
-        if (!bestVariantUrl) throw new Error('Could not find a valid quality variant in master playlist.');
+        if (allVariants.length === 0) throw new Error('Could not find a valid quality variant in master playlist.');
 
-        this.updateStatus('Loading media playlist for selected quality...');
-        const mediaRes = await fetch(buildProxyUrl(bestVariantUrl), {
+        // Pick the highest bandwidth variant for best quality.
+        // All HLS variants have the same segment count (time-based splitting), so quality is free.
+        allVariants.sort((a, b) => b.bandwidth - a.bandwidth);
+        const selectedVariant = allVariants[0];
+
+        console.log(`[GlobalDownloader] Variants (${allVariants.length}): ${allVariants.map(v => `${v.resolution}@${Math.round(v.bandwidth/1000)}kbps`).join(', ')} | Selected BEST: ${selectedVariant.resolution}`);
+        this.updateStatus(`Loading ${selectedVariant.resolution} best quality stream...`);
+
+        const mediaRes = await fetch(buildProxyUrl(selectedVariant.url), {
           headers: isNative ? { 'Referer': referer, 'Origin': origin } : undefined
         });
         if (!mediaRes.ok) throw new Error(`HTTP ${mediaRes.status} fetching media playlist`);
         manifestText = await mediaRes.text();
-        manifestBaseUrl = bestVariantUrl;
+        manifestBaseUrl = selectedVariant.url;
       }
 
       // Parse segments from the (now guaranteed) media playlist
       const lines = manifestText.split('\n');
       const segmentUrls: string[] = [];
+      const segmentDurations: number[] = [];
+      let currentSegDuration = 6.0; // Default segment duration fallback
+
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
-        if (line && !line.startsWith('#')) {
+        if (line.startsWith('#EXTINF:')) {
+          const match = line.match(/#EXTINF:([0-9.]+)/);
+          if (match) {
+            currentSegDuration = parseFloat(match[1]);
+          }
+        } else if (line && !line.startsWith('#')) {
           segmentUrls.push(resolveAbsoluteUrl(manifestBaseUrl, line));
+          segmentDurations.push(currentSegDuration);
         }
       }
 
       const totalSegments = segmentUrls.length;
       if (totalSegments === 0) throw new Error('No video segments detected in manifest.');
 
-      await OfflineStorageService.startProgressiveWrite(downloadId, false);
+      // Calculate exact total runtime duration from segments
+      const exactDurationSeconds = segmentDurations.reduce((sum, d) => sum + d, 0);
+
+      // Save exact duration to the download metadata so OfflineStorageService finalizes with the correct total time
+      try {
+        const rawList = localStorage.getItem('cinemovie_downloads');
+        if (rawList) {
+          const list = JSON.parse(rawList);
+          const existingItem = list.find((it: any) => it.id === downloadId);
+          if (existingItem) {
+            existingItem.durationSeconds = exactDurationSeconds;
+            localStorage.setItem('cinemovie_downloads', JSON.stringify(list));
+          }
+        }
+      } catch (_) {}
+
+      await OfflineStorageService.startProgressiveWrite(downloadId, false, segmentDurations);
       this.updateStatus(`Starting segment stream download (0/${totalSegments})...`);
 
       const uint8ToBase64 = (bytes: Uint8Array): Promise<string> => {
@@ -678,6 +712,15 @@ class GlobalDownloaderService {
       const downloadedSegments: { [key: number]: Uint8Array } = {};
       let activeIndex = 0;
       let currentDownloaded = 0;
+      let totalBytesAccumulated = 0;
+
+      // HLS segments are served individually. We expose estimated total size and track actual loaded bytes.
+      const estimatedSegmentSize = 1.3 * 1024 * 1024; // Average segment size ~1.3MB
+      this.state.debugTotalBytes = totalSegments * estimatedSegmentSize;
+      this.state.debugContentLength = `${(this.state.debugTotalBytes / (1024 * 1024)).toFixed(0)} MB (Exposed)`;
+      this.state.debugLoadedBytes = 0;
+      this.notify();
+
 
       const downloadWorker = async () => {
         while (true) {
@@ -688,31 +731,41 @@ class GlobalDownloaderService {
           const segUrl = segmentUrls[idx];
           const proxiedSegUrl = buildProxyUrl(segUrl);
 
-          let retries = 3;
+          let retries = 12; // retry limit
           let success = false;
+          let retryDelay = 500; // Start with a short delay
+
           while (retries > 0 && !success) {
             if (this.cancelRequested) return;
             try {
               const res = await fetch(isNative ? segUrl : proxiedSegUrl, {
-                headers: isNative ? {
+                headers: {
                   'Referer': referer,
                   'Origin': origin
-                } : undefined
+                }
               });
-              if (!res.ok) throw new Error(`HTTP ${res.status}`);
+              if (!res.ok) {
+                if (res.status === 429) {
+                  retryDelay = Math.max(retryDelay, 2000) + Math.floor(Math.random() * 1000);
+                  throw new Error(`HTTP 429 (Rate Limited)`);
+                }
+                throw new Error(`HTTP ${res.status}`);
+              }
               const segBuf = await res.arrayBuffer();
               downloadedSegments[idx] = new Uint8Array(segBuf);
               success = true;
             } catch (e: any) {
               retries--;
               if (retries === 0) {
-                console.error(`[GlobalDownloader] Failed segment ${idx} permanently after 3 attempts:`, e);
+                console.error(`[GlobalDownloader] Failed segment ${idx} permanently:`, e);
                 throw e;
               }
-              console.warn(`[GlobalDownloader] Failed segment ${idx}, retrying (${retries} attempts left)... Error:`, e);
-              await new Promise(r => setTimeout(r, 1000));
+              console.warn(`[GlobalDownloader] Failed segment ${idx}, retrying (${retries} left) in ${retryDelay}ms...`, e.message);
+              await new Promise(r => setTimeout(r, retryDelay));
+              retryDelay = Math.min(retryDelay * 1.5, 5000); // Backoff capped at 5s
             }
           }
+
         }
       };
 
@@ -727,40 +780,41 @@ class GlobalDownloaderService {
             delete downloadedSegments[idx];
 
             try {
-              if (isNative) {
-                const segmentFilename = `seg_${String(idx).padStart(4, '0')}.ts`;
-                const segmentPath = `cinemovie_offline/${downloadId}/${segmentFilename}`;
-                const base64Data = await uint8ToBase64(bytes);
+              await OfflineStorageService.appendChunk(downloadId, bytes);
 
-                await Filesystem.writeFile({
-                  path: segmentPath,
-                  data: base64Data,
-                  directory: Directory.Data,
-                  recursive: true
-                });
-              } else {
-                await OfflineStorageService.appendChunk(downloadId, bytes);
-              }
-
+              totalBytesAccumulated += bytes.length;
+              this.state.debugLoadedBytes = totalBytesAccumulated;
+              
               currentDownloaded++;
               const percent = Math.floor((currentDownloaded / totalSegments) * 100);
-              this.updateProgress(percent);
-              this.updateStatus(`Downloading: ${currentDownloaded} / ${totalSegments} segments (${percent}%)`);
+              
+              // Throttle UI and state notifications to avoid thread-blocking context switches on every segment
+              const isLastSegment = currentDownloaded === totalSegments;
+              if (isLastSegment || currentDownloaded % 5 === 0) {
+                this.updateProgress(percent);
+                this.updateStatus(`Downloading: ${currentDownloaded} / ${totalSegments} segments (${percent}%)`);
+              }
               nextWriteIdx++;
             } catch (e) {
               console.error(`Failed to write segment ${idx}:`, e);
               throw e;
             }
           } else {
-            await new Promise(r => setTimeout(r, 50));
+            await new Promise(r => setTimeout(r, 5));
           }
         }
       };
 
-      const downloaders = Array(isNative ? 6 : 3).fill(null).map(() => downloadWorker());
+      const downloaders = Array(isNative ? 10 : 4).fill(null).map(() => downloadWorker());
       await Promise.all([...downloaders, writeLoop()]);
 
       if (this.cancelRequested) return;
+
+      // Update final diagnostics metrics to represent the exact physical byte size of the downloaded package
+      this.state.debugTotalBytes = totalBytesAccumulated;
+      this.state.debugContentLength = `${(totalBytesAccumulated / (1024 * 1024)).toFixed(1)} MB (Exposed)`;
+      this.state.debugLoadedBytes = totalBytesAccumulated;
+      this.notify();
 
       const localPlayableUrl = await OfflineStorageService.finalizeWrite(downloadId);
       const offlineSubtitles = await this.downloadOfflineSubtitles(downloadId, item, season, episode, buildProxyUrl);
@@ -919,14 +973,17 @@ class GlobalDownloaderService {
       }
     }
 
-    if (Capacitor.isNativePlatform() && resResult && resResult.subtitles && Array.isArray(resResult.subtitles)) {
-      const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem');
+    if (resResult && resResult.subtitles && Array.isArray(resResult.subtitles)) {
+      const isNativeLocal = Capacitor.isNativePlatform();
       const cleanDlId = dlId.replace(/[^a-z0-9_\-]/gi, '_');
       const dir = 'cinemovie_offline/' + cleanDlId;
 
-      try {
-        await Filesystem.mkdir({ path: dir, directory: Directory.Data, recursive: true });
-      } catch (_) {}
+      if (isNativeLocal) {
+        try {
+          const { Filesystem, Directory } = await import('@capacitor/filesystem');
+          await Filesystem.mkdir({ path: dir, directory: Directory.Data, recursive: true });
+        } catch (_) {}
+      }
 
       for (let sIdx = 0; sIdx < resResult.subtitles.length; sIdx++) {
         const sub = resResult.subtitles[sIdx];
@@ -938,27 +995,51 @@ class GlobalDownloaderService {
           const subFilename = 'sub_' + cleanLang + '.vtt';
           const subLocalPath = dir + '/' + subFilename;
           
-          const subRes = await fetchWithCapacitor(subUrl, 'text');
-          if (subRes.ok) {
-            const subText = await subRes.text();
-            await Filesystem.writeFile({
-              path: subLocalPath,
-              data: subText,
-              directory: Directory.Data,
-              encoding: Encoding.UTF8,
-              recursive: true
-            });
-            
-            const subResultUri = await Filesystem.getUri({
-              path: subLocalPath,
-              directory: Directory.Data
-            });
+          let subText = '';
+          let loadedSuccessfully = false;
+          
+          if (isNativeLocal) {
+            const subRes = await fetchWithCapacitor(subUrl, 'text');
+            if (subRes.ok) {
+              subText = await subRes.text();
+              loadedSuccessfully = true;
+            }
+          } else {
+            const subRes = await fetch(subUrl.includes('localhost') || subUrl.includes('127.0.0.1') ? subUrl : buildProxyUrl(subUrl));
+            if (subRes.ok) {
+              subText = await subRes.text();
+              loadedSuccessfully = true;
+            }
+          }
+          
+          if (loadedSuccessfully) {
+            let localFileSrc = subUrl;
+            if (isNativeLocal) {
+              const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem');
+              await Filesystem.writeFile({
+                path: subLocalPath,
+                data: subText,
+                directory: Directory.Data,
+                encoding: Encoding.UTF8,
+                recursive: true
+              });
+              
+              const subResultUri = await Filesystem.getUri({
+                path: subLocalPath,
+                directory: Directory.Data
+              });
+              localFileSrc = Capacitor.convertFileSrc(subResultUri.uri);
+            } else {
+              const blob = new Blob([subText], { type: 'text/vtt' });
+              localFileSrc = URL.createObjectURL(blob);
+            }
             
             offlineSubtitles.push({
-              file: Capacitor.convertFileSrc(subResultUri.uri),
+              file: localFileSrc,
               label: sub.label || sub.lang || 'Unknown',
               kind: 'subtitles',
-              default: sub.default || false
+              default: sub.default || false,
+              isBackup: sub.isBackup || false || (sub.label || '').includes('(Auto') || (sub.label || '').includes('(YTS') || (sub.label || '').toLowerCase().includes('opensubtitles')
             });
           }
         } catch (subErr) {

@@ -86,6 +86,8 @@ export default function SettingsPage({
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [downloadState, setDownloadState] = useState<'idle' | 'downloading' | 'installing' | 'error'>('idle');
+  const backBtnRef = React.useRef<HTMLButtonElement>(null);
+  const updateBtnRef = React.useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (showUpdateModal) {
@@ -579,7 +581,18 @@ export default function SettingsPage({
               style={{ height: 'clamp(28px, 5vh, 40px)', width: 'auto', objectFit: 'contain' }} 
             />
             <button
+              ref={backBtnRef}
               onClick={() => { triggerHaptic('light'); onNavigate('home'); }}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowRight' && updateBtnRef.current) {
+                  e.preventDefault();
+                  updateBtnRef.current.focus();
+                } else if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  const firstColEl = document.querySelector('.tv-settings-col1 .tv-focusable') as HTMLElement | null;
+                  if (firstColEl) firstColEl.focus();
+                }
+              }}
               className="tv-focusable"
               tabIndex={0}
               style={{
@@ -600,8 +613,55 @@ export default function SettingsPage({
               }}
             >
               <ChevronLeft size={18} />
-              Back to Profiles
+              {t('back_home')}
             </button>
+
+            {/* Update Button - Appears only when an update is available */}
+            {updateAvailable && (
+              <button
+                ref={updateBtnRef}
+                onClick={() => {
+                  triggerHaptic('medium');
+                  setShowUpdateModal(true);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    triggerHaptic('medium');
+                    setShowUpdateModal(true);
+                  } else if (e.key === 'ArrowLeft' && backBtnRef.current) {
+                    e.preventDefault();
+                    backBtnRef.current.focus();
+                  } else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    const firstColEl = document.querySelector('.tv-settings-col1 .tv-focusable') as HTMLElement | null;
+                    if (firstColEl) firstColEl.focus();
+                  }
+                }}
+                className="tv-focusable"
+                tabIndex={0}
+                style={{
+                  background: '#22c55e',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  color: '#ffffff',
+                  fontSize: '0.85rem',
+                  fontWeight: 900,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  cursor: 'pointer',
+                  outline: 'none',
+                  padding: '6px 14px',
+                  borderRadius: '20px',
+                  boxShadow: '0 4px 12px rgba(34, 197, 94, 0.4)',
+                  marginLeft: '12px',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <Download size={14} />
+                <span>Update Available</span>
+              </button>
+            )}
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '2vw', color: 'rgba(255,255,255,0.8)' }}>
@@ -646,7 +706,7 @@ export default function SettingsPage({
               marginBottom: '2vh',
               paddingLeft: '8px'
             }}>
-              Profiles
+              {t('profiles')}
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1vh' }}>
@@ -753,7 +813,7 @@ export default function SettingsPage({
                 }}>
                   +
                 </div>
-                <span style={{ fontWeight: 800, fontSize: 'clamp(0.85rem, 2.2vh, 1rem)' }}>Add Profile</span>
+                <span style={{ fontWeight: 800, fontSize: 'clamp(0.85rem, 2.2vh, 1rem)' }}>{t('add_profile')}</span>
               </button>
             </div>
           </div>
@@ -785,32 +845,6 @@ export default function SettingsPage({
                   objectFit: 'cover'
                 }}
               />
-              <button
-                onClick={() => { triggerHaptic('light'); setShowAvatarPicker(true); }}
-                className="tv-focusable"
-                tabIndex={0}
-                style={{
-                  position: 'absolute',
-                  bottom: '-6px',
-                  right: '-6px',
-                  width: 'clamp(28px, 5vh, 34px)',
-                  height: 'clamp(28px, 5vh, 34px)',
-                  borderRadius: '50%',
-                  background: '#1a1a1a',
-                  border: '2px solid #333',
-                  color: '#fff',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  outline: 'none'
-                }}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                  <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4z"></path>
-                </svg>
-              </button>
             </div>
 
             {/* Profile Name */}
@@ -825,50 +859,17 @@ export default function SettingsPage({
             {/* Badges */}
             <div style={{ display: 'flex', gap: '8px', marginBottom: '2vh' }}>
               <span style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', padding: '4px 8px', borderRadius: '4px', fontSize: 'clamp(0.65rem, 1.6vh, 0.75rem)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Primary Profile
+                {t('primary_profile')}
               </span>
               <span style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', padding: '4px 8px', borderRadius: '4px', fontSize: 'clamp(0.65rem, 1.6vh, 0.75rem)', fontWeight: 700 }}>
                 {activeProfile?.isKids ? 'Kids 7+' : 'Adult 18+'}
               </span>
             </div>
 
-            {/* Change Avatar button */}
-            <button
-              onClick={() => { triggerHaptic('light'); setShowAvatarPicker(true); }}
-              className="tv-focusable"
-              tabIndex={0}
-              style={{
-                width: '80%',
-                padding: '1.2vh 1.5vw',
-                background: 'rgba(255, 255, 255, 0.08)',
-                border: 'none',
-                color: '#fff',
-                borderRadius: '24px',
-                fontSize: 'clamp(0.75rem, 2vh, 0.9rem)',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                outline: 'none',
-                marginBottom: '3vh',
-                transition: 'all 0.2s'
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <circle cx="12" cy="12" r="10"></circle>
-                <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
-                <line x1="9" y1="9" x2="9.01" y2="9"></line>
-                <line x1="15" y1="9" x2="15.01" y2="9"></line>
-              </svg>
-              Change Avatar
-            </button>
-
             {/* Recently Watched on this Profile */}
             <div style={{ width: '100%', textAlign: 'left', minHeight: 0 }}>
               <div style={{ fontSize: 'clamp(0.6rem, 1.6vh, 0.72rem)', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.06em', marginBottom: '1vh' }}>
-                Recently Watched on this Profile
+                {t('recently_watched_profile')}
               </div>
               
               {realHistory.length === 0 ? (
@@ -921,18 +922,6 @@ export default function SettingsPage({
           {/* COLUMN 3: Profile Settings / SubPage Editor */}
           <div 
             className="tv-settings-right-panel no-scrollbar"
-            onKeyDown={(e) => {
-              if (e.key === 'ArrowLeft') {
-                if (activeSubPage) {
-                  e.preventDefault();
-                  setActiveSubPage(null);
-                  setTimeout(() => {
-                    const firstOpt = document.querySelector('.settings-tv-row-card') as HTMLElement | null;
-                    if (firstOpt) firstOpt.focus();
-                  }, 100);
-                }
-              }
-            }}
             style={{
               flex: 1,
               height: '100%',
@@ -945,7 +934,7 @@ export default function SettingsPage({
             {activeSubPage === null ? (
               <div style={{ width: '100%' }}>
                 <h2 style={{ margin: '0 0 2vh 0', fontSize: 'clamp(1.1rem, 3vh, 1.4rem)', fontWeight: 900 }}>
-                  Profile Settings
+                  {t('profile_settings')}
                 </h2>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1vh', width: '100%' }}>
@@ -954,6 +943,7 @@ export default function SettingsPage({
                     const optionsList = [
                       { id: 'Viewing Restrictions', label: 'Viewing Restrictions', desc: 'Set maturity rating and title restrictions', value: activeProfile?.isKids ? '7+' : '18+', icon: <Shield size={16} />, subpage: 'account' },
                       { id: 'Audio & Subtitle Preferences', label: 'Audio & Subtitle Preferences', desc: 'Choose your default language', value: 'English', icon: <Languages size={16} />, subpage: 'subtitles' },
+                      { id: 'Appearance & Language', label: 'Appearance & Language', desc: 'Change app language, theme and display options', icon: <Sliders size={16} />, subpage: 'appearance' },
                       { id: 'Playback Settings', label: 'Playback Settings', desc: 'Autoplay, previews and data usage', icon: <Play size={16} />, subpage: 'streaming' },
                       { id: 'Download Settings', label: 'Download Settings', desc: 'Quality and storage for downloads', value: 'Standard', icon: <Download size={16} />, subpage: 'streaming' },
                       { id: 'Viewing Activity', label: 'Viewing Activity', desc: 'See and manage your watch history', icon: <Eye size={16} />, subpage: 'statistics' },

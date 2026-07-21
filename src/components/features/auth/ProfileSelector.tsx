@@ -39,12 +39,21 @@ export default function ProfileSelector({ onProfileSelected }: ProfileSelectorPr
 
   // TV Mode variables
   const isTVMode = typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
+  const changeAvatarRowRef = useRef<HTMLDivElement>(null);
   const [backgroundMediaList, setBackgroundMediaList] = useState<any[]>([]);
   const [currentMediaIdx, setCurrentMediaIdx] = useState<number>(0);
   const [activeProfileIdx, setActiveProfileIdx] = useState<number>(0);
   const [isFading, setIsFading] = useState<boolean>(false);
   const [activeMediaLogo, setActiveMediaLogo] = useState<string | null>(null);
   const [selectingProfile, setSelectingProfile] = useState<Profile | null>(null);
+
+  // States for TV Mode inline settings panel
+  const [selectedProfileToManage, setSelectedProfileToManage] = useState<Profile | null>(null);
+  const [isEditingNameInline, setIsEditingNameInline] = useState(false);
+  const [isSelectingAvatarInline, setIsSelectingAvatarInline] = useState(false);
+  const [isSettingPinInline, setIsSettingPinInline] = useState(false);
+  const [isNameInputFocused, setIsNameInputFocused] = useState(false);
+  const [isPinInputFocused, setIsPinInputFocused] = useState(false);
 
   const generateAvatarOptions = (currentAvatar?: string) => {
     const set = new Set<number>();
@@ -93,8 +102,32 @@ export default function ProfileSelector({ onProfileSelected }: ProfileSelectorPr
     loadProfiles();
   }, []);
 
-  const loadProfiles = async () => {
-    setLoading(true);
+  useEffect(() => {
+    if (profiles.length > 0 && !selectedProfileToManage) {
+      setSelectedProfileToManage(profiles[0]);
+    }
+  }, [profiles, selectedProfileToManage]);
+
+  useEffect(() => {
+    if (!isTVMode || !isManaging) return;
+    if (activeProfileIdx >= 0 && activeProfileIdx < profiles.length) {
+      const target = profiles[activeProfileIdx];
+      setSelectedProfileToManage(target);
+      setNewProfileName(target.name);
+      setNewProfileIsKids(target.isKids);
+      setSelectedAvatar(target.avatar);
+      if (target.pin && target.pin.length === 4) {
+        setNewProfileHasPin(true);
+        setNewProfilePin(target.pin);
+      } else {
+        setNewProfileHasPin(false);
+        setNewProfilePin('');
+      }
+    }
+  }, [activeProfileIdx, isManaging, profiles, isTVMode]);
+
+  const loadProfiles = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       let data = await ProfileService.getProfiles();
       const isGuestMode = localStorage.getItem('cinemovie_is_guest') === 'true';
@@ -128,7 +161,7 @@ export default function ProfileSelector({ onProfileSelected }: ProfileSelectorPr
         setMissingTables(true);
       }
     }
-    setLoading(false);
+    if (!silent) setLoading(false);
   };
 
   const handleAddProfile = async () => {
@@ -153,6 +186,15 @@ export default function ProfileSelector({ onProfileSelected }: ProfileSelectorPr
         console.error(e);
     }
     setAddingLoading(false);
+  };
+
+  const handleUpdateProfileField = async (profileId: string, fields: any) => {
+    try {
+      await ProfileService.updateProfile(profileId, fields);
+      await loadProfiles(true);
+    } catch (e) {
+      console.error('Failed to update profile field:', e);
+    }
   };
 
   const handleUpdateProfile = async () => {
@@ -441,8 +483,257 @@ alter table profiles add column if not exists pin text check (pin ~ '^[0-9]{4}$'
      );
   }
 
+  if (selectingProfile) {
+    return (
+      <div style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 15000,
+        background: '#000000',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: '#fff',
+        fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        animation: 'fadeIn 0.3s ease-in-out'
+      }}>
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '24px',
+          animation: 'zoomInProfile 2.2s cubic-bezier(0.16, 1, 0.3, 1) forwards'
+        }}>
+          <div style={{
+            width: '120px',
+            height: '120px',
+            borderRadius: '28px',
+            overflow: 'hidden',
+            border: '3px solid #ffffff',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.8)'
+          }}>
+            <img src={selectingProfile.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          </div>
+          <h2 style={{ fontSize: '1.8rem', fontWeight: 900, margin: 0, letterSpacing: '-0.5px' }}>
+            Welcome, {selectingProfile.name}
+          </h2>
+          <div style={{
+            width: '32px',
+            height: '32px',
+            border: '3.5px solid rgba(255,255,255,0.1)',
+            borderTopColor: '#ffffff',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite'
+          }} />
+        </div>
+        <style>{`
+          @keyframes zoomInProfile {
+            0% {
+              transform: scale(0.9);
+              opacity: 0;
+            }
+            15% {
+              transform: scale(1);
+              opacity: 1;
+            }
+            85% {
+              transform: scale(1.05);
+              opacity: 1;
+            }
+            100% {
+              transform: scale(1.2);
+              opacity: 0;
+            }
+          }
+        `}</style>
+      </div>
+    );
+  }
+
   // 1-0 Numeric Pad locks screen
   if (unlockProfile) {
+    if (isTVMode) {
+      return (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 11000,
+          background: '#09090b',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px',
+          color: '#fff',
+          fontFamily: 'system-ui, -apple-system, sans-serif'
+        }}>
+          <StaticStyles />
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '12px',
+            marginBottom: '24px',
+            textAlign: 'center'
+          }}>
+            <div style={{
+              width: '74px',
+              height: '74px',
+              borderRadius: '16px',
+              overflow: 'hidden',
+              border: '2.5px solid rgba(255,255,255,0.15)',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.5)'
+            }}>
+              <img src={unlockProfile.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            </div>
+            <h2 style={{ fontSize: '1.6rem', fontWeight: 900, margin: '4px 0 2px 0' }}>Profile Locked</h2>
+            <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem', margin: 0 }}>
+              Enter PIN for <strong>{unlockProfile.name}</strong>
+            </p>
+          </div>
+
+          {/* PIN circle dots */}
+          <div 
+            className={pinError ? 'shake' : ''}
+            style={{
+              display: 'flex',
+              gap: '16px',
+              marginBottom: '32px',
+              transition: 'transform 0.1s ease'
+            }}
+          >
+            {[0, 1, 2, 3].map((idx) => (
+              <div
+                key={idx}
+                style={{
+                  width: '14px',
+                  height: '14px',
+                  borderRadius: '50%',
+                  border: '2px solid rgba(255,255,255,0.4)',
+                  background: enteredPin.length > idx 
+                    ? (pinError ? '#ef4444' : '#ffffff') 
+                    : 'transparent',
+                  boxShadow: enteredPin.length > idx && !pinError ? '0 0 10px #fff' : 'none',
+                  transition: 'all 0.15s cubic-bezier(0.16, 1, 0.3, 1)'
+                }}
+              />
+            ))}
+          </div>
+
+          {/* Horizontal Bar for TV Users (0-9 + Backspace + Cancel) */}
+          <div style={{
+            display: 'flex',
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '12px',
+            width: '100%',
+            maxWidth: '650px',
+            flexWrap: 'wrap'
+          }}>
+            {['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'].map((num) => (
+              <button
+                key={num}
+                onClick={() => handlePinDigit(num)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handlePinDigit(num);
+                  }
+                }}
+                tabIndex={0}
+                className="tv-focusable"
+                style={{
+                  width: '46px',
+                  height: '46px',
+                  borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1.5px solid rgba(255,255,255,0.12)',
+                  color: '#fff',
+                  fontSize: '1.2rem',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  outline: 'none',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                {num}
+              </button>
+            ))}
+
+            {/* Backspace Button */}
+            <button
+              onClick={handlePinDelete}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handlePinDelete();
+                }
+              }}
+              tabIndex={0}
+              className="tv-focusable"
+              style={{
+                width: '46px',
+                height: '46px',
+                borderRadius: '50%',
+                background: 'rgba(255,255,255,0.06)',
+                border: '1.5px solid rgba(255,255,255,0.12)',
+                color: '#fff',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                outline: 'none',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/>
+                <line x1="18" y1="9" x2="12" y2="15"/>
+                <line x1="12" y1="9" x2="18" y2="15"/>
+              </svg>
+            </button>
+
+            {/* Cancel Button */}
+            <button
+              onClick={() => { triggerHaptic('light'); setUnlockProfile(null); }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  triggerHaptic('light');
+                  setUnlockProfile(null);
+                }
+              }}
+              tabIndex={0}
+              className="tv-focusable"
+              style={{
+                padding: '8px 18px',
+                borderRadius: '20px',
+                background: 'rgba(255,255,255,0.06)',
+                border: '1.5px solid rgba(255,255,255,0.12)',
+                color: 'rgba(255,255,255,0.6)',
+                fontSize: '0.85rem',
+                fontWeight: 800,
+                cursor: 'pointer',
+                outline: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: '46px',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div style={{
         position: 'fixed',
@@ -608,11 +899,14 @@ alter table profiles add column if not exists pin text check (pin ~ '^[0-9]{4}$'
       </div>
     );
   }
-
   const activeMedia = backgroundMediaList[currentMediaIdx];  
   
   // Render TV-optimized split layout
   if (isTVMode) {
+    const activeProfile = profiles[activeProfileIdx];
+    const isAddingProfileFocused = activeProfileIdx === profiles.length;
+    const disableOthers = isSelectingAvatarInline;
+
     return (
       <div 
         className="profile-selector-container"
@@ -622,443 +916,15 @@ alter table profiles add column if not exists pin text check (pin ~ '^[0-9]{4}$'
           zIndex: 10000,
           background: '#000000',
           display: 'flex',
-          flexDirection: 'row',
+          flexDirection: 'column',
           overflow: 'hidden',
           fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
         }}
       >
         <StaticStyles />
 
-        {/* Fullscreen zoom-to-center select profile transition overlay */}
-        {selectingProfile && (
-          <div style={{
-            position: 'fixed',
-            inset: 0,
-            background: '#000000',
-            zIndex: 200,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            animation: 'fadeIn 0.3s ease-out'
-          }}>
-            <div style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '24px',
-              animation: 'zoomToCenterFadeOut 2.2s cubic-bezier(0.16, 1, 0.3, 1) forwards'
-            }}>
-              <div style={{
-                width: '120px',
-                height: '120px',
-                borderRadius: '16px',
-                overflow: 'hidden',
-                boxShadow: '0 0 0 4px #ffffff, 0 20px 50px rgba(0,0,0,0.9)'
-              }}>
-                <img 
-                  src={selectingProfile.avatar} 
-                  alt="" 
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                />
-              </div>
-              <span style={{
-                fontSize: '1.8rem',
-                fontWeight: 900,
-                color: '#ffffff',
-                textShadow: '0 4px 12px rgba(0,0,0,0.6)'
-              }}>
-                {selectingProfile.name}
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Left Side: Dark Profiles Panel */}
-        <div style={{
-          width: '38%',
-          minWidth: '420px',
-          height: '100%',
-          background: 'linear-gradient(to right, #000000 65%, rgba(0,0,0,0.92) 85%, transparent 100%)',
-          zIndex: 15,
-          padding: '60px 40px',
-          boxSizing: 'border-box',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          alignItems: 'flex-start',
-          position: 'relative'
-        }}>
-          {/* Brand Logo */}
-          <div style={{
-            position: 'absolute',
-            top: '55px',
-            left: '40px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px'
-          }}>
-            <img 
-              src="/cinemovie-logo.png" 
-              alt="CineMovie" 
-              style={{ height: '32px', width: 'auto', objectFit: 'contain' }}
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-              }}
-            />
-          </div>
-
-          {!isAdding && !editingProfile ? (
-            <>
-              <h1 style={{ fontSize: '2.5rem', fontWeight: 950, color: '#ffffff', margin: '0 0 8px 0', letterSpacing: '-1.5px' }}>
-                {isManaging ? 'Manage Profiles' : "Who's watching?"}
-              </h1>
-              <p style={{ fontSize: '0.92rem', color: 'rgba(255,255,255,0.45)', margin: '0 0 32px 0', fontWeight: 600 }}>
-                Select a profile to begin your customized home screen.
-              </p>
-
-              {/* Profiles Row/Grid */}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', width: '100%' }}>
-                {profiles.map((profile, idx) => {
-                  const isFocused = activeProfileIdx === idx;
-                  return (
-                    <div 
-                      key={profile.id}
-                      onClick={(e) => isManaging ? openEditProfile(profile, e) : handleSelect(profile)}
-                      onFocus={() => setActiveProfileIdx(idx)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          if (isManaging) {
-                            openEditProfile(profile, e as any);
-                          } else {
-                            handleSelect(profile);
-                          }
-                        }
-                      }}
-                      tabIndex={0}
-                      className="tv-focusable"
-                      style={{
-                        position: 'relative',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: '12px',
-                        cursor: 'pointer',
-                        padding: '12px',
-                        borderRadius: '16px',
-                        background: isFocused ? 'rgba(255,255,255,0.08)' : 'transparent',
-                        border: isFocused ? '1.5px solid rgba(255,255,255,0.2)' : '1.5px solid transparent',
-                        transition: 'all 0.2s ease',
-                        outline: 'none',
-                        width: '100px'
-                      }}
-                    >
-                      <div style={{
-                        width: '74px',
-                        height: '74px',
-                        borderRadius: '14px',
-                        overflow: 'hidden',
-                        position: 'relative',
-                        boxShadow: isFocused ? '0 10px 30px rgba(0,0,0,0.8)' : '0 4px 12px rgba(0,0,0,0.4)'
-                      }}>
-                        <img 
-                          src={profile.avatar} 
-                          alt="" 
-                          style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                        />
-                        {isManaging && (
-                          <div style={{
-                            position: 'absolute',
-                            inset: 0,
-                            background: 'rgba(0,0,0,0.6)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3">
-                              <path d="M12 20h9"/>
-                              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
-                            </svg>
-                          </div>
-                        )}
-                      </div>
-                      
-                      {profile.isKids && (
-                        <div style={{
-                          position: 'absolute',
-                          top: '4px',
-                          right: '4px',
-                          background: 'rgba(255,255,255,0.15)',
-                          border: '1.5px solid rgba(255,255,255,0.3)',
-                          color: '#fff',
-                          fontSize: '0.62rem',
-                          fontWeight: 900,
-                          padding: '1px 6px',
-                          borderRadius: '8px',
-                          letterSpacing: '0.05em'
-                        }}>
-                          KIDS
-                        </div>
-                      )}
-
-                      {profile.pin && (
-                        <div style={{
-                          position: 'absolute',
-                          top: '4px',
-                          left: '4px',
-                          background: 'rgba(0,0,0,0.7)',
-                          color: '#fff',
-                          padding: '3px',
-                          borderRadius: '6px',
-                          zIndex: 10
-                        }}>
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                          </svg>
-                        </div>
-                      )}
-
-                      <span style={{
-                        fontSize: '0.9rem',
-                        fontWeight: 800,
-                        color: isFocused ? '#ffffff' : 'rgba(255,255,255,0.6)',
-                        textAlign: 'center',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        width: '100%'
-                      }}>
-                        {profile.name}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Action Row */}
-              <div style={{ display: 'flex', gap: '12px', width: '100%', marginTop: '36px', boxSizing: 'border-box' }}>
-                {profiles.length > 0 && localStorage.getItem('cinemovie_is_guest') !== 'true' && (() => {
-                  const isFocused = activeProfileIdx === profiles.length;
-                  return (
-                    <button
-                      onFocus={() => setActiveProfileIdx(profiles.length)}
-                      onClick={() => { triggerHaptic('medium'); setIsManaging(!isManaging); }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          triggerHaptic('medium');
-                          setIsManaging(!isManaging);
-                        }
-                      }}
-                      tabIndex={0}
-                      className="tv-focusable"
-                      style={{
-                        flex: 1,
-                        padding: '10px 16px',
-                        background: isManaging ? '#ffffff' : 'rgba(255,255,255,0.06)',
-                        color: isManaging ? '#000000' : 'rgba(255,255,255,0.6)',
-                        border: isFocused ? '1.5px solid #ffffff' : '1.5px solid rgba(255,255,255,0.1)',
-                        borderRadius: '12px',
-                        fontSize: '0.85rem',
-                        fontWeight: 900,
-                        cursor: 'pointer',
-                        letterSpacing: '0.04em',
-                        textTransform: 'uppercase',
-                        transition: 'all 0.2s ease',
-                        outline: 'none'
-                      }}
-                    >
-                      {isManaging ? 'Finish' : 'Manage'}
-                    </button>
-                  );
-                })()}
-
-                {!(localStorage.getItem('cinemovie_is_guest') === 'true' && profiles.length >= 1) && (() => {
-                  const isFocused = activeProfileIdx === (profiles.length + 1);
-                  return (
-                    <button
-                      onFocus={() => setActiveProfileIdx(profiles.length + 1)}
-                      onClick={() => { 
-                        triggerHaptic('light'); 
-                        setIsAdding(true); 
-                        setNewProfileName('');
-                        setNewProfileIsKids(false);
-                        setNewProfileHasPin(false);
-                        setNewProfilePin('');
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          triggerHaptic('light');
-                          setIsAdding(true);
-                        }
-                      }}
-                      tabIndex={0}
-                      className="tv-focusable"
-                      style={{
-                        width: '42px',
-                        height: '42px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: 'rgba(255,255,255,0.06)',
-                        border: isFocused ? '1.5px solid #ffffff' : '1.5px solid rgba(255,255,255,0.1)',
-                        borderRadius: '12px',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease',
-                        outline: 'none',
-                        flexShrink: 0
-                      }}
-                    >
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
-                        <line x1="12" y1="5" x2="12" y2="19"></line>
-                        <line x1="5" y1="12" x2="19" y2="12"></line>
-                      </svg>
-                    </button>
-                  );
-                })()}
-              </div>
-            </>
-          ) : (
-            // Add / Edit Profile View in TV Mode
-            <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <h2 style={{ fontSize: '2rem', fontWeight: 900, color: '#fff', margin: 0 }}>
-                {isAdding ? 'Create Profile' : 'Edit Profile'}
-              </h2>
-              
-              <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
-                <div style={{ width: '80px', height: '80px', borderRadius: '16px', overflow: 'hidden' }}>
-                  <img src={selectedAvatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                </div>
-                <input
-                  autoFocus
-                  type="text"
-                  value={newProfileName}
-                  onChange={(e) => setNewProfileName(e.target.value)}
-                  placeholder="Profile Name"
-                  style={{
-                    flex: 1,
-                    padding: '12px 16px',
-                    borderRadius: '12px',
-                    background: '#141414',
-                    border: '1px solid rgba(255,255,255,0.15)',
-                    color: '#fff',
-                    fontSize: '1rem',
-                    fontWeight: 700,
-                    outline: 'none'
-                  }}
-                />
-              </div>
-
-              {/* Kids Mode Toggle */}
-              <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', userSelect: 'none' }}>
-                <input 
-                  type="checkbox" 
-                  checked={newProfileIsKids}
-                  onChange={(e) => setNewProfileIsKids(e.target.checked)}
-                  style={{ width: '20px', height: '20px', accentColor: '#fff' }}
-                />
-                <span style={{ fontSize: '1rem', fontWeight: 600 }}>Kids Mode (Filtered Safe Content)</span>
-              </label>
-
-              {/* PIN lock input */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', userSelect: 'none' }}>
-                  <input 
-                    type="checkbox" 
-                    checked={newProfileHasPin}
-                    onChange={(e) => setNewProfileHasPin(e.target.checked)}
-                    style={{ width: '20px', height: '20px', accentColor: '#fff' }}
-                  />
-                  <span style={{ fontSize: '1rem', fontWeight: 600 }}>Require 4-digit PIN lock</span>
-                </label>
-
-                {newProfileHasPin && (
-                  <input
-                    type="text"
-                    maxLength={4}
-                    value={newProfilePin}
-                    onChange={(e) => {
-                      const val = e.target.value.replace(/[^0-9]/g, '');
-                      if (val.length <= 4) setNewProfilePin(val);
-                    }}
-                    placeholder="Enter 4-digit PIN"
-                    style={{
-                      padding: '10px 14px',
-                      borderRadius: '10px',
-                      background: '#141414',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      color: '#fff',
-                      fontSize: '0.9rem',
-                      width: '140px',
-                      outline: 'none',
-                      letterSpacing: '0.2em',
-                      fontWeight: 'bold',
-                      textAlign: 'center'
-                    }}
-                  />
-                )}
-              </div>
-
-              <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
-                <button
-                  onClick={() => { triggerHaptic('light'); setIsAdding(false); setEditingProfile(null); }}
-                  style={{
-                    flex: 1,
-                    padding: '12px',
-                    background: 'rgba(255,255,255,0.06)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderRadius: '12px',
-                    color: '#fff',
-                    fontWeight: 700,
-                    cursor: 'pointer'
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={isAdding ? handleAddProfile : handleUpdateProfile}
-                  disabled={!newProfileName.trim() || (newProfileHasPin && newProfilePin.length !== 4)}
-                  style={{
-                    flex: 2,
-                    padding: '12px',
-                    background: '#fff',
-                    color: '#000',
-                    border: 'none',
-                    borderRadius: '12px',
-                    fontWeight: 900,
-                    cursor: 'pointer',
-                    opacity: !newProfileName.trim() || (newProfileHasPin && newProfilePin.length !== 4) ? 0.4 : 1
-                  }}
-                >
-                  Save Profile
-                </button>
-              </div>
-
-              {!isAdding && editingProfile && (
-                <button
-                  onClick={() => setDeleteProfileId(editingProfile.id)}
-                  style={{
-                    padding: '12px',
-                    background: 'rgba(239, 68, 68, 0.1)',
-                    border: '1px solid rgba(239, 68, 68, 0.3)',
-                    borderRadius: '12px',
-                    color: '#ef4444',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    marginTop: '8px'
-                  }}
-                >
-                  Delete Profile
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Right Side: Rotating Backdrop Poster */}
-        <div style={{ flex: 1, height: '100%', position: 'relative', background: '#000000', zIndex: 10 }}>
+        {/* Full-width rotating background movie backdrop */}
+        <div style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 1, background: '#000000' }}>
           {activeMedia ? (
             <div key={activeMedia.id} style={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }}>
               <img
@@ -1068,80 +934,927 @@ alter table profiles add column if not exists pin text check (pin ~ '^[0-9]{4}$'
                   width: '100%',
                   height: '100%',
                   objectFit: 'cover',
-                  opacity: isFading ? 0 : 0.75,
+                  opacity: isFading ? 0 : 0.45,
                   transition: 'opacity 0.8s ease-in-out'
                 }}
               />
-              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, #000000 5%, rgba(0,0,0,0.15) 35%, transparent 100%)' }} />
-              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 55%, rgba(0,0,0,0.95) 100%)' }} />
             </div>
           ) : (
-            <div style={{ width: '100%', height: '100%', background: 'radial-gradient(circle at 75% 50%, rgba(255, 255, 255, 0.03) 0%, transparent 60%)' }} />
+            <div style={{ width: '100%', height: '100%', background: 'radial-gradient(circle at 75% 50%, rgba(255, 255, 255, 0.02) 0%, transparent 60%)' }} />
           )}
+          {/* Left-to-right black gradient vignette */}
+          <div style={{
+            position: 'absolute', inset: 0,
+            background: 'linear-gradient(to right, #040405 0%, #040405 35%, rgba(4, 4, 5, 0.85) 60%, rgba(4, 4, 5, 0.3) 85%, transparent 100%)',
+            pointerEvents: 'none'
+          }} />
+          {/* Bottom vignette */}
+          <div style={{
+            position: 'absolute', inset: 0,
+            background: 'linear-gradient(to bottom, transparent 40%, rgba(4, 4, 5, 0.95) 100%)',
+            pointerEvents: 'none'
+          }} />
         </div>
 
-        {/* Delete Confirmation Modal */}
-        {deleteProfileId && (
-          <div style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.6)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 100000,
-            padding: '20px'
-          }}>
-            <div style={{
-              maxWidth: '380px',
-              width: '100%',
-              background: 'rgba(20, 20, 20, 0.95)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '24px',
-              padding: '24px',
-              textAlign: 'center'
-            }}>
-              <h3 style={{ margin: '0 0 12px', fontSize: '1.2rem', fontWeight: 900, color: '#fff' }}>Delete Profile?</h3>
-              <p style={{ margin: '0 0 20px 0', fontSize: '0.85rem', color: 'rgba(255,255,255,0.5)', lineHeight: 1.4 }}>
-                Are you sure you want to delete this profile? This action is permanent.
-              </p>
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <button
-                  onClick={() => setDeleteProfileId(null)}
-                  style={{
-                    flex: 1,
-                    padding: '12px',
-                    background: 'rgba(255, 255, 255, 0.05)',
-                    border: '1px solid rgba(255, 255, 255, 0.08)',
-                    borderRadius: '14px',
-                    color: '#fff',
-                    fontWeight: 800,
-                    cursor: 'pointer'
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={executeDeleteProfile}
-                  style={{
-                    flex: 1,
-                    padding: '12px',
-                    background: '#e11d48',
-                    border: 'none',
-                    borderRadius: '14px',
-                    color: '#fff',
-                    fontWeight: 900,
-                    cursor: 'pointer'
-                  }}
-                >
-                  Delete
-                </button>
-              </div>
+        {/* Main Content Area */}
+        <div style={{
+          position: 'relative',
+          zIndex: 10,
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'flex-start',
+          paddingLeft: '8vw',
+          paddingRight: '8vw',
+          boxSizing: 'border-box',
+          overflow: 'hidden'
+        }}>
+          <div style={{ width: '100%', maxWidth: '900px', height: isManaging ? '92%' : 'auto', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            {/* Premium Brand Logo in TV Mode */}
+            <div style={{ marginBottom: '16px', userSelect: 'none' }}>
+              <img 
+                src="/cinemovie-logo.png" 
+                alt="CineMovie" 
+                style={{ height: '48px', width: 'auto', objectFit: 'contain', filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.6))' }}
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
             </div>
+
+            <h1 style={{ fontSize: '1.7rem', fontWeight: 900, color: '#ffffff', margin: 0, letterSpacing: '-1px' }}>
+              {isManaging ? 'Manage Profiles' : "Who's watching?"}
+            </h1>
+            <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', margin: '0 0 14px 0', fontWeight: 500 }}>
+              {isManaging ? 'Add, edit or delete profiles. You can have up to 5 profiles.' : 'Choose a profile to continue to Cinemovie'}
+            </p>
+
+            {/* Profiles horizontal row */}
+            <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '14px', flexWrap: 'wrap', width: '100%', margin: '0 0 14px 0' }}>
+              {profiles.map((profile, idx) => {
+                const isFocused = activeProfileIdx === idx;
+                return (
+                  <div 
+                    key={profile.id}
+                    onClick={() => {
+                      if (!isManaging) {
+                        handleSelect(profile);
+                      }
+                    }}
+                    onFocus={() => {
+                      setActiveProfileIdx(idx);
+                      setSelectedProfileToManage(profile);
+                    }}
+                    tabIndex={disableOthers ? -1 : 0}
+                    className={disableOthers ? "profile-item profile-avatar-name" : "profile-item profile-avatar-name tv-focusable"}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '8px',
+                      cursor: 'pointer',
+                      outline: 'none',
+                      transition: 'transform 0.2s ease',
+                      transform: isFocused ? 'scale(1.05)' : 'scale(1)',
+                    }}
+                  >
+                    {/* Profile Card Container with outline styling */}
+                    <div style={{
+                      width: '92px',
+                      height: '92px',
+                      borderRadius: '14px',
+                      overflow: 'hidden',
+                      position: 'relative',
+                      background: '#121214',
+                      border: isFocused ? '3px solid #ffffff' : '3px solid transparent',
+                      boxShadow: isFocused ? '0 10px 25px rgba(255, 255, 255, 0.25)' : '0 8px 20px rgba(0,0,0,0.6)',
+                      transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+                      boxSizing: 'border-box'
+                    }}>
+                      <img 
+                        src={profile.avatar} 
+                        alt="" 
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} 
+                      />
+
+                      {/* Lock Icon */}
+                      {profile.pin && (
+                        <div style={{
+                          position: 'absolute',
+                          top: '8px',
+                          left: '8px',
+                          background: 'rgba(0,0,0,0.7)',
+                          color: '#fff',
+                          padding: '3px',
+                          borderRadius: '5px',
+                          zIndex: 10,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                          </svg>
+                        </div>
+                      )}
+
+                      {/* Kids Badge */}
+                      {profile.isKids && (
+                        <div style={{
+                          position: 'absolute',
+                          top: '8px',
+                          right: '8px',
+                          background: 'rgba(239, 68, 68, 0.95)',
+                          color: '#fff',
+                          fontSize: '0.58rem',
+                          fontWeight: 900,
+                          padding: '2px 5px',
+                          borderRadius: '4px',
+                          letterSpacing: '0.04em',
+                          zIndex: 10
+                        }}>
+                          KIDS
+                        </div>
+                      )}
+
+                      {/* Pencil Edit overlay icon inside card */}
+                      {isManaging && (
+                        <div style={{
+                          position: 'absolute',
+                          inset: 0,
+                          background: 'rgba(0,0,0,0.5)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          zIndex: 12
+                        }}>
+                          <div style={{
+                            background: 'rgba(0,0,0,0.6)',
+                            borderRadius: '50%',
+                            padding: '6px',
+                            border: '1.5px solid rgba(255,255,255,0.3)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3">
+                              <path d="M12 20h9"/>
+                              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                            </svg>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                      <span style={{
+                        fontSize: '0.8rem',
+                        fontWeight: isFocused ? 800 : 500,
+                        color: isFocused ? '#ffffff' : 'rgba(255,255,255,0.6)',
+                        textAlign: 'center',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        width: '90px',
+                        transition: 'color 0.2s ease'
+                      }}>
+                        {profile.name}
+                      </span>
+                      {isManaging && (
+                        <span style={{
+                          fontSize: '0.62rem',
+                          fontWeight: 700,
+                          color: idx === 0 ? '#ef4444' : 'rgba(255,255,255,0.4)',
+                        }}>
+                          {idx === 0 ? 'Main Profile' : 'Edit Profile'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Add Profile Card in the row */}
+              {isManaging && !(localStorage.getItem('cinemovie_is_guest') === 'true' && profiles.length >= 1) && (() => {
+                const isFocused = activeProfileIdx === profiles.length;
+                return (
+                  <div 
+                    onClick={() => { 
+                      triggerHaptic('light'); 
+                      setIsAdding(true); 
+                      setNewProfileName('');
+                      setNewProfileIsKids(false);
+                      setNewProfileHasPin(false);
+                      setNewProfilePin('');
+                    }}
+                    onFocus={() => {
+                      setActiveProfileIdx(profiles.length);
+                      setSelectedProfileToManage(null);
+                    }}
+                    tabIndex={disableOthers ? -1 : 0}
+                    className={disableOthers ? "" : "tv-focusable"}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '8px',
+                      cursor: 'pointer',
+                      outline: 'none',
+                      transition: 'transform 0.2s ease',
+                      transform: isFocused ? 'scale(1.05)' : 'scale(1)',
+                    }}
+                  >
+                    <div style={{
+                      width: '92px',
+                      height: '92px',
+                      borderRadius: '14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: isFocused ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                      border: isFocused ? '3px solid #ffffff' : '2px dashed rgba(255, 255, 255, 0.25)',
+                      boxShadow: isFocused ? '0 10px 25px rgba(255,255,255,0.2)' : 'none',
+                      transition: 'all 0.2s ease',
+                      boxSizing: 'border-box'
+                    }}>
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                      </svg>
+                    </div>
+                    <span style={{
+                      fontSize: '0.8rem',
+                      fontWeight: isFocused ? 800 : 500,
+                      color: isFocused ? '#ffffff' : 'rgba(255,255,255,0.6)',
+                      transition: 'color 0.2s ease'
+                    }}>
+                      Add Profile
+                    </span>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* If NOT in managing mode: Show the Manage Profiles button */}
+            {!isManaging && profiles.length > 0 && localStorage.getItem('cinemovie_is_guest') !== 'true' && (() => {
+              const isFocused = activeProfileIdx === (profiles.length + 1);
+              return (
+                <div style={{ marginTop: '8px' }}>
+                  <button
+                    onFocus={() => { setActiveProfileIdx(profiles.length + 1); }}
+                    onClick={() => { triggerHaptic('medium'); setIsManaging(true); }}
+                    tabIndex={0}
+                    className="tv-focusable"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '10px 20px',
+                      background: 'transparent',
+                      color: '#ffffff',
+                      border: isFocused ? '1.5px solid #ffffff' : '1.5px solid rgba(255,255,255,0.25)',
+                      borderRadius: '12px',
+                      fontSize: '0.82rem',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      outline: 'none',
+                      boxShadow: isFocused ? '0 0 15px rgba(255,255,255,0.2)' : 'none'
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ transform: 'translateY(-0.5px)' }}>
+                      <path d="M12 20h9"/>
+                      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                    </svg>
+                    <span>Manage Profiles</span>
+                  </button>
+                </div>
+              );
+            })()}
+
+            {isManaging && (
+              <div style={{ width: '100%', flex: 1, minHeight: 0, overflowY: (isAddingProfileFocused || isSelectingAvatarInline) ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', gap: '20px', paddingRight: '8px' }}>
+                <div style={{ width: '100%', height: '1px', background: 'rgba(255,255,255,0.1)', margin: '12px 0 4px 0' }} />
+                
+                {/* ── Case A: Focused on Add Profile card (Inline Creation Form) ── */}
+                {isAddingProfileFocused ? (
+                  <div style={{ display: 'flex', flexDirection: 'row', gap: '24px', alignItems: 'flex-start', width: '100%', padding: 0, boxSizing: 'border-box' }}>
+                    {/* Left Column: Form Details & Actions */}
+                    <div style={{ flex: 1.2, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <h3 style={{ fontSize: '1rem', fontWeight: 900, color: '#fff', margin: '0 0 2px 12px' }}>Create New Profile</h3>
+                      
+                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                        <div style={{ width: '40px', height: '40px', borderRadius: '8px', overflow: 'hidden', border: '1.5px solid rgba(255,255,255,0.15)', flexShrink: 0 }}>
+                          <img src={selectedAvatar || '/avatars/avatar-1.jpg'} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        </div>
+                        <input 
+                          type="text"
+                          tabIndex={0}
+                          value={newProfileName}
+                          onChange={(e) => setNewProfileName(e.target.value)}
+                          onFocus={() => setIsNameInputFocused(true)}
+                          onBlur={() => setIsNameInputFocused(false)}
+                          placeholder="Profile Name"
+                          className="profile-input-tv tv-focusable"
+                          style={{
+                            flex: 1,
+                            padding: '8px 12px',
+                            borderRadius: '8px',
+                            background: '#141414',
+                            border: isNameInputFocused ? '1.5px solid #ffffff' : '1.5px solid rgba(255,255,255,0.15)',
+                            color: '#fff',
+                            fontSize: '0.82rem',
+                            fontWeight: 700,
+                            outline: 'none',
+                            boxShadow: isNameInputFocused ? '0 0 15px rgba(255,255,255,0.2)' : 'none'
+                          }}
+                        />
+                      </div>
+
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', margin: '4px 0', alignItems: 'center' }}>
+                        <label 
+                          tabIndex={0}
+                          className="tv-focusable"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setNewProfileIsKids(!newProfileIsKids);
+                            }
+                          }}
+                          style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', color: '#fff', fontSize: '0.78rem', fontWeight: 600, outline: 'none', padding: '2px 6px', borderRadius: '4px' }}
+                        >
+                          <input type="checkbox" checked={newProfileIsKids} readOnly style={{ width: '14px', height: '14px', accentColor: '#fff', pointerEvents: 'none' }} />
+                          Kids Profile
+                        </label>
+                        <label 
+                          tabIndex={0}
+                          className="tv-focusable"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setNewProfileHasPin(!newProfileHasPin);
+                            }
+                          }}
+                          style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', color: '#fff', fontSize: '0.78rem', fontWeight: 600, outline: 'none', padding: '2px 6px', borderRadius: '4px' }}
+                        >
+                          <input type="checkbox" checked={newProfileHasPin} readOnly style={{ width: '14px', height: '14px', accentColor: '#fff', pointerEvents: 'none' }} />
+                          Require PIN
+                        </label>
+                        {newProfileHasPin && (
+                          <input 
+                            type="text" 
+                            maxLength={4} 
+                            tabIndex={0}
+                            value={newProfilePin} 
+                            onChange={(e) => setNewProfilePin(e.target.value.replace(/[^0-9]/g, ''))} 
+                            onFocus={() => setIsPinInputFocused(true)}
+                            onBlur={() => setIsPinInputFocused(false)}
+                            placeholder="PIN"
+                            className="profile-input-tv tv-focusable"
+                            style={{ 
+                              width: '80px', 
+                              padding: '6px 8px', 
+                              borderRadius: '6px', 
+                              background: '#141414', 
+                              border: isPinInputFocused ? '1.5px solid #ffffff' : '1.5px solid rgba(255,255,255,0.15)', 
+                              color: '#fff', 
+                              textAlign: 'center', 
+                              fontSize: '0.9rem', 
+                              letterSpacing: '0.15em',
+                              fontWeight: 'bold', 
+                              outline: 'none',
+                              boxShadow: isPinInputFocused ? '0 0 15px rgba(255,255,255,0.2)' : 'none'
+                            }}
+                          />
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+                        <button 
+                          onClick={() => { setIsAdding(false); setActiveProfileIdx(0); }}
+                          className="tv-action-btn tv-focusable"
+                          style={{ flex: 1, padding: '8px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#fff', fontSize: '0.8rem', fontWeight: 700 }}
+                        >
+                          Cancel
+                        </button>
+                        <button 
+                          onClick={handleAddProfile} disabled={!newProfileName.trim() || (newProfileHasPin && newProfilePin.length !== 4)}
+                          className="tv-action-btn tv-focusable"
+                          style={{ flex: 1.2, padding: '8px', background: '#fff', border: 'none', borderRadius: '8px', color: '#000', fontSize: '0.8rem', fontWeight: 900, opacity: (!newProfileName.trim()) ? 0.4 : 1 }}
+                        >
+                          Create Profile
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Right Column: Choose Avatar Grid */}
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <span style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', fontWeight: 700 }}>Choose Avatar:</span>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 56px)', gap: '6px' }}>
+                        {['/avatars/avatar-1.jpg', '/avatars/avatar-2.jpg', '/avatars/avatar-3.jpg', '/avatars/avatar-4.jpg', '/avatars/avatar-5.jpg', '/avatars/avatar-6.jpg'].map((url, i) => (
+                          <div 
+                            key={i} 
+                            tabIndex={0}
+                            className="tv-focusable"
+                            onClick={() => setSelectedAvatar(url)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                setSelectedAvatar(url);
+                              }
+                            }}
+                            style={{
+                              width: '56px', height: '56px', borderRadius: '6px', overflow: 'hidden', cursor: 'pointer', border: selectedAvatar === url ? '3.5px solid #ffffff' : '1.5px solid rgba(255,255,255,0.15)', transition: 'all 0.15s ease', flexShrink: 0, outline: 'none'
+                            }}
+                          >
+                            <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  
+                  /* ── Case B: Focused on a normal profile (Inline Settings Rows) ── */
+                  selectedProfileToManage && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <h3 style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.5)', fontWeight: 700, margin: '0 0 4px 16px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        Profile Settings
+                      </h3>
+
+                      <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        background: 'transparent',
+                        border: 'none',
+                        overflow: 'hidden'
+                      }}>
+                        {/* 1. Rename Profile Setting Row */}
+                        <div 
+                          tabIndex={disableOthers ? -1 : 0}
+                          className={disableOthers ? "tv-setting-row" : "tv-setting-row tv-focusable"}
+                          onClick={() => setIsEditingNameInline(!isEditingNameInline)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setIsEditingNameInline(!isEditingNameInline);
+                            }
+                          }}
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer', outline: 'none'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="2.5">
+                              <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                            </svg>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                              <span style={{ fontSize: '0.84rem', fontWeight: 700, color: '#fff' }}>Rename Profile</span>
+                              <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)' }}>Change the screen name for this profile.</span>
+                            </div>
+                          </div>
+                          
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {isEditingNameInline ? (
+                              <input 
+                                autoFocus
+                                type="text"
+                                value={newProfileName}
+                                onChange={(e) => {
+                                  setNewProfileName(e.target.value);
+                                  handleUpdateProfileField(selectedProfileToManage.id, { name: e.target.value });
+                                }}
+                                onBlur={() => setIsEditingNameInline(false)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    setIsEditingNameInline(false);
+                                  }
+                                }}
+                                style={{
+                                  padding: '4px 6px', borderRadius: '5px', background: '#141414', border: '1px solid #fff', color: '#fff', fontSize: '0.8rem', outline: 'none', width: '100px'
+                                }}
+                              />
+                            ) : (
+                              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#fff' }}>{selectedProfileToManage.name}</span>
+                            )}
+                            <span style={{ color: 'rgba(255,255,255,0.3)', fontWeight: 900, fontSize: '0.82rem' }}>&gt;</span>
+                          </div>
+                        </div>
+
+                        {/* 2. Change Avatar Setting Row */}
+                        <div 
+                          ref={changeAvatarRowRef}
+                          tabIndex={disableOthers ? -1 : 0}
+                          className={disableOthers ? "tv-setting-row" : "tv-setting-row tv-focusable"}
+                          onClick={() => {
+                            if (!isSelectingAvatarInline) {
+                              generateAvatarOptions(selectedProfileToManage.avatar);
+                            }
+                            setIsSelectingAvatarInline(!isSelectingAvatarInline);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              if (!isSelectingAvatarInline) {
+                                generateAvatarOptions(selectedProfileToManage.avatar);
+                              }
+                              setIsSelectingAvatarInline(!isSelectingAvatarInline);
+                            }
+                          }}
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer', outline: 'none'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="2.5">
+                              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+                            </svg>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                              <span style={{ fontSize: '0.84rem', fontWeight: 700, color: '#fff' }}>Change Avatar</span>
+                              <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)' }}>Choose a new profile icon to display.</span>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ width: '24px', height: '24px', borderRadius: '5px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.2)' }}>
+                              <img src={selectedProfileToManage.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            </div>
+                            <span style={{ color: 'rgba(255,255,255,0.3)', fontWeight: 900, fontSize: '0.82rem' }}>&gt;</span>
+                          </div>
+                        </div>
+
+                        {/* Inline Avatar Choice Grid (Visible when isSelectingAvatarInline is true) */}
+                        {isSelectingAvatarInline && (
+                          <div style={{ padding: '14px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.5)', fontWeight: 700 }}>Select New Avatar:</span>
+                              <div style={{ display: 'flex', gap: '10px' }}>
+                                <button
+                                  tabIndex={0}
+                                  className="tv-focusable"
+                                  onClick={() => { triggerHaptic('light'); generateAvatarOptions(selectedProfileToManage.avatar); }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault();
+                                      triggerHaptic('light');
+                                      generateAvatarOptions(selectedProfileToManage.avatar);
+                                    }
+                                  }}
+                                  style={{
+                                    background: 'rgba(255, 255, 255, 0.06)',
+                                    border: '1.5px solid rgba(255,255,255,0.12)',
+                                    color: '#fff',
+                                    padding: '4px 12px',
+                                    borderRadius: '8px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                    outline: 'none',
+                                    display: 'flex',
+                                    alignItems: 'center'
+                                  }}
+                                >
+                                  Shuffle
+                                </button>
+                                <button
+                                  tabIndex={0}
+                                  className="tv-focusable"
+                                  onClick={() => { 
+                                    triggerHaptic('light'); 
+                                    setIsSelectingAvatarInline(false);
+                                    setTimeout(() => {
+                                      changeAvatarRowRef.current?.focus();
+                                    }, 50);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault();
+                                      triggerHaptic('light');
+                                      setIsSelectingAvatarInline(false);
+                                      setTimeout(() => {
+                                        changeAvatarRowRef.current?.focus();
+                                      }, 50);
+                                    }
+                                  }}
+                                  style={{
+                                    background: 'rgba(255, 255, 255, 0.1)',
+                                    border: '1.5px solid rgba(255,255,255,0.2)',
+                                    color: '#fff',
+                                    padding: '4px 12px',
+                                    borderRadius: '8px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                    outline: 'none',
+                                    display: 'flex',
+                                    alignItems: 'center'
+                                  }}
+                                >
+                                  Leave
+                                </button>
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '4px' }}>
+                              {avatarOptions.map((url, i) => (
+                                <div 
+                                  key={url} 
+                                  tabIndex={0}
+                                  className="tv-focusable"
+                                  onClick={() => {
+                                    handleUpdateProfileField(selectedProfileToManage.id, { avatar: url });
+                                    setIsSelectingAvatarInline(false);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault();
+                                      handleUpdateProfileField(selectedProfileToManage.id, { avatar: url });
+                                      setIsSelectingAvatarInline(false);
+                                    }
+                                  }}
+                                  style={{
+                                    width: '50px', height: '50px', borderRadius: '8px', overflow: 'hidden', cursor: 'pointer', border: selectedProfileToManage.avatar === url ? '3px solid #ffffff' : '1px solid rgba(255,255,255,0.15)', outline: 'none', flexShrink: 0
+                                  }}
+                                >
+                                  <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 3. PIN Protection Setting Row */}
+                        <div 
+                          tabIndex={disableOthers ? -1 : 0}
+                          className={disableOthers ? "tv-setting-row" : "tv-setting-row tv-focusable"}
+                          onClick={() => {
+                            if (selectedProfileToManage.pin) {
+                              // If there is already a PIN, clicking deletes it
+                              handleUpdateProfileField(selectedProfileToManage.id, { pin: '' });
+                            } else {
+                              setIsSettingPinInline(!isSettingPinInline);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              if (selectedProfileToManage.pin) {
+                                handleUpdateProfileField(selectedProfileToManage.id, { pin: '' });
+                              } else {
+                                setIsSettingPinInline(!isSettingPinInline);
+                              }
+                            }
+                          }}
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer', outline: 'none'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="2.5">
+                              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                            </svg>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                              <span style={{ fontSize: '0.84rem', fontWeight: 700, color: '#fff' }}>PIN Protection</span>
+                              <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)' }}>Require a PIN to access this profile.</span>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '0.82rem', fontWeight: 700, color: selectedProfileToManage.pin ? '#ef4444' : 'rgba(255,255,255,0.45)' }}>
+                              {selectedProfileToManage.pin ? 'On' : 'Off'}
+                            </span>
+                            <span style={{ color: 'rgba(255,255,255,0.3)', fontWeight: 900, fontSize: '0.82rem' }}>&gt;</span>
+                          </div>
+                        </div>
+
+                        {/* Inline PIN Setup Input */}
+                        {isSettingPinInline && !selectedProfileToManage.pin && (
+                          <div style={{ padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(0,0,0,0.2)' }}>
+                            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#fff' }}>Enter 4-Digit PIN:</span>
+                            <input 
+                              autoFocus
+                              type="text"
+                              maxLength={4}
+                              placeholder="PIN"
+                              value={newProfilePin}
+                              onChange={(e) => {
+                                const val = e.target.value.replace(/[^0-9]/g, '');
+                                setNewProfilePin(val);
+                                if (val.length === 4) {
+                                  handleUpdateProfileField(selectedProfileToManage.id, { pin: val });
+                                  setIsSettingPinInline(false);
+                                  setNewProfilePin('');
+                                }
+                              }}
+                              style={{
+                                padding: '4px', borderRadius: '5px', background: '#141414', border: '1px solid #fff', color: '#fff', textAlign: 'center', width: '70px', letterSpacing: '0.1em', fontWeight: 'bold'
+                              }}
+                            />
+                          </div>
+                        )}
+
+                        {/* 4. Kids Profile Setting Row */}
+                        <div 
+                          tabIndex={disableOthers ? -1 : 0}
+                          className={disableOthers ? "tv-setting-row" : "tv-setting-row tv-focusable"}
+                          onClick={() => handleUpdateProfileField(selectedProfileToManage.id, { isKids: !selectedProfileToManage.isKids })}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              handleUpdateProfileField(selectedProfileToManage.id, { isKids: !selectedProfileToManage.isKids });
+                            }
+                          }}
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: selectedProfileToManage.id === profiles[0].id ? 'none' : '1px solid rgba(255,255,255,0.06)', cursor: 'pointer', outline: 'none'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="2.5">
+                              <circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/>
+                            </svg>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                              <span style={{ fontSize: '0.84rem', fontWeight: 700, color: '#fff' }}>Kids Profile</span>
+                              <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)' }}>Manage content restrictions for Kids profiles.</span>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '0.82rem', fontWeight: 700, color: selectedProfileToManage.isKids ? '#eab308' : 'rgba(255,255,255,0.45)' }}>
+                              {selectedProfileToManage.isKids ? 'Kids' : 'Standard'}
+                            </span>
+                            <span style={{ color: 'rgba(255,255,255,0.3)', fontWeight: 900, fontSize: '0.82rem' }}>&gt;</span>
+                          </div>
+                        </div>
+
+                        {/* 5. Delete Profile Setting Row (Only for non-main profiles) */}
+                        {selectedProfileToManage.id !== profiles[0].id && (
+                          <div 
+                            tabIndex={disableOthers ? -1 : 0}
+                            className={disableOthers ? "tv-setting-row" : "tv-setting-row tv-focusable"}
+                            onClick={() => setDeleteProfileId(selectedProfileToManage.id)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                setDeleteProfileId(selectedProfileToManage.id);
+                              }
+                            }}
+                            style={{
+                              display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', cursor: 'pointer', outline: 'none', borderBottom: '1px solid rgba(255,255,255,0.06)'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5">
+                                <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
+                              </svg>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                                <span style={{ fontSize: '0.84rem', fontWeight: 700, color: '#ef4444' }}>Delete Profile</span>
+                                <span style={{ fontSize: '0.7rem', color: 'rgba(239,68,68,0.55)' }}>Permanently delete this profile and all watchlist data.</span>
+                              </div>
+                            </div>
+                            <span style={{ color: 'rgba(255,255,255,0.3)', fontWeight: 900, fontSize: '0.82rem' }}>&gt;</span>
+                          </div>
+                        )}
+
+                        {/* 6. Finish Setting Row (Replaces Transfer Profile row) */}
+                        <div 
+                          tabIndex={disableOthers ? -1 : 0}
+                          className={disableOthers ? "tv-setting-row" : "tv-setting-row tv-focusable"}
+                          onClick={() => setIsManaging(false)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setIsManaging(false);
+                            }
+                          }}
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', cursor: 'pointer', outline: 'none'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5">
+                              <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                              <span style={{ fontSize: '0.84rem', fontWeight: 700, color: '#ffffff' }}>Finish</span>
+                              <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.45)' }}>Exit manage profiles and save all changes.</span>
+                            </div>
+                          </div>
+                          <span style={{ color: 'rgba(255,255,255,0.3)', fontWeight: 900, fontSize: '0.82rem' }}>&gt;</span>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+            {/* Custom Profile Deletion Confirmation Drawer for TV */}
+            {deleteProfileId && (
+              <div style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(0, 0, 0, 0.6)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 10005,
+                padding: '20px',
+                animation: 'fadeInGlass 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+              }}>
+                <div style={{
+                  maxWidth: '380px',
+                  width: '100%',
+                  background: 'rgba(20, 20, 20, 0.95)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: '24px',
+                  padding: '24px',
+                  boxShadow: '0 24px 80px rgba(0,0,0,0.8)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '20px',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                    <div style={{
+                      width: '64px',
+                      height: '64px',
+                      borderRadius: '16px',
+                      overflow: 'hidden',
+                      border: '2px solid rgba(255,255,255,0.1)'
+                    }}>
+                      <img 
+                        src={profiles.find(p => p.id === deleteProfileId)?.avatar || ''} 
+                        alt="" 
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                      />
+                    </div>
+                    <div>
+                      <h3 style={{ margin: '0 0 6px', fontSize: '1.2rem', fontWeight: 900, color: '#fff', letterSpacing: '-0.02em' }}>Delete Profile?</h3>
+                      <p style={{ margin: 0, fontSize: '0.85rem', color: 'rgba(255,255,255,0.5)', lineHeight: 1.4 }}>
+                        Delete {profiles.find(p => p.id === deleteProfileId)?.name || ''}? All watchlist data for this profile will be permanently deleted.
+                      </p>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    <button
+                      tabIndex={0}
+                      className="tv-focusable"
+                      onClick={() => { triggerHaptic('light'); setDeleteProfileId(null); }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          triggerHaptic('light');
+                          setDeleteProfileId(null);
+                        }
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: '12px',
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        border: '1.5px solid rgba(255, 255, 255, 0.12)',
+                        borderRadius: '14px',
+                        color: '#fff',
+                        fontSize: '0.9rem',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        outline: 'none'
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      tabIndex={0}
+                      className="tv-focusable"
+                      onClick={executeDeleteProfile}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          executeDeleteProfile();
+                        }
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: '12px',
+                        background: '#e11d48',
+                        border: 'none',
+                        borderRadius: '14px',
+                        color: '#fff',
+                        fontSize: '0.9rem',
+                        fontWeight: 900,
+                        cursor: 'pointer',
+                        outline: 'none',
+                        boxShadow: '0 4px 16px rgba(225, 29, 72, 0.3)'
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     );
   }
@@ -1307,7 +2020,7 @@ alter table profiles add column if not exists pin text check (pin ~ '^[0-9]{4}$'
                   ))}
 
                   {/* Add Profile Trigger */}
-                  {!(localStorage.getItem('cinemovie_is_guest') === 'true' && profiles.length >= 1) && (
+                  {isManaging && !(localStorage.getItem('cinemovie_is_guest') === 'true' && profiles.length >= 1) && (
                     <div 
                       onClick={() => { 
                         triggerHaptic('light'); 
@@ -1958,6 +2671,18 @@ alter table profiles add column if not exists pin text check (pin ~ '^[0-9]{4}$'
 
 const StaticStyles = React.memo(() => (
   <style>{`
+    /* TV Setting Row focus styling */
+    .tv-setting-row {
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    }
+    .tv-setting-row:focus,
+    .tv-setting-row:focus-within,
+    .tv-setting-row:focus-visible {
+      transform: none !important;
+      background: rgba(255, 255, 255, 0.08) !important;
+      border-radius: 8px;
+    }
+
     /* Desktop & Interactive Hover/Focus Transitions */
     .profiles-grid {
       transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);

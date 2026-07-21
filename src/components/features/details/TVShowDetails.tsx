@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, memo, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { TVShow, Video, Cast, Crew, Episode } from '../../../types';
@@ -37,6 +37,7 @@ import { OfflineStorageService } from '../../../services/OfflineStorageService';
 import { FriendService } from '../../../services/friends';
 import { WatchTogetherService } from '../../../services/watchTogether';
 import { CacheService } from '../../../services/core/cache';
+import { NativeStreamingEngine } from '../../../services/native/NativeStreamingEngine';
 import { Capacitor } from '@capacitor/core';
 import { fetchWithCapacitor } from '../../../utils/nativeFetch';
 import { SettingsService } from '../../../services/user/settings';
@@ -257,6 +258,25 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
   // Offline Episode Downloads Status Map
   const [downloadedEpisodes, setDownloadedEpisodes] = useState<Record<string, { status: string; progress: number }>>({});
   const [activeDownloadState, setActiveDownloadState] = useState(() => GlobalDownloader.getState());
+  const [showDownloadLogger, setShowDownloadLogger] = useState(false);
+  const [nativeLogs, setNativeLogs] = useState<string[]>([]);
+  const [copied, setCopied] = useState(false);
+  const holdLoggerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const startHoldLogger = () => {
+    if (holdLoggerTimeoutRef.current) clearTimeout(holdLoggerTimeoutRef.current);
+    holdLoggerTimeoutRef.current = setTimeout(() => {
+      import('../../../utils/haptics').then(m => m.triggerHaptic('heavy'));
+      setShowDownloadLogger(prev => !prev);
+    }, 5000);
+  };
+
+  const endHoldLogger = () => {
+    if (holdLoggerTimeoutRef.current) {
+      clearTimeout(holdLoggerTimeoutRef.current);
+      holdLoggerTimeoutRef.current = null;
+    }
+  };
 
   useEffect(() => {
     return GlobalDownloader.subscribe((state) => {
@@ -273,6 +293,18 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
       }
     });
   }, [show.id]);
+
+  // Poll native logs on Capacitor for real-time diagnostics
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    const iv = setInterval(async () => {
+      try {
+        const res = await NativeStreamingEngine.getNativeLogs();
+        if (res?.logs) setNativeLogs(res.logs);
+      } catch (_) {}
+    }, 1000);
+    return () => clearInterval(iv);
+  }, []);
 
   const [logoUrl, setLogoUrl] = useState<string | null>(() => {
     if ((show as any).logoUrl) return (show as any).logoUrl;
@@ -414,22 +446,47 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
     }));
 
     try {
-      const result = await resolveTVStream(fullShow.id, fullShow.name, selectedSeason, epNum);
-      if (result && result.streamUrl) {
-        GlobalDownloader.startDownload(fullShow, result.streamUrl, selectedSeason, epNum, false);
-      } else {
-        throw new Error('Failed to resolve episode stream');
+      // Try preferred server first, then fall back through all available servers
+      const preferredServer = (localStorage.getItem('cinemovie_download_server') || 'vidsrc-pm') as any;
+      const allServers = ['vidsrc-pm', 'vidsrc-top-new', 'vixsrc', 'vidsrc-wtf-2'];
+      const serversToTry = [preferredServer, ...allServers.filter((s: string) => s !== preferredServer)];
+
+      let resolvedResult: any = null;
+      let lastError = '';
+      for (const server of serversToTry) {
+        try {
+          console.log(`[TVDownload] Trying server: ${server} for S${selectedSeason}E${epNum}`);
+          const result = await resolveTVStream(fullShow.id, fullShow.name, selectedSeason, epNum, server as any);
+          if (result && result.streamUrl) {
+            resolvedResult = result;
+            console.log(`[TVDownload] ✓ Resolved via ${server}`);
+            break;
+          }
+        } catch (err: any) {
+          lastError = `${server}: ${err?.message || err}`;
+          console.warn(`[TVDownload] Server ${server} failed:`, err);
+        }
       }
-    } catch (err) {
+
+      if (resolvedResult && resolvedResult.streamUrl) {
+        (window as any)._lastDownloadResult = resolvedResult;
+        GlobalDownloader.startDownload(fullShow, resolvedResult.streamUrl, selectedSeason, epNum, false);
+      } else {
+        // All servers failed — let GlobalDownloader try its own internal fallback chain
+        console.warn('[TVDownload] All servers failed, using GlobalDownloader fallback. Last error:', lastError);
+        GlobalDownloader.startDownload(fullShow, '', selectedSeason, epNum, true);
+      }
+    } catch (err: any) {
       console.error('[Download] Episode resolution failed:', err);
       setDownloadedEpisodes(prev => {
         const next = { ...prev };
         delete next[downloadId];
         return next;
       });
-      alert('Could not resolve download links for this episode. Please try another server or try again.');
+      alert(`Could not start download for S${selectedSeason}E${epNum}. Error: ${err?.message || 'Unknown'}. Please try again.`);
     }
   };
+
 
   const handleDownloadSeason = useCallback(() => {
     triggerHaptic('heavy');
@@ -476,24 +533,52 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
 
     setShowSeasonDownloadModal(false);
 
+    // Use the same multi-server fallback chain as handleDownloadEpisode
+    const preferredServer = (localStorage.getItem('cinemovie_download_server') || 'vidsrc-pm') as any;
+    const allServers = ['vidsrc-pm', 'vidsrc-top-new', 'vixsrc', 'vidsrc-wtf-2'];
+    const serversToTry = [preferredServer, ...allServers.filter((s: string) => s !== preferredServer)];
+
     for (const ep of selectedEpisodes) {
       const epNum = ep.episodeNumber;
       const downloadId = `tv_${fullShow.id}_${selectedSeason}_${epNum}`;
 
+      // Mark as resolving so the UI shows progress feedback immediately
       setDownloadedEpisodes(prev => ({
         ...prev,
         [downloadId]: { status: 'resolving', progress: 0 }
       }));
 
       try {
-        const result = await resolveTVStream(fullShow.id, fullShow.name, selectedSeason, epNum);
-        if (result && result.streamUrl) {
-          GlobalDownloader.startDownload(fullShow, result.streamUrl, selectedSeason, epNum, false);
-        } else {
-          throw new Error('Failed to resolve episode stream');
+        let resolvedResult: any = null;
+        let lastError = '';
+
+        // Try each server in priority order — same logic as single-episode download
+        for (const server of serversToTry) {
+          try {
+            console.log(`[SeasonDownload] Trying server: ${server} for S${selectedSeason}E${epNum}`);
+            const result = await resolveTVStream(fullShow.id, fullShow.name, selectedSeason, epNum, server as any);
+            if (result && result.streamUrl) {
+              resolvedResult = result;
+              console.log(`[SeasonDownload] ✓ Resolved S${selectedSeason}E${epNum} via ${server}`);
+              break;
+            }
+          } catch (err: any) {
+            lastError = `${server}: ${err?.message || err}`;
+            console.warn(`[SeasonDownload] Server ${server} failed for E${epNum}:`, err);
+          }
         }
-      } catch (err) {
-        console.error('[Download] Season episode resolution failed:', err);
+
+        if (resolvedResult && resolvedResult.streamUrl) {
+          // Queue in GlobalDownloader — it handles sequential execution automatically
+          GlobalDownloader.startDownload(fullShow, resolvedResult.streamUrl, selectedSeason, epNum, false);
+        } else {
+          // All servers failed — let GlobalDownloader run its own internal fallback chain
+          console.warn(`[SeasonDownload] All servers failed for E${epNum}, using GlobalDownloader fallback. Last error: ${lastError}`);
+          GlobalDownloader.startDownload(fullShow, '', selectedSeason, epNum, true);
+        }
+      } catch (err: any) {
+        console.error(`[SeasonDownload] Fatal error resolving S${selectedSeason}E${epNum}:`, err);
+        // Remove the 'resolving' state so the episode shows as downloadable again
         setDownloadedEpisodes(prev => {
           const next = { ...prev };
           delete next[downloadId];
@@ -1169,6 +1254,10 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
           src={logoUrl}
           alt={fullShow.name}
           onError={() => setLogoUrl(null)}
+          onMouseDown={startHoldLogger}
+          onMouseUp={endHoldLogger}
+          onTouchStart={startHoldLogger}
+          onTouchEnd={endHoldLogger}
           style={{
             maxWidth: '70%',
             maxHeight: '90px',
@@ -1181,14 +1270,21 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
           }}
         />
       ) : (
-        <h1 className="details-title" style={{
-          fontSize: 'clamp(2rem, 5vw, 3rem)',
-          fontWeight: 800,
-          margin: '0 0 6px',
-          letterSpacing: '-0.03em',
-          lineHeight: 1.1,
-          textAlign: 'left',
-        }}>
+        <h1 
+          className="details-title"
+          onMouseDown={startHoldLogger}
+          onMouseUp={endHoldLogger}
+          onTouchStart={startHoldLogger}
+          onTouchEnd={endHoldLogger}
+          style={{
+            fontSize: 'clamp(2rem, 5vw, 3rem)',
+            fontWeight: 800,
+            margin: '0 0 6px',
+            letterSpacing: '-0.03em',
+            lineHeight: 1.1,
+            textAlign: 'left',
+          }}
+        >
           {fullShow.name}
         </h1>
       )}
@@ -1294,6 +1390,7 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
             </>
           );
         })()}
+
         {year && <span>{year.includes('-') ? year.split('-')[0] : year}</span>}
         <span style={{ 
           border: '1px solid rgba(255,255,255,0.2)', 
@@ -1338,13 +1435,12 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
                 handleLocalServerPlay(undefined, playbackMode === 'resume');
               }}
               disabled={localStreamLoading}
+              className="tv-focusable detail-play-btn"
+              tabIndex={0}
               style={{
                 flex: 1,
                 height: '48px',
                 borderRadius: '8px',
-                border: 'none',
-                background: '#fff',
-                color: '#000',
                 fontWeight: 800,
                 fontSize: '0.95rem',
                 cursor: localStreamLoading ? 'default' : 'pointer',
@@ -1735,6 +1831,117 @@ function TVShowDetails({ show, onClose, onActorClick, onListUpdate }: TVShowDeta
         </div>
       ))}
 
+
+
+      {/* Floating real-time debugging console overlay for downloads */}
+      {showDownloadLogger && (
+        <div style={{
+          marginTop: '4px',
+          marginBottom: '16px',
+          padding: '12px',
+          background: 'rgba(9, 9, 11, 0.95)',
+          border: '1.5px dashed rgba(255, 255, 255, 0.15)',
+          borderRadius: '8px',
+          color: '#a1a1aa',
+          fontFamily: 'monospace',
+          fontSize: '0.72rem',
+          lineHeight: 1.4,
+          maxHeight: '300px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+          overflowY: 'auto'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '4px' }}>
+            <span style={{ color: '#4ade80', fontWeight: 800 }}>SYSTEM DOWNLOAD LOGGER (DEBUG)</span>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <button
+                onClick={() => {
+                  const fullText = [
+                    `--- CineMovie TV Show Download Diagnostic Log ---`,
+                    `Show: ${fullShow.name} (${fullShow.id})`,
+                    `Downloading Episode ID: ${activeDownloadState.downloadId || 'None'}`,
+                    `Status: ${activeDownloadState.downloadStatus.toUpperCase()}`,
+                    `Progress: ${activeDownloadState.downloadProgress}%`,
+                    `Capacitor Native: ${Capacitor.isNativePlatform() ? 'YES' : 'NO'}`,
+                    `Content-Length Header: ${activeDownloadState.debugContentLength ?? 'Missing (CORS restricted)'}`,
+                    `Total Bytes: ${activeDownloadState.debugTotalBytes || 0} bytes`,
+                    `Loaded Bytes: ${activeDownloadState.debugLoadedBytes || 0} bytes`,
+                    `\n--- Native Logs ---`,
+                    nativeLogs.join('\n')
+                  ].join('\n');
+                  navigator.clipboard.writeText(fullText);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                }}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  border: 'none',
+                  borderRadius: '4px',
+                  color: copied ? '#4ade80' : '#ffffff',
+                  padding: '2px 8px',
+                  cursor: 'pointer',
+                  fontSize: '0.65rem',
+                  fontWeight: 800
+                }}
+              >
+                {copied ? 'Copied!' : 'Copy Logs'}
+              </button>
+              <button
+                onClick={() => setShowDownloadLogger(false)}
+                style={{
+                  background: 'rgba(255,255,255,0.08)',
+                  border: 'none',
+                  borderRadius: '4px',
+                  color: 'rgba(255,255,255,0.6)',
+                  padding: '2px 6px',
+                  cursor: 'pointer',
+                  fontSize: '0.75rem',
+                  fontWeight: 800,
+                  lineHeight: 1
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <div>[Status] {activeDownloadState.downloadStatus || 'Idle'}</div>
+            <div>[Progress] {activeDownloadState.downloadProgress}%</div>
+            <div>[Episode ID] {activeDownloadState.downloadId || 'None'}</div>
+            <div>[Calculated Status] {activeDownloadState.isDownloading ? 'DOWNLOADING' : 'IDLE'}</div>
+            <div>[Network Content-Length] {activeDownloadState.debugContentLength ?? 'Missing (CORS restricted)'}</div>
+            <div>[Network Loaded Bytes] {((activeDownloadState.debugLoadedBytes || 0) / (1024 * 1024)).toFixed(2)} MB</div>
+            {activeDownloadState.debugTotalBytes ? (
+              <div>[Network Total Bytes] {((activeDownloadState.debugTotalBytes || 0) / (1024 * 1024)).toFixed(2)} MB</div>
+            ) : (
+              <div style={{ color: '#fb923c' }}>[Warning] Content-Length hidden. Using segment-count estimation.</div>
+            )}
+            <div>[TV TMDb ID] {fullShow.id}</div>
+          </div>
+
+          {Capacitor.isNativePlatform() && (
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: '80px' }}>
+              <div style={{ color: '#60a5fa', fontWeight: 800, fontSize: '0.68rem', marginBottom: '4px', textTransform: 'uppercase' }}>📜 Console Logs (Last 10 Lines):</div>
+              <div style={{
+                flex: 1,
+                background: '#020204',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '4px',
+                padding: '6px',
+                overflowY: 'auto',
+                fontSize: '0.68rem',
+                color: '#34d399',
+                whiteSpace: 'pre-wrap',
+                maxHeight: '120px'
+              }}>
+                {nativeLogs.length === 0 ? 'No native logs captured...' : nativeLogs.slice(-10).join('\n')}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ marginTop: '8px' }}>
         <CastSection cast={cast} onActorClick={onActorClick} />
       </div>
@@ -1838,6 +2045,31 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
 
           {/* Metadata Row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: 'clamp(0.72rem, 1.6vh, 0.85rem)', color: 'rgba(255,255,255,0.5)', fontWeight: 700 }}>
+            {score !== null && (
+              <>
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  color: '#ffffff',
+                  background: 'rgba(255, 255, 255, 0.12)',
+                  border: '1px solid rgba(255, 255, 255, 0.25)',
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  fontSize: '0.75rem',
+                  fontWeight: 900,
+                  lineHeight: 1
+                }}>
+                  <img
+                    src="/streaming icons/imdb.png"
+                    alt="IMDb"
+                    style={{ height: '14px', width: 'auto', display: 'block' }}
+                  />
+                  <span>{(score / 10).toFixed(1)}</span>
+                </span>
+                <span style={{ height: '8px', width: '1px', background: 'rgba(255,255,255,0.25)' }} />
+              </>
+            )}
             {fullShow.firstAirDate && <span>{fullShow.firstAirDate.split('-')[0]}</span>}
             <span style={{ height: '8px', width: '1px', background: 'rgba(255,255,255,0.25)' }} />
             <span style={{ background: '#ffffff', color: '#000000', padding: '1px 6px', borderRadius: '3px', fontSize: '0.65rem', fontWeight: 900 }}>12+</span>
@@ -1871,9 +2103,9 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                 handlePlayClick(selectedEpisode, true);
               }}
               disabled={localStreamLoading || episodes.length === 0}
-              className="tv-focusable"
+              className="tv-focusable detail-play-btn"
               style={{
-                height: '36px', padding: '0 20px', borderRadius: '4px', border: 'none', background: '#ffffff', color: '#000000',
+                height: '36px', padding: '0 20px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.2)', background: '#000000', color: '#ffffff',
                 fontWeight: 900, fontSize: '0.78rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', outline: 'none'
               }}
             >
@@ -1898,7 +2130,7 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                 fontWeight: 900, fontSize: '0.78rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', outline: 'none'
               }}
             >
-              {isShowInList ? 'âœ“ ' + t('in_watchlist').toUpperCase() : '+ ' + t('watchlist').toUpperCase()}
+              {isShowInList ? '✓ ' + t('in_watchlist').toUpperCase() : '+ ' + t('watchlist').toUpperCase()}
             </button>
 
             <button
@@ -1934,7 +2166,7 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
               ) : (
                 <>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                  <span>DOWNLOAD</span>
+                  <span>{t('download').toUpperCase()}</span>
                 </>
               )}
             </button>
@@ -1992,7 +2224,7 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
         >
           {/* Seasons Row */}
           <div>
-            <h3 style={{ fontSize: '1rem', fontWeight: 900, textTransform: 'uppercase', color: '#fff', margin: '0 0 16px 0', letterSpacing: '0.06em' }}>Seasons</h3>
+            <h3 style={{ fontSize: '1rem', fontWeight: 900, textTransform: 'uppercase', color: '#fff', margin: '0 0 16px 0', letterSpacing: '0.06em' }}>{t('seasons').toUpperCase()}</h3>
             <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '10px' }} className="no-scrollbar">
               {Array.from({ length: fullShow.numberOfSeasons || 1 }, (_, i) => i + 1).map(s => (
                 <button
@@ -2006,7 +2238,7 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                     fontWeight: 900, fontSize: '0.82rem', cursor: 'pointer', outline: 'none', flexShrink: 0
                   }}
                 >
-                  Season {s}
+                  {t('season')} {s}
                 </button>
               ))}
             </div>
@@ -2014,7 +2246,7 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
 
           {/* Episode List Row */}
           <div>
-            <h3 style={{ fontSize: '1rem', fontWeight: 900, textTransform: 'uppercase', color: '#fff', margin: '0 0 16px 0', letterSpacing: '0.06em' }}>Episodes</h3>
+            <h3 style={{ fontSize: '1rem', fontWeight: 900, textTransform: 'uppercase', color: '#fff', margin: '0 0 16px 0', letterSpacing: '0.06em' }}>{t('episodes').toUpperCase()}</h3>
             {loadingEpisodes ? (
               <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.8rem' }}>Loading episodes...</div>
             ) : (
@@ -2053,19 +2285,28 @@ const isAnyEpisodeDownloading = activeDownloads.some(ep => ep.status === 'downlo
                       tabIndex={0}
                       className="tv-focusable"
                       style={{
-                        padding: '12px 16px', borderRadius: '8px', background: isFocused ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.02)',
+                        padding: '8px', borderRadius: '8px', background: isFocused ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.02)',
                         border: isFocused ? '1px solid #fff' : '1px solid transparent', cursor: 'pointer', outline: 'none',
-                        display: 'flex', flexDirection: 'column', gap: '4px', textAlign: 'left',
+                        display: 'flex', gap: '10px', alignItems: 'center', textAlign: 'left',
                         opacity: isReleased ? 1 : 0.5
                       }}
                     >
-                      <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#fff' }}>Episode {epNum}: {ep.name}</span>
-                      <span style={{ fontSize: '0.65rem', color: isReleased ? 'rgba(255,255,255,0.4)' : '#fbbf24', fontWeight: isReleased ? 500 : 700 }}>
-                        {isReleased 
-                          ? (ep.runtime ? `${ep.runtime} min` : '') 
-                          : `Releasing ${airDateStr ? new Date(airDateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'soon'}`
-                        }
-                      </span>
+                      <div style={{ width: '80px', aspectRatio: '16/9', borderRadius: '4px', overflow: 'hidden', background: '#141416', flexShrink: 0 }}>
+                        <img 
+                          src={ep.stillPath || (ep as any).still_path ? getStillUrl(ep.stillPath || (ep as any).still_path) : '/movie-placeholder.png'} 
+                          alt="" 
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', overflow: 'hidden' }}>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>Ep {epNum}: {ep.name}</span>
+                        <span style={{ fontSize: '0.65rem', color: isReleased ? 'rgba(255,255,255,0.4)' : '#fbbf24', fontWeight: isReleased ? 500 : 700 }}>
+                          {isReleased 
+                            ? (ep.runtime ? `${ep.runtime} min` : '') 
+                            : `Releasing ${airDateStr ? new Date(airDateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'soon'}`
+                          }
+                        </span>
+                      </div>
                     </div>
                   );
                 })}

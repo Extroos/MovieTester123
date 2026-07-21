@@ -204,7 +204,9 @@ export function useTVNavigation() {
           targetFocusables = focusableElements.filter(el => el.closest('.content-row-scroll') === activeRow);
         } else {
           // Vertical moves (ArrowUp or ArrowDown):
-          const rowContainers = Array.from(document.querySelectorAll('.content-row-container'));
+          const rowContainers = Array.from(document.querySelectorAll('.content-row-container')).filter(
+            el => (el as HTMLElement).offsetWidth > 0 || (el as HTMLElement).offsetHeight > 0
+          );
           const activeRowContainer = activeEl.closest('.content-row-container') as HTMLElement | null;
           const activeRowIndex = activeRowContainer ? rowContainers.indexOf(activeRowContainer) : -1;
           

@@ -39,7 +39,7 @@ interface RemoteConfig {
 const DEFAULT_GATEWAYS: GatewayConfig = {
   cloudnestra: 'https://cloudnestra.com',
   vidsrc_pm: 'https://streamdata.vaplayer.ru',
-  vidsrc_wtf: 'https://vidsrc.wtf',
+  vidsrc_wtf: 'https://viduki.net',
   vidsrc_sbs: 'https://vidsrc.sbs',
   vidsrc_pk: 'https://embed.vidsrc.pk',
   vidsrc_fyi: 'https://vidsrc.fyi',
@@ -82,7 +82,7 @@ function saveCachedConfig(config: RemoteConfig): void {
 
 async function fetchRemoteConfig(): Promise<RemoteConfig> {
   if (!ENABLE_REMOTE_OTA) {
-    _cachedConfig = localConfig as RemoteConfig;
+    _cachedConfig = localConfig as unknown as RemoteConfig;
     return _cachedConfig;
   }
   const url = getConfigUrl();
@@ -111,7 +111,7 @@ async function fetchRemoteConfig(): Promise<RemoteConfig> {
  */
 export async function getRemoteConfig(): Promise<RemoteConfig> {
   if (!ENABLE_REMOTE_OTA) {
-    return localConfig as RemoteConfig;
+    return localConfig as unknown as RemoteConfig;
   }
   if (_cachedConfig) return _cachedConfig;
 

@@ -362,31 +362,122 @@ class NativeStreamingEnginePlugin : Plugin() {
             }
 
             // Native YTS subtitle search: GET /movies/yts-subtitles/{imdbId}
-            val ytsMatch = Regex("""/movies/yts-subtitles/([^/?]+)""").find(path)
-            if (ytsMatch != null) {
-                val imdbId = ytsMatch.groupValues[1]
+            if (!path.startsWith("/movies/yts-subtitles/download")) {
+                val ytsMatch = Regex("""/movies/yts-subtitles/([^/?]+)""").find(path)
+                if (ytsMatch != null) {
+                    val imdbId = ytsMatch.groupValues[1]
+                    val out = java.io.BufferedOutputStream(socket.getOutputStream())
+                    try {
+                        val subsArray = scrapeYtsSubtitles(imdbId)
+                        // Convert JSArray to a proper JSON list expected by the React client
+                        val jsonBuilder = StringBuilder("[")
+                        for (i in 0 until subsArray.length()) {
+                            val obj = subsArray.getJSONObject(i)
+                            // Map native fields to the format expected by index.tsx: { link, language, name }
+                            val lang = obj.optString("lang", "Unknown")
+                            val url = obj.optString("url", "")
+                            val isBackup = obj.optBoolean("isBackup", true)
+                            if (i > 0) jsonBuilder.append(",")
+                            jsonBuilder.append("""{"link":${org.json.JSONObject.quote(url)},"language":${org.json.JSONObject.quote(lang)},"name":${org.json.JSONObject.quote(lang)},"isBackup":$isBackup}""")
+                        }
+                        jsonBuilder.append("]")
+                        val body = jsonBuilder.toString().toByteArray(Charsets.UTF_8)
+                        val headers = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${body.size}\r\n\r\n"
+                        out.write(headers.toByteArray(Charsets.UTF_8))
+                        out.write(body)
+                        out.flush()
+                    } catch (ex: Exception) {
+                        addLog("[Proxy] YTS subtitle route error: ${ex.message}")
+                        val errBody = """{"error":"${ex.message}"}""".toByteArray(Charsets.UTF_8)
+                        val headers = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${errBody.size}\r\n\r\n"
+                        out.write(headers.toByteArray(Charsets.UTF_8))
+                        out.write(errBody)
+                        out.flush()
+                    } finally {
+                        socket.close()
+                    }
+                    return
+                }
+            }
+
+            // Native YTS subtitle download & unzip: GET /movies/yts-subtitles/download?link=...
+            if (path.startsWith("/movies/yts-subtitles/download")) {
+                val queryIdx = path.indexOf("?")
+                val queryString = if (queryIdx >= 0) path.substring(queryIdx + 1) else ""
+                val queryPairs = queryString.split("&").associate {
+                    val eqIdx = it.indexOf("=")
+                    if (eqIdx > 0) java.net.URLDecoder.decode(it.substring(0, eqIdx), "UTF-8") to java.net.URLDecoder.decode(it.substring(eqIdx + 1), "UTF-8")
+                    else it to ""
+                }
+                val link = queryPairs["link"] ?: ""
                 val out = java.io.BufferedOutputStream(socket.getOutputStream())
                 try {
-                    val subsArray = scrapeYtsSubtitles(imdbId)
-                    // Convert JSArray to a proper JSON list expected by the React client
-                    val jsonBuilder = StringBuilder("[")
-                    for (i in 0 until subsArray.length()) {
-                        val obj = subsArray.getJSONObject(i)
-                        // Map native fields to the format expected by index.tsx: { link, language, name }
-                        val lang = obj.optString("lang", "Unknown")
-                        val url = obj.optString("url", "")
-                        val isBackup = obj.optBoolean("isBackup", true)
-                        if (i > 0) jsonBuilder.append(",")
-                        jsonBuilder.append("""{"link":${org.json.JSONObject.quote(url)},"language":${org.json.JSONObject.quote(lang)},"name":${org.json.JSONObject.quote(lang)},"isBackup":$isBackup}""")
+                    if (link.isEmpty()) throw Exception("Missing link parameter")
+                    val ytsDomains = remoteConfig.optJSONObject("subtitles")?.optJSONArray("yts_domains")
+                    val domain = if (ytsDomains != null && ytsDomains.length() > 0) ytsDomains.getString(0) else "https://yifysubtitles.ch"
+                    
+                    val detailUrl = if (link.startsWith("http")) link else "$domain$link"
+                    val detailReq = okhttp3.Request.Builder()
+                        .url(detailUrl)
+                        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+                        .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                        .header("Referer", "$domain/")
+                        .get()
+                        .build()
+                    
+                    val detailResp = client.newCall(detailReq).execute()
+                    if (!detailResp.isSuccessful) throw Exception("YTS detail page returned status ${detailResp.code}")
+                    val html = detailResp.body?.string() ?: ""
+                    
+                    val zipMatch = Regex("""href="([^"]*\.zip)"""").find(html) ?: Regex("""class="[^"]*download-subtitle[^"]*"\s+href="([^"]*)"""").find(html)
+                    if (zipMatch == null) throw Exception("Could not find ZIP download link on YTS page")
+                    
+                    val zipPath = zipMatch.groupValues[1]
+                    val zipUrl = if (zipPath.startsWith("http")) zipPath else "$domain$zipPath"
+                    
+                    val zipReq = okhttp3.Request.Builder()
+                        .url(zipUrl)
+                        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+                        .header("Referer", detailUrl)
+                        .get()
+                        .build()
+                    val zipResp = client.newCall(zipReq).execute()
+                    if (!zipResp.isSuccessful) throw Exception("YTS ZIP download failed with status ${zipResp.code}")
+                    
+                    val zipBytes = zipResp.body?.bytes() ?: byteArrayOf()
+                    var srtContent = ""
+                    val zis = java.util.zip.ZipInputStream(java.io.ByteArrayInputStream(zipBytes))
+                    var entry = zis.nextEntry
+                    while (entry != null) {
+                        if (!entry.isDirectory && (entry.name.lowercase().endsWith(".srt") || entry.name.lowercase().endsWith(".vtt"))) {
+                            val baos = java.io.ByteArrayOutputStream()
+                            val buf = ByteArray(4096)
+                            var len: Int
+                            while (zis.read(buf).also { len = it } > 0) {
+                                baos.write(buf, 0, len)
+                            }
+                            srtContent = baos.toString("UTF-8")
+                            break
+                        }
+                        entry = zis.nextEntry
                     }
-                    jsonBuilder.append("]")
-                    val body = jsonBuilder.toString().toByteArray(Charsets.UTF_8)
-                    val headers = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${body.size}\r\n\r\n"
+                    if (srtContent.isEmpty()) throw Exception("No .srt or .vtt file found inside YTS ZIP archive")
+                    
+                    // Convert SRT to WEBVTT if needed
+                    val vttContent = if (!srtContent.trim().startsWith("WEBVTT")) {
+                        val cleanSrt = srtContent.replace("\r\n", "\n").replace("\r", "\n")
+                        "WEBVTT\n\n" + cleanSrt.replace(Regex("""(\d{2}:\d{2}:\d{2}),(\d{3})"""), "$1.$2")
+                    } else {
+                        srtContent
+                    }
+                    
+                    val body = vttContent.toByteArray(Charsets.UTF_8)
+                    val headers = "HTTP/1.1 200 OK\r\nContent-Type: text/vtt\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${body.size}\r\n\r\n"
                     out.write(headers.toByteArray(Charsets.UTF_8))
                     out.write(body)
                     out.flush()
                 } catch (ex: Exception) {
-                    addLog("[Proxy] YTS subtitle route error: ${ex.message}")
+                    addLog("[Proxy] YTS download route error: ${ex.message}")
                     val errBody = """{"error":"${ex.message}"}""".toByteArray(Charsets.UTF_8)
                     val headers = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${errBody.size}\r\n\r\n"
                     out.write(headers.toByteArray(Charsets.UTF_8))
@@ -467,28 +558,41 @@ class NativeStreamingEnginePlugin : Plugin() {
                     val result = org.json.JSONArray()
                     
                     val threeToTwoMap = mapOf(
-                        "eng" to "en", "ara" to "ar", "spa" to "es", "por" to "pt", "kor" to "ko", "hin" to "hi", "ger" to "de", "fre" to "fr", "ita" to "it", "chi" to "zh", "tur" to "tr", "rus" to "ru",
+                        "eng" to "en", "ara" to "ar", "spa" to "es", "por" to "pt", "pob" to "pt", "kor" to "ko", "hin" to "hi", "ger" to "de", "deu" to "de", "fre" to "fr", "fra" to "fr", "ita" to "it", "chi" to "zh", "zho" to "zh", "tur" to "tr", "rus" to "ru",
                         "en" to "en", "ar" to "ar", "es" to "es", "pt" to "pt", "ko" to "ko", "hi" to "hi", "de" to "de", "fr" to "fr", "it" to "it", "zh" to "zh", "tr" to "tr", "ru" to "ru"
                     )
 
-                    val targetLangs = lang.split(",").map { it.trim().lowercase() }
+                    val targetLangs = lang.split(",").map { it.trim().lowercase() }.filter { it.isNotEmpty() }
 
+                    val matchedIndices = mutableListOf<Int>()
                     for (i in 0 until subtitles.length()) {
+                        val sub = subtitles.getJSONObject(i)
+                        val subLang3 = sub.optString("lang", "").lowercase()
+                        val subLang2 = threeToTwoMap[subLang3] ?: (if (subLang3.length >= 2) subLang3.substring(0, 2) else subLang3)
+
+                        if (targetLangs.isEmpty() || targetLangs.contains(subLang2) || targetLangs.contains(subLang3) ||
+                            (targetLangs.contains("en") && (subLang3 == "eng" || subLang3.contains("english"))) ||
+                            (targetLangs.contains("es") && (subLang3 == "spa" || subLang3.contains("spanish"))) ||
+                            (targetLangs.contains("ar") && (subLang3 == "ara" || subLang3.contains("arabic"))) ||
+                            (targetLangs.contains("fr") && (subLang3 == "fre" || subLang3 == "fra" || subLang3.contains("french")))) {
+                            matchedIndices.add(i)
+                        }
+                    }
+
+                    val finalIndices = matchedIndices
+
+                    for (i in finalIndices) {
                         val sub = subtitles.getJSONObject(i)
                         val subUrl = sub.optString("url", "")
                         val subId = sub.optString("id", "")
                         val subLang3 = sub.optString("lang", "").lowercase()
                         val subLang2 = threeToTwoMap[subLang3] ?: (if (subLang3.length >= 2) subLang3.substring(0, 2) else subLang3)
 
-                        if (targetLangs.isNotEmpty() && !targetLangs.contains(subLang2) && !targetLangs.contains(subLang3)) {
-                            continue
-                        }
-
                         val dlUrl = "http://localhost:$proxyPort/convert-to-vtt?url=${java.net.URLEncoder.encode(subUrl, "UTF-8")}"
                         result.put(org.json.JSONObject().apply {
                             put("link", dlUrl)
-                            put("language", subLang2)
-                            put("name", "${subLang3.uppercase()} - Release $subId")
+                            put("language", subLang2.uppercase())
+                            put("name", if (subUrl.isNotEmpty()) subUrl.split("/").last() else "${subLang2.uppercase()} Subtitle")
                         })
                     }
 
@@ -861,6 +965,7 @@ class NativeStreamingEnginePlugin : Plugin() {
             resHeaderSb.append("Access-Control-Allow-Origin: *\r\n")
             resHeaderSb.append("Access-Control-Allow-Methods: GET, HEAD, OPTIONS\r\n")
             resHeaderSb.append("Access-Control-Allow-Headers: *\r\n")
+            resHeaderSb.append("Access-Control-Expose-Headers: *\r\n")
             resHeaderSb.append("Content-Type: $contentType\r\n")
             
             if (bodyBytes != null) {
@@ -1432,17 +1537,37 @@ class NativeStreamingEnginePlugin : Plugin() {
         return null
     }
 
-    private fun scrapeYtsSubtitles(imdbId: String): JSArray {
+    private fun scrapeYtsSubtitles(imdbIdInput: String): JSArray {
         val subsArray = JSArray()
-        if (imdbId.isEmpty() || !imdbId.startsWith("tt")) return subsArray
+        var imdbId = imdbIdInput.trim()
+        if (imdbId.isEmpty()) return subsArray
+
+        // Convert numeric TMDB ID to IMDb ID if necessary
+        if (imdbId.all { it.isDigit() }) {
+            try {
+                val tmdbUrl = "https://api.themoviedb.org/3/movie/$imdbId?api_key=15d20e45d54a7e10f054f90d2006d805"
+                val jsonStr = proxyFetch(tmdbUrl)
+                val json = org.json.JSONObject(jsonStr)
+                val fetchedImdb = json.optString("imdb_id", "")
+                if (fetchedImdb.isNotEmpty()) imdbId = fetchedImdb
+            } catch (e: Exception) {
+                addLog("[Vidsrc] Failed to resolve TMDB ID $imdbIdInput to IMDb ID: ${e.message}")
+            }
+        }
+
+        if (!imdbId.startsWith("tt")) return subsArray
         try {
             addLog("[Vidsrc] Scraping YTS subtitles for IMDB: $imdbId...")
             val subtitlesConfig = remoteConfig.optJSONObject("subtitles") ?: org.json.JSONObject()
             val ytsBase = subtitlesConfig.optString("yts_subtitles_url", "https://yifysubtitles.ch/movie-imdb/")
             val ytsUrl = "$ytsBase$imdbId"
             val ytsHtml = proxyFetch(ytsUrl, "https://google.com/")
-            val rowRegex = Regex("""<tr[^>]*data-id="\d+"[^>]*>([\s\S]*?)</tr>""")
-            val matches = rowRegex.findAll(ytsHtml)
+            var matches = Regex("""<tr[^>]*data-id="\d+"[^>]*>([\s\S]*?)</tr>""").findAll(ytsHtml).toList()
+            if (matches.isEmpty()) {
+                matches = Regex("""<tr[^>]*>([\s\S]*?)</tr>""").findAll(ytsHtml).filter { 
+                    it.groupValues[1].contains("sub-lang") || it.groupValues[1].contains("/subtitles/") 
+                }.toList()
+            }
             
             var count = 0
             for (match in matches) {

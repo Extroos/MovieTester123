@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import { Readable } from 'stream';
 import axios from 'axios';
+import AdmZip from 'adm-zip';
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -71,8 +72,8 @@ app.use(express.json());
 // WTF Decryption and Resolution Configuration
 const wtfProxyBase = "http://localhost:8000/local-proxy";
 
-async function fetchWtfProxy(url, headers = {}, refererUrl = 'https://vidsrc.wtf/') {
-  const fullUrl = `${wtfProxyBase}?url=${encodeURIComponent(url)}&referer=${encodeURIComponent(refererUrl)}&origin=${encodeURIComponent('https://vidsrc.wtf')}`;
+async function fetchWtfProxy(url, headers = {}, refererUrl = 'https://vidsrc.wtf/', originUrl = 'https://vidsrc.wtf') {
+  const fullUrl = `${wtfProxyBase}?url=${encodeURIComponent(url)}&referer=${encodeURIComponent(refererUrl)}&origin=${encodeURIComponent(originUrl)}`;
   const cleanHeaders = { ...headers };
   cleanHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36';
   cleanHeaders['user-agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36';
@@ -128,7 +129,26 @@ async function getWtfStreamUrl(tmdbId, apiType, serverName = null, isTv = false,
     endIdx++;
   }
   
-  const functionBody = 'const _0x53ab = global._0x53ab;\n' + chunkCode.substring(startIdx + startStr.length, endIdx - 1);
+  let resolvedDomain = 'vidsrc.wtf';
+  try {
+    const wtfGateway = config.gateways?.vidsrc_wtf;
+    if (wtfGateway) {
+      resolvedDomain = wtfGateway.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    }
+  } catch (e) {
+    console.warn('[Server WTF] Failed to extract dynamic domain:', e.message);
+  }
+
+  if (resolvedDomain === 'vidsrc.wtf') {
+    resolvedDomain = 'viduki.net';
+  }
+
+  let functionBody = 'const _0x53ab = global._0x53ab;\n' + chunkCode.substring(startIdx + startStr.length, endIdx - 1);
+  if (resolvedDomain !== 'vidsrc.wtf') {
+    functionBody = functionBody
+      .replace('z=r.yxHOd', `z="https://api.${resolvedDomain}"`)
+      .replace('D="https://mu"+"ltilang-ap"+"i.vidsrc.w"+"tf"', `D="https://multilang-api.${resolvedDomain}"`);
+  }
   const moduleFunc = new Function('e', 't', 'n', functionBody);
   
   const mockExports = {};
@@ -141,26 +161,31 @@ async function getWtfStreamUrl(tmdbId, apiType, serverName = null, isTv = false,
   
   moduleFunc(mockExports, mockExports, mockRequire);
   
-  let refererUrl = 'https://vidsrc.wtf/';
+  let refererUrl = `https://${resolvedDomain}/`;
+  const originUrl = `https://${resolvedDomain}`;
   if (apiType === 'wtf-2') {
     refererUrl = isTv 
-      ? `https://vidsrc.wtf/2/tv/${tmdbId}/${season}/${episode}`
-      : `https://vidsrc.wtf/2/movie/${tmdbId}`;
+      ? `https://${resolvedDomain}/2/tv/${tmdbId}/${season}/${episode}`
+      : `https://${resolvedDomain}/2/movie/${tmdbId}`;
   } else if (apiType === 'wtf-4') {
     refererUrl = isTv
-      ? `https://vidsrc.wtf/4/tv/${tmdbId}/${season}/${episode}`
-      : `https://vidsrc.wtf/4/movie/${tmdbId}`;
+      ? `https://${resolvedDomain}/4/tv/${tmdbId}/${season}/${episode}`
+      : `https://${resolvedDomain}/4/movie/${tmdbId}`;
   } else {
     refererUrl = isTv
-      ? `https://vidsrc.wtf/1/tv/${tmdbId}/${season}/${episode}`
-      : `https://vidsrc.wtf/1/movie/${tmdbId}`;
+      ? `https://${resolvedDomain}/1/tv/${tmdbId}/${season}/${episode}`
+      : `https://${resolvedDomain}/1/movie/${tmdbId}`;
   }
   
   global.fetch = async (url, options = {}) => {
     const headers = options.headers || {};
+    let targetUrl = url;
+    if (resolvedDomain !== 'vidsrc.wtf') {
+      targetUrl = url.replace('vidsrc.wtf', resolvedDomain);
+    }
     
-    if (url.includes('/altcha-challenge')) {
-      const data = await fetchWtfProxy(url, headers, refererUrl);
+    if (targetUrl.includes('/altcha-challenge')) {
+      const data = await fetchWtfProxy(targetUrl, headers, refererUrl, originUrl);
       return {
         ok: true,
         status: 200,
@@ -168,8 +193,8 @@ async function getWtfStreamUrl(tmdbId, apiType, serverName = null, isTv = false,
       };
     }
     
-    if (url.includes('/bootstrap')) {
-      const data = await fetchWtfProxy(url, headers, refererUrl);
+    if (targetUrl.includes('/bootstrap')) {
+      const data = await fetchWtfProxy(targetUrl, headers, refererUrl, originUrl);
       return {
         ok: true,
         status: 200,
@@ -177,35 +202,65 @@ async function getWtfStreamUrl(tmdbId, apiType, serverName = null, isTv = false,
       };
     }
     
-    if (url.includes('.wasm')) {
+    if (targetUrl.includes('.wasm')) {
+      let wasmUrl = targetUrl;
+      if (!wasmUrl.startsWith('http')) {
+        wasmUrl = `https://${resolvedDomain}${wasmUrl.startsWith('/') ? '' : '/'}${wasmUrl}`;
+      }
+      try {
+        const wasmBuffer = await fetchWtfProxy(wasmUrl, headers, refererUrl, originUrl, true);
+        if (wasmBuffer && wasmBuffer.length > 500 && !wasmBuffer.toString('utf8').startsWith('<!DOCTYPE') && !wasmBuffer.toString('utf8').startsWith('<html')) {
+          console.log(`[Node Server] Dynamically loaded remote WASM (${wasmBuffer.length} bytes)`);
+          return {
+            ok: true,
+            status: 200,
+            arrayBuffer: async () => wasmBuffer.buffer.slice(wasmBuffer.byteOffset, wasmBuffer.byteOffset + wasmBuffer.byteLength)
+          };
+        }
+      } catch (e) {
+        console.error("[Node Server] Failed to fetch remote WASM dynamically, falling back to local:", e.message);
+      }
       const wasmBuffer = fs.readFileSync(wasmPath);
       return {
         ok: true,
         status: 200,
-        arrayBuffer: async () => wasmBuffer
+        arrayBuffer: async () => wasmBuffer.buffer.slice(wasmBuffer.byteOffset, wasmBuffer.byteOffset + wasmBuffer.byteLength)
       };
     }
     
-    if (url.includes('/makima-manifest.json')) {
+    if (targetUrl.includes('/makima-manifest.json')) {
+      try {
+        const data = await fetchWtfProxy(targetUrl, headers, refererUrl, originUrl);
+        if (data && data.exports && data.url) {
+          console.log("[Node Server] Successfully fetched remote manifest dynamically");
+          return {
+            ok: true,
+            status: 200,
+            json: async () => data
+          };
+        }
+      } catch (e) {
+        console.error("[Node Server] Failed to fetch remote manifest dynamically, falling back to local:", e.message);
+      }
       return {
         ok: true,
         status: 200,
         json: async () => ({
           url: "makima.wasm",
           exports: {
-            alloc: "_BpDg",
-            reset: "_YrcY",
-            writeByte: "_xeBp",
-            readByte: "_e6Un",
-            decryptPepper: "_0S1G",
-            decryptEnvelope: "_7F6j",
-            dropPepper: "_DKz4"
+            alloc: "_VL7c",
+            reset: "_iS4t",
+            writeByte: "_4MfY",
+            readByte: "_PqfC",
+            decryptPepper: "_57Zd",
+            decryptEnvelope: "_ieYY",
+            dropPepper: "_HeRx"
           }
         })
       };
     }
     
-    const data = await fetchWtfProxy(url, headers, refererUrl);
+    const data = await fetchWtfProxy(targetUrl, headers, refererUrl, originUrl);
     return {
       ok: true,
       status: 200,
@@ -557,7 +612,32 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
       console.log(`[Server] VidSrc PM resolved dynamically: ${sources.length} source(s), ${subtitles.length} subtitle(s)`);
       return res.json(rewriteLocalhostUrls({ sources, subtitles }, req));
     } catch (err) {
-      console.error(`[Server] VidSrc PM resolution failed:`, err.message, "trying fallback to Vidify or Fallback resolver...");
+      console.error(`[Server] VidSrc PM resolution failed:`, err.message, "trying fallbacks...");
+      
+      // Fallback 1: Try WTF Multi-Language Scraper (Ad-free & Direct Decrypted)
+      try {
+        console.log(`[Server] Falling back to WTF-2 (Multi-Lang)...`);
+        const isTv = type === 'tv';
+        const decrypted = await getWtfStreamUrl(tmdbId, 'wtf-2', null, isTv, season, episode);
+        if (decrypted && decrypted.ok && decrypted.data?.streams?.length > 0) {
+          const sources = decrypted.data.streams.map((stream, idx) => {
+            const ref = stream.headers?.Referer || 'https://vidsrc.wtf/';
+            const origin = new URL(stream.url).origin;
+            const proxiedUrl = `http://localhost:8000/local-proxy?url=${encodeURIComponent(stream.url)}&referer=${encodeURIComponent(ref)}&origin=${encodeURIComponent(origin)}`;
+            return {
+              url: proxiedUrl,
+              quality: stream.language || `Stream ${idx + 1}`,
+              isM3U8: stream.type === 'hls' || stream.url.includes('.m3u8')
+            };
+          });
+          console.log("[Server] Successfully fell back to WTF-2");
+          return res.json(rewriteLocalhostUrls({ sources, subtitles: [] }, req));
+        }
+      } catch (fbErrWtf) {
+        console.warn(`[Server] Fallback to WTF-2 failed:`, fbErrWtf.message);
+      }
+
+      // Fallback 2: Try Vidify Scraper
       try {
         const pythonUrl = type === 'tv'
           ? `http://localhost:8000/vidify/tv/${tmdbId}/${season}/${episode}`
@@ -565,11 +645,13 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
         const res2 = await fetch(pythonUrl);
         if (res2.ok) {
           const result = await res2.json();
-          console.log("[Server] VidSrc PM successfully fell back to Vidify");
+          console.log("[Server] Successfully fell back to Vidify");
           return res.json(rewriteLocalhostUrls(result, req));
         }
       } catch (fbErr) {
-        console.error(`[Server] VidSrc PM fallback to Vidify failed:`, fbErr.message);
+        console.error(`[Server] Fallback to Vidify failed:`, fbErr.message);
+        
+        // Fallback 3: Try Fallback Scraper
         try {
           const pythonUrl = type === 'tv'
             ? `http://localhost:8000/fallback/tv/${tmdbId}/${season}/${episode}`
@@ -577,11 +659,11 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
           const res2 = await fetch(pythonUrl);
           if (res2.ok) {
             const result = await res2.json();
-            console.log("[Server] VidSrc PM successfully fell back to Fallback scraper");
+            console.log("[Server] Successfully fell back to Fallback scraper");
             return res.json(rewriteLocalhostUrls(result, req));
           }
         } catch (fbErr2) {
-          console.error(`[Server] VidSrc PM fallback to Fallback scraper failed:`, fbErr2.message);
+          console.error(`[Server] Fallback to Fallback scraper failed:`, fbErr2.message);
         }
       }
       return res.status(500).json({ error: `vidsrc-pm failed: ${err.message}` });
@@ -1202,7 +1284,7 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
       const token = tokenMatch[1];
       const expires = expiresMatch[1];
 
-      const sources = streams.map((s) => {
+      const sources = streams.map((s, idx) => {
         const l = new URL(s.url);
         l.searchParams.append("token", token);
         l.searchParams.append("expires", expires);
@@ -1210,7 +1292,7 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
         l.searchParams.append("h", "1");
         return {
           url: l.toString(),
-          quality: s.name || 'Server',
+          quality: s.name || `Mirror ${idx + 1}`,
           isM3U8: true
         };
       });
@@ -1224,50 +1306,116 @@ app.get('/meta/tmdb/watch/:tmdbId', async (req, res) => {
 
   if (activeServer === 'vidsrc-top-new') {
     try {
+      const base = 'https://vid-src.top';
       const embedUrl = type === 'tv'
-        ? `https://vid-src.top/embed/tv/${tmdbId}/${season}/${episode}`
-        : `https://vid-src.top/embed/movie/${tmdbId}`;
+        ? `${base}/embed/tv/${tmdbId}/${season}/${episode}`
+        : `${base}/embed/movie/${tmdbId}`;
 
       console.log(`[Server] Resolving vid-src.top for TMDB-${tmdbId}: ${embedUrl}`);
 
-      // Fetch the embed page through the Python curl_cffi proxy so we bypass TLS fingerprinting
-      const proxyUrl = `http://localhost:8000/local-proxy?url=${encodeURIComponent(embedUrl)}&referer=${encodeURIComponent('https://vid-src.top/')}&origin=${encodeURIComponent('https://vid-src.top')}`;
-      const pageRes = await axios.get(proxyUrl, { timeout: 15000, responseType: 'text' });
-      const html = pageRes.data || '';
+      const proxyUrl = `http://localhost:8000/local-proxy`;
+      const headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36'
+      };
 
-      if (!html || html.length < 100) throw new Error('vid-src.top returned empty page');
+      // 1. Fetch landing page
+      const landingProxyUrl = `${proxyUrl}?url=${encodeURIComponent(embedUrl)}&referer=${encodeURIComponent(base + '/')}&origin=${encodeURIComponent(base)}`;
+      const landingRes = await axios.get(landingProxyUrl, { headers, timeout: 10000 });
+      const landingHtml = landingRes.data || '';
+
+      // Find iframe src
+      let subdomainUrl = '';
+      const iframeMatch = landingHtml.match(/<iframe\b[^>]*src="([^"]+)"/i);
+      if (iframeMatch) {
+        subdomainUrl = iframeMatch[1];
+        if (subdomainUrl.startsWith('//')) subdomainUrl = 'https:' + subdomainUrl;
+      } else {
+        subdomainUrl = `https://vidsrcme.vid-src.top/embed/${type}/${tmdbId}${type === 'tv' ? `/${season}/${episode}` : ''}?ds_lang=en`;
+      }
+
+      console.log(`[Server] Subdomain player URL: ${subdomainUrl}`);
+
+      // 2. Fetch subdomain player page
+      const subdomainProxyUrl = `${proxyUrl}?url=${encodeURIComponent(subdomainUrl)}&referer=${encodeURIComponent(embedUrl)}&origin=${encodeURIComponent(base)}`;
+      const subdomainRes = await axios.get(subdomainProxyUrl, { headers, timeout: 10000 });
+      const subdomainHtml = subdomainRes.data || '';
+
+      // Find inner iframe src
+      let rcpAbsoluteUrl = '';
+      const rcpMatch = subdomainHtml.match(/id="player_iframe"\s+src="([^"]+)"/i) || subdomainHtml.match(/<iframe\b[^>]*id="player_iframe"[^>]*src="([^"]+)"/i);
+      if (rcpMatch) {
+        rcpAbsoluteUrl = rcpMatch[1];
+        if (rcpAbsoluteUrl.startsWith('//')) rcpAbsoluteUrl = 'https:' + rcpAbsoluteUrl;
+      } else {
+        throw new Error('Failed to find player_iframe in subdomain page');
+      }
+
+      console.log(`[Server] RCP URL: ${rcpAbsoluteUrl}`);
+
+      // 3. Fetch RCP page
+      const rcpProxyUrl = `${proxyUrl}?url=${encodeURIComponent(rcpAbsoluteUrl)}&referer=${encodeURIComponent(subdomainUrl)}&origin=${encodeURIComponent(new URL(subdomainUrl).origin)}`;
+      const rcpRes = await axios.get(rcpProxyUrl, { headers, timeout: 10000 });
+      const rcpHtml = rcpRes.data || '';
+
+      // Find prorcp path
+      const prorcpMatch = rcpHtml.match(/src:\s*['"](\/prorcp\/[^'"]+)['"]/);
+      if (!prorcpMatch) {
+        throw new Error('Failed to find prorcp path in RCP page');
+      }
+
+      const cloudHost = new URL(rcpAbsoluteUrl).origin;
+      const prorcpAbsoluteUrl = cloudHost + prorcpMatch[1];
+      console.log(`[Server] Prorcp URL: ${prorcpAbsoluteUrl}`);
+
+      // 4. Fetch Prorcp page
+      const prorcpProxyUrl = `${proxyUrl}?url=${encodeURIComponent(prorcpAbsoluteUrl)}&referer=${encodeURIComponent(rcpAbsoluteUrl)}&origin=${encodeURIComponent(cloudHost)}`;
+      const prorcpRes = await axios.get(prorcpProxyUrl, { headers, timeout: 10000 });
+      const prorcpHtml = prorcpRes.data || '';
+
+      // Find master_urls
+      const masterUrlsMatch = prorcpHtml.match(/var master_urls\s*=\s*["']([^"']+)["']/);
+      if (!masterUrlsMatch) {
+        throw new Error('Failed to find master_urls in prorcp page');
+      }
+
+      const rawUrls = masterUrlsMatch[1].split(' or ');
+      console.log(`[Server] Found ${rawUrls.length} raw stream URL(s)`);
 
       const sources = [];
-      const seen = new Set();
+      for (const rawUrl of rawUrls) {
+        try {
+          const urlObj = new URL(rawUrl);
+          const domain = urlObj.origin;
+          const generateUrl = `${domain}/generate.php`;
 
-      function tryAdd(url, quality) {
-        const clean = url.replace(/\\u002F/g, '/').replace(/\\\//g, '/').trim();
-        if (!seen.has(clean) && clean.startsWith('http') && !clean.includes('beacon') && !clean.includes('analytics')) {
-          seen.add(clean);
+          // Generate token
+          const generateProxyUrl = `${proxyUrl}?url=${encodeURIComponent(generateUrl)}&referer=${encodeURIComponent(cloudHost + '/')}&origin=${encodeURIComponent(cloudHost)}`;
+          const genRes = await axios.get(generateProxyUrl, { headers, timeout: 5000 });
+          const token = genRes.data.trim();
+
+          let finalUrl = rawUrl;
+          if (rawUrl.includes('__TOKEN__')) {
+            finalUrl = finalUrl.replace('__TOKEN__', token);
+          }
+          if (rawUrl.includes('__TOKENPG__')) {
+            finalUrl = finalUrl.replace('__TOKENPG__', token);
+          }
+
           sources.push({
-            url: clean,
-            quality,
-            isM3U8: clean.includes('.m3u8') || clean.includes('master') || clean.includes('playlist')
+            url: finalUrl,
+            quality: domain.includes('putgate') ? 'Putgate Mirror' : 'Volition Mirror',
+            isM3U8: true
           });
+        } catch (genErr) {
+          console.error(`[Server] Failed to generate token for stream: ${genErr.message}`);
         }
       }
 
-      // Pattern 1: JWPlayer {file:"...m3u8"}
-      let m;
-      const jwFileRe = /['"`]?file['"`]?\s*:\s*['"`](https?:\/\/[^'"`\s]+\.m3u8[^'"`\s]*)/gi;
-      while ((m = jwFileRe.exec(html)) !== null) tryAdd(m[1], 'JW Auto');
+      if (sources.length === 0) {
+        throw new Error('No stream URLs could be generated successfully');
+      }
 
-      // Pattern 2: raw .m3u8 URLs
-      const rawM3u8Re = /https?:\/\/[a-zA-Z0-9.\-_]+(?:\/[^'"`\s\\<>(){}[\]]{5,200})?\.m3u8(?:\?[^'"`\s\\<>(){}[\]]{0,200})?/gi;
-      while ((m = rawM3u8Re.exec(html)) !== null) tryAdd(m[0], 'Direct M3U8');
-
-      // Pattern 3: video.js {src:"...m3u8"}
-      const vjsSrcRe = /['"`]src['"`]\s*:\s*['"`](https?:\/\/[^'"`\s]+\.m3u8[^'"`\s]*)/gi;
-      while ((m = vjsSrcRe.exec(html)) !== null) tryAdd(m[1], 'VideoJS Auto');
-
-      if (sources.length === 0) throw new Error('No stream URLs found in vid-src.top embed page');
-
-      console.log(`[Server] vid-src.top resolved ${sources.length} stream(s) for TMDB-${tmdbId}`);
+      console.log(`[Server] vid-src.top resolved ${sources.length} stream(s) successfully`);
       return res.json(rewriteLocalhostUrls({ sources, subtitles: [] }, req));
     } catch (err) {
       console.error(`[Server] vid-src.top resolution failed:`, err.message);
@@ -1290,27 +1438,42 @@ app.get('/movies/yts-subtitles/download', async (req, res) => {
   try {
     const detailRes = await fetch(`https://yifysubtitles.ch${link}`, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://yifysubtitles.ch/'
       }
     });
     if (!detailRes.ok) throw new Error(`Detail page returned status ${detailRes.status}`);
     const html = await detailRes.text();
     
-    const dataLinkMatch = html.match(/class="btn-icon download-subtitle"\s+href="([^"]*)"/);
+    const dataLinkMatch = html.match(/class="btn-icon download-subtitle"\s+href="([^"]*)"/) ||
+                          html.match(/href="(\/subtitles\/redirect\/[^"]+)"/) ||
+                          html.match(/href="([^"]*\.zip)"/);
     if (!dataLinkMatch) throw new Error('Could not find download-subtitle href attribute in page HTML');
     
     const zipPath = dataLinkMatch[1];
-    const zipUrl = `https://yifysubtitles.ch${zipPath}`;
+    const zipUrl = zipPath.startsWith('http') ? zipPath : `https://yifysubtitles.ch${zipPath}`;
     console.log(`[Server] Decoded ZIP URL: ${zipUrl}`);
     
-    const pythonUrl = `http://localhost:8000/unzip-srt?url=${encodeURIComponent(zipUrl)}&referer=${encodeURIComponent(`https://yifysubtitles.ch${link}`)}`;
-    const unzipRes = await fetch(pythonUrl);
-    if (!unzipRes.ok) {
-      const errorText = await unzipRes.text();
-      throw new Error(`Python unzipper error: ${errorText}`);
-    }
-    
-    const { filename, content } = await unzipRes.json();
+    const zipRes = await fetch(zipUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Referer': `https://yifysubtitles.ch${link}`
+      }
+    });
+    if (!zipRes.ok) throw new Error(`ZIP download failed with status ${zipRes.status}`);
+
+    const arrayBuf = await zipRes.arrayBuffer();
+    const buffer = Buffer.from(arrayBuf);
+    const zip = new AdmZip(buffer);
+    const zipEntries = zip.getEntries();
+    const srtEntry = zipEntries.find(e => e.entryName.toLowerCase().endsWith('.srt') || e.entryName.toLowerCase().endsWith('.vtt')) || zipEntries[0];
+    if (!srtEntry) throw new Error('No subtitle file found inside ZIP archive');
+
+    const content = srtEntry.getData().toString('utf8');
+    const filename = srtEntry.entryName;
     console.log(`[Server] Unzipped file: ${filename}, size: ${content.length} characters`);
     
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -1358,44 +1521,163 @@ app.get('/movies/yts-subtitles/download', async (req, res) => {
   }
 });
 
+// Generic Subtitle Converter Endpoint (SRT/MicroDVD -> WEBVTT)
+app.get('/subtitles/convert', async (req, res) => {
+  const { url } = req.query;
+  if (!url) return res.status(400).send('Missing url parameter');
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Subtitle download failed with status ${response.status}`);
+    const content = await response.text();
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
+
+    const cleanContent = content.replace(/^\uFEFF/, '').trim();
+    let vttContent = cleanContent;
+    const isMicroDvd = /^\s*\{\d+\}\{\d+\}/m.test(cleanContent);
+
+    if (isMicroDvd) {
+      const fps = 23.976;
+      const lines = cleanContent.split(/\r?\n/);
+      const vttLines = ['WEBVTT', ''];
+
+      lines.forEach((line) => {
+        const match = line.trim().match(/^\{(\d+)\}\{(\d+)\}(.*)/);
+        if (match) {
+          const startSec = parseInt(match[1]) / fps;
+          const endSec = parseInt(match[2]) / fps;
+
+          const formatTime = (seconds) => {
+            const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
+            const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
+            const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+            const ms = Math.floor((seconds % 1) * 1000).toString().padStart(3, '0');
+            return `${h}:${m}:${s}.${ms}`;
+          };
+
+          vttLines.push(`${formatTime(startSec)} --> ${formatTime(endSec)}`);
+          vttLines.push(match[3].replace(/\|/g, '\n').trim());
+          vttLines.push('');
+        }
+      });
+      vttContent = vttLines.join('\n');
+    } else if (!vttContent.startsWith('WEBVTT')) {
+      let cleanSrt = vttContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      vttContent = 'WEBVTT\n\n' + cleanSrt.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
+    }
+
+    res.send(vttContent);
+  } catch (err) {
+    console.error(`[Server] Subtitle conversion error:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+// Helper to fetch dynamic config
+let remoteConfigCache = null;
+let lastConfigFetchTime = 0;
+
+async function getRemoteConfig() {
+  const now = Date.now();
+  if (remoteConfigCache && (now - lastConfigFetchTime < 5 * 60 * 1000)) {
+    return remoteConfigCache;
+  }
+  try {
+    const fs = require('fs');
+    if (fs.existsSync('./config.json')) {
+      const localRaw = fs.readFileSync('./config.json', 'utf8');
+      remoteConfigCache = JSON.parse(localRaw);
+    }
+  } catch (e) {}
+
+  try {
+    const res = await fetch('https://raw.githubusercontent.com/Extroos/MovieTester123/main/config.json');
+    if (res.ok) {
+      remoteConfigCache = await res.json();
+      lastConfigFetchTime = now;
+    }
+  } catch (err) {}
+
+  return remoteConfigCache || {};
+}
+
+async function getOpenSubtitlesApiKey() {
+  const cfg = await getRemoteConfig();
+  return cfg.subtitles?.opensubtitles_api_key || 'JkKADcTEWRQzVl95qI2UtAXbMgJhH44R';
+}
+
 // 2. YIFY Subtitles Scraper (Movies)
 app.get('/movies/yts-subtitles/:imdbId', async (req, res) => {
-  const { imdbId } = req.params;
+  let { imdbId } = req.params;
   console.log(`[Server] YTS Subtitles Search: ${imdbId}`);
   try {
-    const response = await fetch(`https://yifysubtitles.ch/movie-imdb/${imdbId}`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-      }
-    });
-    if (!response.ok) {
-      throw new Error(`YTS Subtitles returned status ${response.status}`);
+    const cfg = await getRemoteConfig();
+    const tmdbApiKey = cfg.subtitles?.tmdb_api_key || '15d20e45d54a7e10f054f90d2006d805';
+
+    // Convert numeric TMDB ID to IMDb ID if necessary
+    if (/^\d+$/.test(imdbId)) {
+      try {
+        const tmdbRes = await fetch(`https://api.themoviedb.org/3/movie/${imdbId}?api_key=${tmdbApiKey}`);
+        if (tmdbRes.ok) {
+          const tmdbData = await tmdbRes.json();
+          if (tmdbData.imdb_id) imdbId = tmdbData.imdb_id;
+        }
+      } catch (e) {}
     }
-    const html = await response.text();
-    
+
+    const domains = cfg.subtitles?.yts_domains || ['https://yifysubtitles.ch', 'https://yifysubtitles.org', 'https://yts-subs.com'];
+    let html = null;
+
+    for (const domain of domains) {
+      try {
+        const response = await fetch(`${domain}/movie-imdb/${imdbId}`, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': `${domain}/`
+          }
+        });
+        if (response.ok) {
+          const text = await response.text();
+          if (text && !text.includes('Just a moment...') && !text.includes('cf-browser-verification')) {
+            html = text;
+            break;
+          }
+        }
+      } catch (err) {}
+    }
+
+    if (!html) {
+      console.warn(`[Server] YTS Subtitles: No HTML response for ${imdbId}`);
+      return res.json([]);
+    }
+
     const rowRegex = /<tr[^>]*data-id="(\d+)"[^>]*>([\s\S]*?)<\/tr>/g;
     const subs = [];
     let match;
-    
+
     while ((match = rowRegex.exec(html)) !== null) {
       const rowHtml = match[2];
-      
       const langMatch = rowHtml.match(/<span class="sub-lang">([^<]*)<\/span>/);
       const language = langMatch ? langMatch[1].trim() : 'Unknown';
-      
+
       const ratingMatch = rowHtml.match(/<span class="label[^"]*">([^<]*)<\/span>/);
       const rating = ratingMatch ? parseInt(ratingMatch[1].trim()) || 0 : 0;
-      
+
       const linkMatch = rowHtml.match(/href="(\/subtitles\/[^"]*)"/);
       const link = linkMatch ? linkMatch[1] : '';
-      
+
       const nameMatch = rowHtml.match(/<a href="\/subtitles\/[^"]*">([\s\S]*?)<\/a>/);
       let name = '';
       if (nameMatch) {
         name = nameMatch[1].replace(/<span[^>]*>([\s\S]*?)<\/span>/g, '').trim();
         name = name.replace(/\s+/g, ' ');
       }
-      
+
       if (link && language) {
         subs.push({
           language,
@@ -1405,37 +1687,13 @@ app.get('/movies/yts-subtitles/:imdbId', async (req, res) => {
         });
       }
     }
-    
+
     res.json(subs);
   } catch (err) {
     console.error(`[Server] YTS Subtitles Search error:`, err.message);
     res.status(500).json({ error: err.message });
   }
 });
-
-// Helper to fetch the dynamic config key from GitHub config
-let remoteConfigCache = null;
-let lastConfigFetchTime = 0;
-
-async function getOpenSubtitlesApiKey() {
-  const now = Date.now();
-  // Cache config for 5 minutes to prevent GitHub rate-limiting
-  if (remoteConfigCache && (now - lastConfigFetchTime < 5 * 60 * 1000)) {
-    return remoteConfigCache.subtitles?.opensubtitles_api_key || 'JkKADcTEWRQzVl95qI2UtAXbMgJhH44R';
-  }
-  try {
-    const res = await fetch('https://raw.githubusercontent.com/Extroos/MovieTester123/main/config.json');
-    if (res.ok) {
-      remoteConfigCache = await res.json();
-      lastConfigFetchTime = now;
-      console.log('[Server] Successfully fetched dynamic remote config. API Key found:', remoteConfigCache.subtitles?.opensubtitles_api_key ? 'Yes' : 'No');
-      return remoteConfigCache.subtitles?.opensubtitles_api_key || 'JkKADcTEWRQzVl95qI2UtAXbMgJhH44R';
-    }
-  } catch (err) {
-    console.warn('[Server] Failed to fetch remote config:', err.message);
-  }
-  return 'JkKADcTEWRQzVl95qI2UtAXbMgJhH44R';
-}
 
 // OpenSubtitles Search (Movies and TV Shows) - Powered by Stremio Keyless Proxy
 app.get('/movies/opensubtitles/:tmdbId', async (req, res) => {
@@ -1445,69 +1703,120 @@ app.get('/movies/opensubtitles/:tmdbId', async (req, res) => {
   console.log(`[Server] OpenSubtitles Search: ${tmdbId}, type=${type}, S=${season}E${episode}, lang=${lang}`);
   
   try {
-    // 1. Resolve TMDB ID to IMDB ID if needed
+    const cfg = await getRemoteConfig();
     let imdbId = tmdbId;
-    const tmdbApiKey = '8265bd1679663a7ea12ac168da84d2e8';
+    const tmdbApiKey = cfg.subtitles?.tmdb_api_key || '15d20e45d54a7e10f054f90d2006d805';
+    const stremioBase = cfg.subtitles?.stremio_opensubtitles_base || 'https://opensubtitles-v3.strem.io/subtitles';
     
     if (!tmdbId.startsWith('tt')) {
-      const tmdbUrl = type === 'tv'
-        ? `https://api.themoviedb.org/3/tv/${tmdbId}/external_ids?api_key=${tmdbApiKey}`
-        : `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${tmdbApiKey}`;
-      
-      const tmdbRes = await fetch(tmdbUrl);
-      if (tmdbRes.ok) {
-        const tmdbData = await tmdbRes.json();
-        imdbId = tmdbData.imdb_id || tmdbId;
+      try {
+        const tmdbUrl = type === 'tv'
+          ? `https://api.themoviedb.org/3/tv/${tmdbId}/external_ids?api_key=${tmdbApiKey}`
+          : `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${tmdbApiKey}`;
+        
+        const tmdbRes = await fetch(tmdbUrl);
+        if (tmdbRes.ok) {
+          const tmdbData = await tmdbRes.json();
+          imdbId = tmdbData.imdb_id || tmdbId;
+        }
+      } catch (e) {}
+    }
+
+    let results = [];
+
+    // 1. Try Stremio OpenSubtitles Proxy
+    if (imdbId.startsWith('tt')) {
+      try {
+        const stremioUrl = (type === 'tv' || type === 'series' || (season && episode))
+          ? `${stremioBase}/series/${imdbId}:${season || 1}:${episode || 1}.json`
+          : `${stremioBase}/movie/${imdbId}.json`;
+        
+        console.log(`[Server] Fetching from Stremio proxy: ${stremioUrl}`);
+        const response = await fetch(stremioUrl);
+        if (response.ok) {
+          const json = await response.json();
+          const subtitles = json.subtitles || [];
+          const threeToTwoMap = {
+            eng: 'en', ara: 'ar', arb: 'ar', spa: 'es', por: 'pt', pob: 'pt',
+            kor: 'ko', hin: 'hi', ger: 'de', deu: 'de', fre: 'fr', fra: 'fr',
+            ita: 'it', chi: 'zh', zho: 'zh', tur: 'tr', rus: 'ru', jpn: 'ja',
+            pol: 'pl', dut: 'nl', nld: 'nl', per: 'fa', fas: 'fa', rum: 'ro',
+            ron: 'ro', vie: 'vi', ind: 'id', ice: 'is', isl: 'is', dan: 'da',
+            fin: 'fi', nor: 'no', swe: 'sv', cze: 'cs', ces: 'cs', ell: 'el',
+            gre: 'el', srp: 'sr', slv: 'sl', alb: 'sq', sqi: 'sq', heb: 'he',
+            hun: 'hu', bul: 'bg', ukr: 'uk', tha: 'th', cat: 'ca',
+            en: 'en', ar: 'ar', es: 'es', pt: 'pt', ko: 'ko', hi: 'hi', de: 'de', fr: 'fr', it: 'it', zh: 'zh', tr: 'tr', ru: 'ru'
+          };
+          
+          const langNames = {
+            en: 'English', ar: 'Arabic', es: 'Spanish', pt: 'Portuguese',
+            ko: 'Korean', hi: 'Hindi', de: 'German', fr: 'French',
+            it: 'Italian', zh: 'Chinese', tr: 'Turkish', ru: 'Russian',
+            ja: 'Japanese', vi: 'Vietnamese', id: 'Indonesian', pl: 'Polish',
+            nl: 'Dutch', fa: 'Persian', ro: 'Romanian', da: 'Danish',
+            fi: 'Finnish', no: 'Norwegian', sv: 'Swedish', cs: 'Czech',
+            el: 'Greek', sr: 'Serbian', sl: 'Slovenian', sq: 'Albanian',
+            he: 'Hebrew', hu: 'Hungarian', bg: 'Bulgarian', uk: 'Ukrainian'
+          };
+
+          const targetLangs = lang ? lang.split(',').map(l => l.trim().toLowerCase()) : [];
+          
+          const matchesLang = (subLang) => {
+            if (!targetLangs.length) return true;
+            const subLower = (subLang || '').toLowerCase();
+            const sub2 = threeToTwoMap[subLower] || subLower.substring(0, 2);
+            return targetLangs.some(tl => {
+              return subLower === tl || sub2 === tl ||
+                (tl === 'en' && (subLower === 'eng' || subLower.includes('english'))) ||
+                (tl === 'es' && (subLower === 'spa' || subLower.includes('spanish'))) ||
+                (tl === 'ar' && (subLower === 'ara' || subLower === 'arb' || subLower.includes('arabic'))) ||
+                (tl === 'fr' && (subLower === 'fre' || subLower === 'fra' || subLower.includes('french'))) ||
+                (tl === 'de' && (subLower === 'ger' || subLower === 'deu' || subLower.includes('german'))) ||
+                (tl === 'pt' && (subLower === 'por' || subLower === 'pob' || subLower.includes('portuguese')));
+            });
+          };
+
+          // Strict filter: only include subtitles matching requested language
+          const filteredSubs = targetLangs.length > 0 ? subtitles.filter(s => matchesLang(s.lang)) : subtitles;
+
+          results = filteredSubs.map(sub => {
+            const subLang3 = (sub.lang || '').toLowerCase();
+            const subLang2 = threeToTwoMap[subLang3] || subLang3.substring(0, 2);
+            const dlUrl = `http://localhost:${localPort}/subtitles/convert?url=${encodeURIComponent(sub.url)}`;
+            const displayLangName = langNames[subLang2] || subLang2.toUpperCase();
+            const filename = sub.url ? sub.url.split('/').pop() : 'Subtitle';
+            return {
+              link: dlUrl,
+              language: displayLangName,
+              name: `${displayLangName} - Release ${filename}`
+            };
+          });
+        }
+      } catch (e) {
+        console.warn('[Server] Stremio OpenSubtitles fetch error:', e.message);
       }
     }
-    
-    if (!imdbId.startsWith('tt')) {
-      throw new Error(`Could not resolve IMDB ID for TMDB ID: ${tmdbId}`);
-    }
-    
-    // 2. Query Stremio OpenSubtitles v3 Proxy
-    let stremioUrl = '';
-    if (type === 'tv' || type === 'series' || (season && episode)) {
-      stremioUrl = `https://opensubtitles-v3.strem.io/subtitles/series/${imdbId}:${season || 1}:${episode || 1}.json`;
-    } else {
-      stremioUrl = `https://opensubtitles-v3.strem.io/subtitles/movie/${imdbId}.json`;
-    }
-    
-    console.log(`[Server] Fetching from Stremio proxy: ${stremioUrl}`);
-    const response = await fetch(stremioUrl);
-    if (!response.ok) {
-      throw new Error(`Stremio proxy returned status ${response.status}`);
-    }
-    
-    const json = await response.json();
-    const subtitles = json.subtitles || [];
-    
-    // 3. Map Stremio subtitles to React expected format
-    const results = [];
-    const threeToTwoMap = {
-      eng: 'en', ara: 'ar', spa: 'es', por: 'pt', kor: 'ko', hin: 'hi', ger: 'de', fre: 'fr', ita: 'it', chi: 'zh', tur: 'tr', rus: 'ru',
-      en: 'en', ar: 'ar', es: 'es', pt: 'pt', ko: 'ko', hi: 'hi', de: 'de', fr: 'fr', it: 'it', zh: 'zh', tr: 'tr', ru: 'ru'
-    };
-    
-    const targetLangs = lang ? lang.split(',').map(l => l.trim().toLowerCase()) : [];
-    
-    for (const sub of subtitles) {
-      const subLang3 = (sub.lang || '').toLowerCase();
-      const subLang2 = threeToTwoMap[subLang3] || subLang3.substring(0, 2);
-      
-      if (targetLangs.length > 0 && !targetLangs.includes(subLang2) && !targetLangs.includes(subLang3)) {
-        continue;
+
+    // 2. Fallback to YTS Subtitles if movie and results is empty
+    if (results.length === 0 && type !== 'tv' && imdbId.startsWith('tt')) {
+      try {
+        console.log(`[Server] OpenSubtitles returned 0, falling back to YTS for ${imdbId}...`);
+        const ytsRes = await fetch(`http://localhost:${localPort}/movies/yts-subtitles/${imdbId}`);
+        if (ytsRes.ok) {
+          const ytsData = await ytsRes.json();
+          if (Array.isArray(ytsData) && ytsData.length > 0) {
+            results = ytsData.map((s) => ({
+              link: `http://localhost:${localPort}/movies/yts-subtitles/download?link=${encodeURIComponent(s.link)}`,
+              language: (s.language || 'EN').toUpperCase(),
+              name: s.name || `${s.language} (YTS Subtitle)`
+            }));
+          }
+        }
+      } catch (e) {
+        console.warn('[Server] YTS fallback error:', e.message);
       }
-      
-      const dlUrl = `http://localhost:${localPort}/subtitles/convert?url=${encodeURIComponent(sub.url)}`;
-      
-      results.push({
-        link: dlUrl,
-        language: subLang2,
-        name: `${sub.lang?.toUpperCase() || 'SUB'} - Release ${sub.id || 'Subtitle'}`
-      });
     }
-    
+
     res.json(results);
   } catch (err) {
     console.error(`[Server] OpenSubtitles Search error:`, err.message);

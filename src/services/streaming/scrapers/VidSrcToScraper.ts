@@ -34,27 +34,35 @@ export async function scrapeVidsrcFallback(tmdbId: string, isTv = false, season 
     if (!res2.ok) throw new Error(`vsembed.ru returned ${res2.status}`);
     const html2 = await res2.text();
 
-    const rcpMatch = html2.match(/cloudnestra\.com\/rcp\/([A-Za-z0-9_\-=.]+)/);
-    if (!rcpMatch) throw new Error("No cloudnestra rcp hash found in vsembed.ru page");
-    const rcpHash = rcpMatch[1];
-    const rcpUrl = `https://cloudnestra.com/rcp/${rcpHash}`;
-    console.log(`[Client VidSrc] cloudnestra rcp URL: ${rcpUrl.substring(0, 60)}`);
+    const iframeSrcMatch = html2.match(/id="player_iframe"\s*src="([^"]+)"/);
+    if (!iframeSrcMatch) throw new Error("No player_iframe found in vsembed.ru page");
+    let iframeUrl = iframeSrcMatch[1];
+    if (iframeUrl.startsWith('//')) iframeUrl = 'https:' + iframeUrl;
+
+    const iframeUrlObj = new URL(iframeUrl);
+    const activeCloudDomain = iframeUrlObj.origin;
+    const rcpHashMatch = iframeUrl.match(/\/rcp\/([A-Za-z0-9_\-=.]+)/);
+    if (!rcpHashMatch) throw new Error("No rcp hash found in iframe URL");
+    const rcpHash = rcpHashMatch[1];
+
+    const rcpUrl = `${activeCloudDomain}/rcp/${rcpHash}`;
+    console.log(`[Client VidSrc] resolved rcp URL: ${rcpUrl}`);
 
     const rcpHeaders = { ...headers, 'Referer': vsembedUrl };
     const res3 = await fetch(rcpUrl, { headers: rcpHeaders });
-    if (!res3.ok) throw new Error(`cloudnestra/rcp returned ${res3.status}`);
+    if (!res3.ok) throw new Error(`rcp endpoint returned ${res3.status}`);
     const html3 = await res3.text();
-    if (html3.includes('cf-turnstile')) throw new Error("cloudnestra/rcp is Cloudflare Turnstile protected");
+    if (html3.includes('cf-turnstile')) throw new Error("rcp is Cloudflare Turnstile protected");
 
     const prorcpMatch = html3.match(/src:\s*['"]\s*\/prorcp\/([^'"]+)['"]/i);
-    if (!prorcpMatch) throw new Error("prorcp hash not found in cloudnestra/rcp page");
+    if (!prorcpMatch) throw new Error("prorcp hash not found in rcp page");
     const prorcpHash = prorcpMatch[1];
-    const prorcpUrl = `https://cloudnestra.com/prorcp/${prorcpHash}`;
-    console.log(`[Client VidSrc] prorcp URL: ${prorcpUrl.substring(0, 60)}`);
+    const prorcpUrl = `${activeCloudDomain}/prorcp/${prorcpHash}`;
+    console.log(`[Client VidSrc] resolved prorcp URL: ${prorcpUrl}`);
 
     const prorcpHeaders = { ...headers, 'Referer': rcpUrl };
     const res4 = await fetch(prorcpUrl, { headers: prorcpHeaders });
-    if (!res4.ok) throw new Error(`cloudnestra/prorcp returned ${res4.status}`);
+    if (!res4.ok) throw new Error(`prorcp endpoint returned ${res4.status}`);
     const html4 = await res4.text();
 
     const m3u8Match = html4.match(/"(https?:\/\/[^"]+\.m3u8[^"]*)"/i);
@@ -74,9 +82,36 @@ export async function scrapeVidsrcFallback(tmdbId: string, isTv = false, season 
         isM3U8: true
       };
     });
+    const subtitles: any[] = [];
+    try {
+      const tracksMatch = html4.match(/tracks:\s*(\[[^\]]+\])/);
+      if (tracksMatch) {
+        const cleanTracksText = tracksMatch[1].replace(/'/g, '"').replace(/([a-zA-Z0-9_]+)\s*:/g, '"$1":');
+        const tracks = JSON.parse(cleanTracksText);
+        for (const track of tracks) {
+          if (track.file) {
+            subtitles.push({
+              url: track.file,
+              lang: track.label || track.language || 'Unknown'
+            });
+          }
+        }
+      }
+    } catch (_) {}
 
-    console.log(`[Client VidSrc] Success: resolved ${sources.length} streams`);
-    return { sources, subtitles: [] };
+    if (subtitles.length === 0) {
+      const trackRegex = /<track\s+[^>]*src="([^"]+)"[^>]*label="([^"]+)"/g;
+      let match;
+      while ((match = trackRegex.exec(html4)) !== null) {
+        subtitles.push({
+          url: match[1],
+          lang: match[2]
+        });
+      }
+    }
+
+    console.log(`[Client VidSrc] Success: resolved ${sources.length} streams, ${subtitles.length} subtitles`);
+    return { sources, subtitles };
 
   } catch (e: any) {
     console.error(`[Client VidSrc] Failed: ${e.message}`);

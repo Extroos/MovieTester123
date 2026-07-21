@@ -808,6 +808,7 @@ export default function VideoPlayer({ src, title, onClose, onNextEpisode, item, 
         onSubtitleDelayChange={setSubtitleDelay}
         logoUrl={logoUrl}
         onSubtitleStyleChange={handleSubtitleStyleChange}
+        iframeFallback={!shouldShowNative}
       />
 
       {/* CineMovie Custom Smart TV Casting & Remote Pairing Modal */}

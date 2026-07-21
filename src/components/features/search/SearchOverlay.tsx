@@ -43,7 +43,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
       const blacklist = ['blood', 'gore', 'combat', 'kill', 'murder', 'obsession', 'desire', 'slasher', 'fight', 'mortal', 'odyssey'];
       if (blacklist.some(word => text.includes(word))) return false;
       
-      const genreIds = item.genre_ids || (item as any).genreIds || item.genres?.map((g: any) => g.id) || [];
+      const genreIds = (item as any).genre_ids || (item as any).genreIds || item.genres?.map((g: any) => g.id) || [];
       const hasRestricted = genreIds.some((id: number) => [28, 27, 80, 53, 10752, 9648, 18].includes(id));
       if (hasRestricted) return false;
 
@@ -428,7 +428,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
   const filteredSuggestions = filterKids(applyFilters(suggestions));
 
   // Compute layout dimensions optimized to match Header.tsx spacing
-  const headerOffset = showFilters ? 146 : 92;
+const headerOffset = showFilters ? 146 : 92;
 
   const isTV = typeof document !== 'undefined' && document.body.classList.contains('tv-mode');
   const [showKeyboard, setShowKeyboard] = useState(false);
@@ -458,12 +458,12 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
     }
   };
 
-    const startVoiceSearch = async () => {
+  const startVoiceSearch = async () => {
     try {
       triggerHaptic('medium');
-      const hasPermission = await SpeechRecognition.hasPermission();
+      const hasPermission = await (SpeechRecognition as any).hasPermission?.() || { permission: true };
       if (!hasPermission.permission) {
-        await SpeechRecognition.requestPermission();
+        await (SpeechRecognition as any).requestPermissions?.();
       }
       
       const available = await SpeechRecognition.available();
@@ -477,11 +477,11 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
         });
 
         // Listen for the voice result
-        const listener = SpeechRecognition.addListener('partialResults', (data: any) => {
+        const listenerPromise = SpeechRecognition.addListener('partialResults', (data: any) => {
           if (data.matches && data.matches.length > 0) {
             setQuery(data.matches[0]);
             // Clean up listener
-            listener.remove();
+            listenerPromise.then(l => l.remove());
           }
         });
       }
@@ -1037,7 +1037,7 @@ export default function SearchOverlay({ onClose, onMovieClick, onShowResults, di
                           zIndex: 1 
                         }} />
                         <span style={{ zIndex: 2, position: 'relative' }}>{cat.label}</span>
-                        {cat.graphic}
+                        {(cat as any).graphic}
                       </>
                     )}
                   </button>

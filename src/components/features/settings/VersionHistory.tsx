@@ -8,6 +8,21 @@ interface VersionHistoryProps {
 
 const versionData = [
   {
+    version: 'v0.8.5',
+    date: '2026-07-21',
+    changes: [
+      'Profile Lock System: Added PIN number security lock protection for profiles.',
+      'Kids Mode System: Dedicated Kids Mode profiles with age restriction filters.',
+      'Updated Streaming Servers: Multi-CDN server mirrors and upgraded scraper fallback engines.',
+      'TV Mode Redesign & Enhancements: Overhauled TV UI layout, hero cards, metadata displays, and navigation controls.',
+      'TV Remote Navigation & Performance: Ongoing deep optimization of D-pad remote movement, focus states, and rendering responsiveness.',
+      'Mobile Player Screen Rotation: Added phone screen orientation rotate button inside the video player.',
+      'Player Controls: Fixed the "Next Episode" button in the player for seamless episode transitions.',
+      'Download System Fixes: Fixed offline downloads feature (currently running in initial mode; speed & stability optimizations will be stabilized in upcoming updates).',
+      'General Fixes & Polish: Extensive small bug fixes, UI improvements, and internationalization enhancements.'
+    ]
+  },
+  {
     version: 'v0.8.0',
     date: '2026-07-06',
     changes: [

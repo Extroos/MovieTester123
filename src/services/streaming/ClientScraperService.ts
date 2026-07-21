@@ -1,6 +1,6 @@
 import nacl from 'tweetnacl';
 import { Capacitor } from '@capacitor/core';
-import { getLocalServerUrl } from './LocalStreamService';
+import { getLocalServerUrl, getNativeProxyBaseUrl } from './LocalStreamService';
 import { logToNative } from '../../utils/nativeFetch';
 import { getGateway, getGatewayList } from './RemoteConfigService';
 
@@ -443,6 +443,39 @@ export async function scrapeWtfStream(
   if (!wasmRes.ok) throw new Error("Decryption WASM asset could not be loaded");
   const wasmBuffer = await wasmRes.arrayBuffer();
 
+  // Dynamically compile local WASM module to extract exports automatically to match obfuscated keys
+  let dynamicExports = {
+    alloc: "_VL7c",
+    reset: "_iS4t",
+    writeByte: "_4MfY",
+    readByte: "_PqfC",
+    decryptPepper: "_57Zd",
+    decryptEnvelope: "_ieYY",
+    dropPepper: "_HeRx"
+  };
+
+  try {
+    const wasmModule = await WebAssembly.compile(wasmBuffer);
+    const exportedFuncs = WebAssembly.Module.exports(wasmModule)
+      .filter(e => e.kind === 'function')
+      .map(e => e.name);
+    
+    if (exportedFuncs.length >= 7) {
+      dynamicExports = {
+        alloc: exportedFuncs[0],
+        reset: exportedFuncs[1],
+        writeByte: exportedFuncs[2],
+        readByte: exportedFuncs[3],
+        decryptPepper: exportedFuncs[4],
+        decryptEnvelope: exportedFuncs[5],
+        dropPepper: exportedFuncs[6]
+      };
+      logToNative(`[WTF Resolver] Dynamically extracted local WASM exports: ${JSON.stringify(dynamicExports)}`);
+    }
+  } catch (e: any) {
+    logToNative(`[WTF Resolver] Failed to dynamically compile local WASM module: ${e.message}`);
+  }
+
   // Extract top-level decryption functions
   const webpackIdx = chunkCode.indexOf(',(self.webpackChunk_N_E');
   if (webpackIdx !== -1) {
@@ -532,15 +565,7 @@ export async function scrapeWtfStream(
         status: 200,
         json: async () => ({
           url: "makima.wasm",
-          exports: {
-            alloc: "_BpDg",
-            reset: "_YrcY",
-            writeByte: "_xeBp",
-            readByte: "_e6Un",
-            decryptPepper: "_0S1G",
-            decryptEnvelope: "_7F6j",
-            dropPepper: "_DKz4"
-          }
+          exports: dynamicExports
         })
       } as any;
     }
@@ -662,15 +687,18 @@ export async function scrapeVixsrcStream(
       const token = tokenMatch[1];
       const expires = expiresMatch[1];
 
-      const sources = streams.map((s: any) => {
+      const localBase = await getNativeProxyBaseUrl();
+      const sources = streams.map((s: any, idx: number) => {
         const l = new URL(s.url);
         l.searchParams.append("token", token);
         l.searchParams.append("expires", expires);
         l.searchParams.append("asn", "");
         l.searchParams.append("h", "1"); // FHD quality
+        
+        const proxiedUrl = `${localBase}/local-proxy?url=${encodeURIComponent(l.toString())}&referer=${encodeURIComponent(vixsrcBase + '/')}&origin=${encodeURIComponent(vixsrcBase)}`;
         return {
-          url: l.toString(),
-          quality: s.name || 'Server',
+          url: proxiedUrl,
+          quality: s.name || `Mirror ${idx + 1}`,
           isM3U8: true
         };
       });

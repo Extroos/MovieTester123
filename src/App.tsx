@@ -161,6 +161,8 @@ export default function App() {
           const stored = localStorage.getItem('cinemovie_is_tv');
           if (stored !== null) {
             isTVModeValue = stored === 'true';
+          } else if (isTVModeValue) {
+            localStorage.setItem('cinemovie_is_tv', 'true');
           }
         }
 
@@ -176,10 +178,10 @@ export default function App() {
 
         if (Capacitor.isNativePlatform()) {
           const { ScreenOrientation } = await import('@capacitor/screen-orientation');
-          if (!isTVModeValue) {
-            await (ScreenOrientation as any).lock({ orientation: 'portrait' }).catch(() => {});
+          if (isTVModeValue) {
+            await (ScreenOrientation as any).lock({ orientation: 'landscape' }).catch(() => {});
           } else {
-            await (ScreenOrientation as any).unlock().catch(() => {});
+            await (ScreenOrientation as any).lock({ orientation: 'portrait' }).catch(() => {});
           }
 
           const { StatusBar, Style } = await import('@capacitor/status-bar');
@@ -426,6 +428,7 @@ export default function App() {
 
   const selectedMovieRef = useRef(selectedMovie);
   const selectedTVShowRef = useRef(selectedTVShow);
+  const lastFocusedMovieCardRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
     selectedMovieRef.current = selectedMovie;
     selectedTVShowRef.current = selectedTVShow;
@@ -1056,6 +1059,7 @@ export default function App() {
 
   const handleTVShowClick = useCallback((show: TVShow) => {
     if (document.activeElement instanceof HTMLElement) {
+      lastFocusedMovieCardRef.current = document.activeElement;
       document.activeElement.blur();
     }
     setTimeout(() => {
@@ -1066,6 +1070,7 @@ export default function App() {
   const handleMovieClick = useCallback((movie: Movie | TVShow | any) => {
     // Blur any focused input first (e.g. search bar) so the keyboard is dismissed
     if (document.activeElement instanceof HTMLElement) {
+      lastFocusedMovieCardRef.current = document.activeElement;
       document.activeElement.blur();
     }
     const isTv = movie.mediaType === 'tv' || movie.type === 'tv' || movie.media_type === 'tv' || 'firstAirDate' in movie || 'name' in movie;
@@ -1079,6 +1084,18 @@ export default function App() {
       setSelectedMovie(movie);
     }, 120);
   }, [handleTVShowClick]);
+
+  const handleDetailsClose = useCallback(() => {
+    setSelectedMovie(null);
+    setSelectedTVShow(null);
+    content.refreshContinueWatching();
+    if (lastFocusedMovieCardRef.current) {
+      const el = lastFocusedMovieCardRef.current;
+      setTimeout(() => {
+        el.focus();
+      }, 80);
+    }
+  }, [content]);
 
   const handleShowSearchResults = useCallback((query: string, results: Movie[]) => {
     setSearchQuery(query);
@@ -1414,17 +1431,23 @@ export default function App() {
         ) : (!activeProfile || showProfileSelector) ? (
           <ProfileSelector onProfileSelected={handleProfileSelected} />
         ) : (
-          <div style={{ width: '100%', height: '100vh', overflow: 'hidden', position: 'relative' }}>
+          <div style={{ 
+            width: (typeof document !== 'undefined' && document.body.classList.contains('tv-mode') && window.innerWidth > 450) ? '100%' : '100%', 
+            height: '100vh', 
+            overflow: 'hidden', 
+            position: 'relative' 
+          }}>
             {/* Fixed blurred dynamic backdrop background that stays up in TV mode while main page rows scroll */}
             {document.body.classList.contains('tv-mode') && (
-              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '80vh', zIndex: 0, pointerEvents: 'none', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '75vh', zIndex: 0, pointerEvents: 'none', overflow: 'hidden', transform: 'translateZ(0)' }}>
                 <div 
                   id="tv-dynamic-backdrop-1"
                   style={{
                     position: 'absolute',
                     inset: 0,
                     opacity: 1,
-                    transition: 'opacity 1.0s ease-in-out',
+                    transition: 'opacity 0.4s ease-out',
+                    willChange: 'opacity',
                     background: 'transparent'
                   }}
                 />
@@ -1434,7 +1457,8 @@ export default function App() {
                     position: 'absolute',
                     inset: 0,
                     opacity: 0,
-                    transition: 'opacity 1.0s ease-in-out',
+                    transition: 'opacity 0.4s ease-out',
+                    willChange: 'opacity',
                     background: 'transparent'
                   }}
                 />
@@ -1442,7 +1466,7 @@ export default function App() {
                   style={{
                     position: 'absolute',
                     inset: 0,
-                    background: 'linear-gradient(to bottom, transparent 0%, rgba(var(--bg-primary-rgb, 10,10,10), 0.4) 30%, rgba(var(--bg-primary-rgb, 10,10,10), 0.85) 70%, var(--bg-primary) 100%)'
+                    background: 'linear-gradient(to bottom, transparent 0%, rgba(var(--bg-primary-rgb, 10,10,10), 0.5) 40%, var(--bg-primary) 100%)'
                   }}
                 />
               </div>
@@ -1572,7 +1596,7 @@ export default function App() {
                               return (
                                 <ContentRow 
                                   title={t('trending_now')}
-                                  movies={filterKids(homeActiveTrendingTab === 'movies' ? trending : trendingTV)} 
+                                  movies={filterKids((homeActiveTrendingTab === 'movies' ? trending : trendingTV) as any)} 
                                   onMovieClick={homeActiveTrendingTab === 'movies' ? handleMovieClick : handleTVShowClick}
                                   onSeeAll={getSeeAllCallback('home-trending', t('trending_now'), homeActiveTrendingTab === 'movies' ? trending : trendingTV)}
                                   tabs={[
@@ -1819,8 +1843,8 @@ export default function App() {
                 )}
               </AnimatePresence>
 
-              {selectedMovie && ( <MovieDetails movie={selectedMovie} onClose={() => { setSelectedMovie(null); content.refreshContinueWatching(); }} onListUpdate={content.refreshMyList} onActorClick={(id) => setSelectedActor(id)} /> )}
-              {selectedTVShow && ( <TVShowDetails show={selectedTVShow} onClose={() => { setSelectedTVShow(null); content.refreshContinueWatching(); }} onListUpdate={content.refreshMyList} onActorClick={(id) => setSelectedActor(id)} /> )}
+              {selectedMovie && ( <MovieDetails movie={selectedMovie} onClose={handleDetailsClose} onListUpdate={content.refreshMyList} onActorClick={(id) => setSelectedActor(id)} /> )}
+              {selectedTVShow && ( <TVShowDetails show={selectedTVShow} onClose={handleDetailsClose} onListUpdate={content.refreshMyList} onActorClick={(id) => setSelectedActor(id)} /> )}
               {selectedPartyInvite && (
                 <WatchPartyRoomPage
                   invite={selectedPartyInvite}

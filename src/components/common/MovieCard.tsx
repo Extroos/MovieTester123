@@ -88,31 +88,39 @@ const MovieCard = React.memo(function MovieCard({ movie, onClick }: MovieCardPro
         />
 
         {/* Rating badge */}
-        {imageLoaded && (
-          <div style={{
-            position: 'absolute',
-            top: '8px',
-            right: '8px',
-            background: 'rgba(15, 15, 15, 0.9)',
-            padding: '5px 9px',
-            borderRadius: '10px',
-            border: '1px solid rgba(255, 255, 255, 0.15)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-          }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill={COLORS.rating}>
-              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-            </svg>
-            <span style={{
-              color: COLORS.textPrimary,
-              fontSize: '0.75rem',
-              fontWeight: '700',
+        {(() => {
+          const rawRating = movie.voteAverage || (movie as any).vote_average;
+          if (!rawRating || rawRating <= 0) return null;
+          const ratingNum = typeof rawRating === 'number' ? (rawRating > 10 ? rawRating / 10 : rawRating) : parseFloat(rawRating);
+          if (isNaN(ratingNum) || ratingNum <= 0) return null;
+
+          return (
+            <div style={{
+              position: 'absolute',
+              top: '8px',
+              right: '8px',
+              background: 'rgba(15, 15, 15, 0.9)',
+              padding: '5px 9px',
+              borderRadius: '10px',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              zIndex: 10
             }}>
-              {movie.voteAverage.toFixed(1)}
-            </span>
-          </div>
-        )}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill={COLORS.rating}>
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+              </svg>
+              <span style={{
+                color: COLORS.textPrimary,
+                fontSize: '0.75rem',
+                fontWeight: '700',
+              }}>
+                {ratingNum.toFixed(1)}
+              </span>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Title */}

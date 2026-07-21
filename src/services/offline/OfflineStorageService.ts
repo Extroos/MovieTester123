@@ -140,6 +140,7 @@ function uint8ToBase64(bytes: Uint8Array): Promise<string> {
 interface NativeSession {
   segmentCount: number;
   isMp4: boolean;
+  segmentDurations?: number[];
 }
 
 const nativeSessions: Record<string, NativeSession> = {};
@@ -152,12 +153,12 @@ export const OfflineStorageService = {
    * Start a progressive write session.
    * On native: creates the segment sub-directory and clears any prior run.
    */
-  async startProgressiveWrite(id: string, isMp4 = false): Promise<void> {
+  async startProgressiveWrite(id: string, isMp4 = false, segmentDurations?: number[]): Promise<void> {
     if (isNative) {
       const { Filesystem, Directory } = await import('@capacitor/filesystem');
       const dir = segDir(id);
 
-      nativeSessions[id] = { segmentCount: 0, isMp4 };
+      nativeSessions[id] = { segmentCount: 0, isMp4, segmentDurations };
 
       // Ensure base directory exists
       try {
@@ -296,27 +297,32 @@ export const OfflineStorageService = {
         throw new Error(`[OfflineStorage] Zero segments were saved for ${id}. Segment downloads all failed — check CDN connectivity and proxy headers.`);
       }
 
-      // Build a proper multi-segment HLS playlist using capacitor file:// URIs
-      const segDuration = totalSegs > 0 ? Math.ceil(durationSeconds / totalSegs) : durationSeconds;
-      const playlistLines: string[] = [
-        '#EXTM3U',
-        '#EXT-X-VERSION:3',
-        `#EXT-X-TARGETDURATION:${segDuration}`,
-        '#EXT-X-MEDIA-SEQUENCE:0',
-      ];
+       // Build a proper multi-segment HLS playlist using capacitor file:// URIs
+       const hasDurations = session?.segmentDurations && Array.isArray(session.segmentDurations) && session.segmentDurations.length === totalSegs;
+       const maxSegDur = hasDurations
+         ? Math.ceil(Math.max(...session.segmentDurations!))
+         : (totalSegs > 0 ? Math.ceil(durationSeconds / totalSegs) : durationSeconds);
 
-      for (let i = 0; i < totalSegs; i++) {
-        const filename = segFilename(i);
-        const segResult = await Filesystem.getUri({
-          path: `${dir}/${filename}`,
-          directory: Directory.Data,
-        });
-        const segUrl = Capacitor.convertFileSrc(segResult.uri);
-        playlistLines.push(`#EXTINF:${segDuration}.0,`);
-        playlistLines.push(segUrl);
-      }
-      playlistLines.push('#EXT-X-ENDLIST');
-      playlistLines.push('');
+       const playlistLines: string[] = [
+         '#EXTM3U',
+         '#EXT-X-VERSION:3',
+         `#EXT-X-TARGETDURATION:${maxSegDur}`,
+         '#EXT-X-MEDIA-SEQUENCE:0',
+       ];
+
+       for (let i = 0; i < totalSegs; i++) {
+         const filename = segFilename(i);
+         const segResult = await Filesystem.getUri({
+           path: `${dir}/${filename}`,
+           directory: Directory.Data,
+         });
+         const segUrl = Capacitor.convertFileSrc(segResult.uri);
+         const individualDur = hasDurations ? session.segmentDurations![i] : (totalSegs > 0 ? durationSeconds / totalSegs : durationSeconds);
+         playlistLines.push(`#EXTINF:${individualDur.toFixed(3)},`);
+         playlistLines.push(segUrl);
+       }
+       playlistLines.push('#EXT-X-ENDLIST');
+       playlistLines.push('');
 
       const playlistContent = playlistLines.join('\n');
       const playlistBase64 = btoa(unescape(encodeURIComponent(playlistContent)));

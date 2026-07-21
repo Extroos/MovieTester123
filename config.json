@@ -87,8 +87,19 @@
     "vidsrc_sbs_referer": "https://vidsrc.sbs/",
     "vidsrc_sbs_origin": "https://vidsrc.sbs",
     "vidsrc_pk_referer": "https://embed.vidsrc.pk/",
-    "vidsrc_pk_origin": "https://embed.vidsrc.pk",
     "vidsrc_me_referer": "https://vidsrc.me/",
     "vidsrc_me_origin": "https://vidsrc.me"
+  },
+  "subtitles": {
+    "opensubtitles_api_key": "JkKADcTEWRQzVl95qI2UtAXbMgJhH44R",
+    "stremio_opensubtitles_base": "https://opensubtitles-v3.strem.io/subtitles",
+    "yts_subtitles_url": "https://yifysubtitles.ch/movie-imdb/",
+    "yts_subtitles_ch": "https://yifysubtitles.ch",
+    "yts_domains": [
+      "https://yifysubtitles.ch",
+      "https://yifysubtitles.org",
+      "https://yts-subs.com"
+    ],
+    "tmdb_api_key": "15d20e45d54a7e10f054f90d2006d805"
   }
 }

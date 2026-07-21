@@ -50,11 +50,12 @@ export function getHeadersForUrl(url: string): Record<string, string> {
       'Accept': '*/*',
     };
   }
-  if (url.includes('vidsrc.wtf')) {
+  if (url.includes('vidsrc.wtf') || url.includes('viduki.net')) {
+    const domain = url.includes('viduki.net') ? 'viduki.net' : 'vidsrc.wtf';
     return {
       'User-Agent': ua,
-      'Referer': 'https://vidsrc.wtf/',
-      'Origin': 'https://vidsrc.wtf',
+      'Referer': `https://${domain}/`,
+      'Origin': `https://${domain}`,
       'Accept': '*/*',
     };
   }
@@ -98,6 +99,20 @@ export function getHeadersForUrl(url: string): Record<string, string> {
       'Accept': '*/*',
     };
   }
+
+  // Dynamic fallback: use target URL's own domain for Referer/Origin if no specific overrides exist
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname && parsed.protocol.startsWith('http')) {
+      return {
+        'User-Agent': ua,
+        'Referer': `${parsed.origin}/`,
+        'Origin': parsed.origin,
+        'Accept': '*/*',
+      };
+    }
+  } catch (_) {}
+
   return {
     'User-Agent': ua,
     'Accept': '*/*',

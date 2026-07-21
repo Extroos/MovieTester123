@@ -37,72 +37,8 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
   const [downloads, setDownloads] = useState<DownloadItem[]>([]);
   const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
 
-  // Seed fake downloads if the device doesn't have any downloads stored offline yet
   const displayDownloads = useMemo(() => {
-    if (downloads.length > 0) return downloads;
-    return [
-      {
-        id: 'fake_wednesday_s1_e1',
-        title: 'Wednesday\'s Child Is Full of Woe',
-        posterPath: '/jeGv4xjTLJVok152Z472V96zvvZ.jpg',
-        type: 'tv',
-        status: 'completed',
-        progress: 100,
-        addedAt: Date.now() - 3600000 * 24,
-        data: {
-          id: 119051,
-          name: 'Wednesday',
-          backdropPath: '/iH4Go49y457gL805qK3sJ39mN1q.jpg',
-          posterPath: '/jeGv4xjTLJVok152Z472V96zvvZ.jpg'
-        },
-        metaData: { size: 1.1 * 1024 * 1024 * 1024 }
-      },
-      {
-        id: 'fake_wednesday_s1_e2',
-        title: 'Woe Is the Loneliest Number',
-        posterPath: '/jeGv4xjTLJVok152Z472V96zvvZ.jpg',
-        type: 'tv',
-        status: 'completed',
-        progress: 100,
-        addedAt: Date.now() - 3600000 * 23,
-        data: {
-          id: 119051,
-          name: 'Wednesday',
-          backdropPath: '/iH4Go49y457gL805qK3sJ39mN1q.jpg',
-          posterPath: '/jeGv4xjTLJVok152Z472V96zvvZ.jpg'
-        },
-        metaData: { size: 0.95 * 1024 * 1024 * 1024 }
-      },
-      {
-        id: 'fake_stranger_things_s4_e1',
-        title: 'Chapter One: The Hellfire Club',
-        posterPath: '/49WJfeN0mhmN6RndRI7t6pLr81z.jpg',
-        type: 'tv',
-        status: 'completed',
-        progress: 100,
-        addedAt: Date.now() - 3600000 * 12,
-        data: {
-          id: 66732,
-          name: 'Stranger Things',
-          backdropPath: '/56v2DnL5aKu7005oMs4O1uXN4rs.jpg',
-          posterPath: '/49WJfeN0mhmN6RndRI7t6pLr81z.jpg'
-        },
-        metaData: { size: 1.4 * 1024 * 1024 * 1024 }
-      },
-      {
-        id: 'fake_avatar_movie',
-        title: 'Avatar: The Way of Water',
-        posterPath: '/t6TL71Q2i26fsZ7rj6HwG7n6rjq.jpg',
-        type: 'movie',
-        status: 'completed',
-        progress: 100,
-        addedAt: Date.now(),
-        metaData: {
-          backdropPath: '/vL56iB0951j1Q7sK992x472mN9z.jpg',
-          size: 2.4 * 1024 * 1024 * 1024
-        }
-      }
-    ] as DownloadItem[];
+    return downloads;
   }, [downloads]);
   const [activeShow, setActiveShow] = useState<any | null>(null);
   const [errorToast, setErrorToast] = useState<string | null>(null);
@@ -364,6 +300,9 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
                 }
               }
             }}
+            onFocus={(e) => {
+              e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }}
             className="tv-focusable downloads-options-btn"
             tabIndex={0}
             style={{
@@ -436,8 +375,8 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
                 : `${episodesCount} Episode${episodesCount > 1 ? 's' : ''} • ${itemSizeGB} GB`;
 
               const imagePath = item.type === 'movie' 
-                ? (item.raw.metaData?.backdropPath || item.raw.metaData?.backdrop_path || item.raw.posterPath || '')
-                : (item.raw.show.backdropPath || item.raw.show.backdrop_path || item.raw.show.posterPath || '');
+                ? (item.raw.metaData?.backdropPath || (item.raw.metaData as any)?.backdrop_path || item.raw.posterPath || '')
+                : (item.raw.show.backdropPath || (item.raw.show as any)?.backdrop_path || item.raw.show.posterPath || '');
               
               const getCleanUrl = (path: string) => {
                 if (!path) return '/movie-placeholder.png';
@@ -455,6 +394,9 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
                     } else {
                       setActiveShow(item.raw);
                     }
+                  }}
+                  onFocus={(e) => {
+                    e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
@@ -633,6 +575,9 @@ function DownloadsPage({ onNavigate }: DownloadsPageProps) {
             }}>
               <button
                 onClick={() => setActiveShow(null)}
+                onFocus={(e) => {
+                  e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveShow(null); } }}
                 className="tv-focusable"
                 tabIndex={0}
@@ -1384,6 +1329,9 @@ function EpisodeRow({ ep, epNum, isTV, isMobileSize, loadingItemId, backdropPath
       {/* Thumbnail (play action) */}
       <div
         onClick={() => onPlay(ep)}
+        onFocus={(e) => {
+          e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPlay(ep); } }}
         className="tv-focusable"
         tabIndex={0}
@@ -1441,6 +1389,9 @@ function EpisodeRow({ ep, epNum, isTV, isMobileSize, loadingItemId, backdropPath
       {/* Delete button */}
       <button
         onClick={(e) => { e.stopPropagation(); onDelete(ep, e); }}
+        onFocus={(e) => {
+          e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); onDelete(ep, e); }
         }}

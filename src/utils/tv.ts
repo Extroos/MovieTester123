@@ -21,17 +21,12 @@ export function isTVMode(): boolean {
     if (stored === 'false') return false;
   }
 
-  // Heuristic fallback (user agent + screen aspect ratio)
   if (typeof navigator !== 'undefined') {
     const ua = navigator.userAgent.toLowerCase();
-    if (ua.includes('tv') || ua.includes('television') || ua.includes('androidtv') || ua.includes('googletv') || ua.includes('box') || ua.includes('firetv') || ua.includes('leanback')) {
+    if (ua.includes('tv') || ua.includes('leanback') || ua.includes('googletv') || ua.includes('smart-tv') || ua.includes('aftb') || ua.includes('aftm') || ua.includes('aftt') || ua.includes('bravia')) {
       return true;
     }
   }
 
-  return (
-    typeof window !== 'undefined' &&
-    window.screen.availWidth > window.screen.availHeight &&
-    !('ontouchstart' in window)
-  );
+  return false;
 }

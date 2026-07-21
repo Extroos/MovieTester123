@@ -2,6 +2,7 @@ import React from 'react';
 import { registerPlugin, Capacitor } from '@capacitor/core';
 import { getEnabledServers, getRemoteConfig, getRemoteServers } from '../../../../services/streaming/RemoteConfigService';
 import type { Movie, TVShow } from '../../../../types';
+import { t } from '../../../../utils/i18n';
 
 export interface ServerOption {
   id: string;
@@ -30,8 +31,8 @@ const IS_MOBILE_DEVICE = typeof window !== 'undefined' && /Mobi|Android|iPhone|i
 interface PlayerSettingsProps {
   showSettings: boolean;
   setShowSettings: (show: boolean) => void;
-  settingsTab: 'quality' | 'subtitles' | 'speed' | 'servers' | 'download' | 'diagnostics';
-  setSettingsTab: React.Dispatch<React.SetStateAction<'quality' | 'subtitles' | 'speed' | 'servers' | 'download' | 'diagnostics'>>;
+  settingsTab: 'quality' | 'subtitles' | 'speed' | 'servers' | 'download' | 'diagnostics' | 'audio';
+  setSettingsTab: React.Dispatch<React.SetStateAction<'quality' | 'subtitles' | 'speed' | 'servers' | 'download' | 'diagnostics' | 'audio'>>;
   selectedServer: string;
   handleServerChange: (serverId: string) => Promise<void>;
   isSwitchingServer: boolean;
@@ -41,6 +42,9 @@ interface PlayerSettingsProps {
   qualities: { height: number; index: number; label?: string }[];
   currentQuality: number;
   handleQualitySelect: (index: number) => void;
+  audioLanguages?: { label: string; index: number }[];
+  currentAudioLanguage?: number;
+  handleAudioLanguageSelect?: (index: number) => void;
   localTracks: { file: string; label: string; kind: string; default?: boolean; isBackup?: boolean }[];
   activeTrackIndex: number;
   handleTrackSelect: (index: number) => Promise<void>;
@@ -131,6 +135,9 @@ export const PlayerSettings = React.memo(function PlayerSettings({
   qualities,
   currentQuality,
   handleQualitySelect,
+  audioLanguages,
+  currentAudioLanguage,
+  handleAudioLanguageSelect,
   localTracks,
   activeTrackIndex,
   handleTrackSelect,
@@ -192,6 +199,19 @@ export const PlayerSettings = React.memo(function PlayerSettings({
   // OTA-controlled server list and visibility
   const [serversList, setServersList] = React.useState<ServerOption[]>(ALL_SERVERS);
   const [enabledServerIds, setEnabledServerIds] = React.useState<string[] | null>(null);
+
+  const doneBtnRef = React.useRef<HTMLButtonElement>(null);
+
+  React.useEffect(() => {
+    if (showSettings) {
+      const timer = setTimeout(() => {
+        if (doneBtnRef.current) {
+          doneBtnRef.current.focus();
+        }
+      }, 80);
+      return () => clearTimeout(timer);
+    }
+  }, [showSettings]);
 
   React.useEffect(() => {
     // Clear OTA configuration cache to guarantee fresh config is loaded when player settings opens
@@ -434,7 +454,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                     `Generated: ${new Date().toISOString()}`,
                     `Offline Mode Active: ${isOfflineMode ? "YES" : "NO"}`,
                     `Current Source: ${currentSrc || 'None'}`,
-                    `Active Item: ${item ? `${item.title || (item as any).name} (ID: ${item.id})` : 'None'}`,
+                    `Active Item: ${item ? `${(item as any).title || (item as any).name} (ID: ${item.id})` : 'None'}`,
                     `Season/Episode: ${season !== undefined ? `S${season}E${episode}` : 'N/A'}`,
                     "",
                     "--- PLAYER DIAGNOSTICS ---",
@@ -480,7 +500,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
           {item && (
             <>
               <div>• <strong>Item ID:</strong> {item.id}</div>
-              <div>• <strong>Title:</strong> {item.title || (item as any).name || 'Unknown'}</div>
+              <div>• <strong>Title:</strong> {(item as any).title || (item as any).name || 'Unknown'}</div>
               {season !== undefined && episode !== undefined && (
                 <div>• <strong>Season / Episode:</strong> S{season}E{episode}</div>
               )}
@@ -582,6 +602,14 @@ export const PlayerSettings = React.memo(function PlayerSettings({
       onClick={() => setShowSettings(false)}
     >
       <style>{`
+        body.tv-mode .settings-tab-btn:focus,
+        body.tv-mode .settings-tab-btn:focus-visible {
+          transform: none !important;
+          background: #ffffff !important;
+          color: #000000 !important;
+          border-color: #ffffff !important;
+          box-shadow: 0 0 0 2px #ffffff !important;
+        }
         @media (orientation: landscape) and (max-height: 500px) {
           .player-settings-sheet {
             border-radius: 20px 0 0 20px !important;
@@ -596,7 +624,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
             bottom: 0 !important;
             border-bottom: 1px solid rgba(255,255,255,0.08) !important;
             border-right: none !important;
-            animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+            animation: slideLeftGlass 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
           }
           .player-settings-content {
             max-height: calc(100vh - 110px) !important;
@@ -617,15 +645,11 @@ export const PlayerSettings = React.memo(function PlayerSettings({
             gap: 6px !important;
           }
           .settings-tab-btn {
-            padding: 6px 8px !important;
-            font-size: 0.72rem !important;
+            padding: 6px 10px !important;
+            font-size: 0.75rem !important;
           }
           .settings-header {
             margin-bottom: -2px !important;
-          }
-        }
-        @keyframes slideInRight {
-            animation: slideLeftGlass 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
           }
         }
         @keyframes slideLeftGlass {
@@ -653,7 +677,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
           animation: 'slideUpGlass 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
           display: 'flex',
           flexDirection: 'column',
-          gap: '8px',
+          gap: '10px',
           scrollbarWidth: 'none',
           msOverflowStyle: 'none'
         }} 
@@ -663,50 +687,108 @@ export const PlayerSettings = React.memo(function PlayerSettings({
 
         <div className="settings-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h3 onClick={handleTitleClick} onTouchStart={handleTitleClick} style={{ margin: 0, color: '#fff', fontSize: '0.95rem', fontWeight: 800, letterSpacing: '-0.02em', cursor: 'pointer', userSelect: 'none', padding: '4px 10px', border: '1.5px dashed rgba(255,255,255,0.25)', borderRadius: '8px', background: 'rgba(255,255,255,0.02)', display: 'inline-block' }}>Player Options</h3>
-          <button className="tv-focusable" tabIndex={0} onClick={() => setShowSettings(false)} style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '5px 12px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>Done</button>
+          <button 
+            ref={doneBtnRef}
+            className="tv-focusable" 
+            tabIndex={0} 
+            onClick={() => setShowSettings(false)} 
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
+                e.preventDefault();
+                e.stopPropagation();
+                const activeOrFirstTab = document.querySelector('.settings-tab-btn.active, .settings-tab-btn') as HTMLElement | null;
+                if (activeOrFirstTab) activeOrFirstTab.focus();
+              }
+            }}
+            style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '5px 12px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}
+          >
+            Done
+          </button>
         </div>
 
-        {/* Horizontally scrollable and non-wrapping Tab bar optimized for 360px screen */}
+        {/* Horizontally scrollable and non-wrapping Tab bar optimized for TV and mobile screens */}
         <div 
           style={{ 
-            display: 'flex', 
-            background: 'rgba(255,255,255,0.03)', 
-            borderRadius: '10px', 
-            padding: '3px', 
-            gap: '3px',
+            display: 'flex',
+            alignItems: 'center',
+            background: 'rgba(255,255,255,0.04)', 
+            borderRadius: '12px', 
+            padding: '4px 6px', 
+            gap: '6px',
             overflowX: 'auto',
+            overflowY: 'hidden',
+            minHeight: '44px',
+            boxSizing: 'border-box',
+            flexShrink: 0,
             scrollbarWidth: 'none',
             msOverflowStyle: 'none',
             WebkitOverflowScrolling: 'touch'
           }}
-        >
-          {[
-            { id: 'servers', label: 'Servers', show: !!item && !isOfflineMode },
-            { id: 'quality', label: selectedServer === 'vidsrc-wtf-2' ? 'Languages' : 'Quality', show: qualities.length > 0 },
-            { id: 'subtitles', label: 'Subtitles', show: true },
-            { id: 'speed', label: 'Speed', show: true }
-          ].filter(t => t.show).map(tab => (
+         >
+          {(() => {
+            const hasLanguages = audioLanguages && audioLanguages.length > 0;
+            return [
+              { id: 'servers', label: 'Servers', show: !!item && !isOfflineMode },
+              { id: 'audio', label: 'Audio (Dub)', show: hasLanguages },
+              { id: 'quality', label: 'Quality', show: qualities.length > 0 || selectedServer === 'vixsrc' || selectedServer === 'vidsrc-wtf-2' },
+              { id: 'subtitles', label: 'Subtitles', show: true },
+              { id: 'speed', label: 'Speed', show: true }
+            ].filter(t => t.show).map(tab => (
             <button
               key={tab.id}
-              className="settings-tab-btn tv-focusable"
+              className={`settings-tab-btn tv-focusable ${settingsTab === tab.id ? 'active' : ''}`}
               tabIndex={0}
               onClick={() => handleTabClick(tab.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowRight') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const tabs = Array.from(document.querySelectorAll('.settings-tab-btn')) as HTMLElement[];
+                  const currIdx = tabs.indexOf(e.currentTarget);
+                  if (currIdx !== -1 && currIdx < tabs.length - 1) {
+                    tabs[currIdx + 1].focus();
+                  }
+                } else if (e.key === 'ArrowLeft') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const tabs = Array.from(document.querySelectorAll('.settings-tab-btn')) as HTMLElement[];
+                  const currIdx = tabs.indexOf(e.currentTarget);
+                  if (currIdx > 0) {
+                    tabs[currIdx - 1].focus();
+                  }
+                } else if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const firstContentEl = document.querySelector('.player-settings-content .tv-focusable') as HTMLElement | null;
+                  if (firstContentEl) firstContentEl.focus();
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (doneBtnRef.current) doneBtnRef.current.focus();
+                }
+              }}
               style={{
                 flexShrink: 0,
-                padding: '8px 12px',
-                background: settingsTab === tab.id ? 'rgba(255,255,255,0.08)' : 'transparent',
-                border: settingsTab === tab.id ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent',
-                color: settingsTab === tab.id ? '#ffffff' : 'rgba(255,255,255,0.45)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: '32px',
+                padding: '0 14px',
+                background: settingsTab === tab.id ? 'rgba(255,255,255,0.12)' : 'transparent',
+                border: settingsTab === tab.id ? '1px solid rgba(255,255,255,0.15)' : '1px solid transparent',
+                color: settingsTab === tab.id ? '#ffffff' : 'rgba(255,255,255,0.55)',
                 borderRadius: '8px',
                 fontSize: '0.78rem',
-                fontWeight: 700,
+                fontWeight: 800,
+                lineHeight: 1,
                 cursor: 'pointer',
+                boxSizing: 'border-box',
                 transition: 'all 0.15s'
               }}
             >
               {tab.label}
             </button>
-          ))}
+          ))})()}
         </div>
 
         <div className="player-settings-content" style={{ flex: 1, overflowY: 'auto', maxHeight: '72vh', paddingBottom: '8px', scrollbarWidth: 'none', pointerEvents: isTransitioning ? 'none' : 'auto' }}>
@@ -911,7 +993,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                 {item && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', opacity: 0.9 }}>
                     <span>Active Item:</span>
-                    <span style={{ fontWeight: 700, color: '#fff' }}>{item.title || (item as any).name || 'Unknown'} (ID: {item.id})</span>
+                    <span style={{ fontWeight: 700, color: '#fff' }}>{(item as any).title || (item as any).name || 'Unknown'} (ID: {item.id})</span>
                   </div>
                 )}
                 <FileExistenceDiagnostic itemId={item?.id} isTv={!!season} s={season} e={episode} />
@@ -930,7 +1012,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                 <div style={{ color: '#fbbf24', fontWeight: 800, fontSize: '0.8rem' }}>⚠️ Player Warnings</div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '6px' }}>
-                  <span style={{ color: '#a78bfa', fontWeight: 700 }}>VidSrc PM:</span>
+                  <span style={{ color: '#a78bfa', fontWeight: 700 }}>Active Server Logs / Warnings:</span>
                   <pre style={{ margin: 0, whiteSpace: 'pre-wrap', color: 'rgba(255,255,255,0.7)', fontSize: '0.74rem', fontFamily: 'monospace', lineHeight: 1.3 }}>{vidsrcPmDiagnostics || 'No issues reported.'}</pre>
                 </div>
               </div>
@@ -938,7 +1020,10 @@ export const PlayerSettings = React.memo(function PlayerSettings({
           )}
 
           {settingsTab === 'quality' && qualities.length > 0 && (() => {
-            const isLangMode = selectedServer === 'vidsrc-wtf-2';
+            const isLangMode = qualities.some(q => {
+               const label = (q.label || '').toLowerCase();
+               return !label.endsWith('p') && label !== 'auto' && /[a-z]/i.test(label);
+             });
             // Lazy-load the stored preference label (sync, no hook needed)
             let savedLangPref = '';
             try {
@@ -956,6 +1041,8 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: '8px' }}>
                   {!isLangMode && (
                     <button
+                      className="tv-focusable"
+                      tabIndex={0}
                       onClick={() => handleQualitySelect(-1)}
                       style={{
                         padding: '14px', borderRadius: '12px',
@@ -975,6 +1062,8 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                     return (
                       <div key={q.index} style={{ position: 'relative' }}>
                         <button
+                          className="tv-focusable"
+                          tabIndex={0}
                           onClick={() => handleQualitySelect(q.index)}
                           style={{
                             width: '100%',
@@ -994,6 +1083,8 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                         {/* Show "Set as Default" button when this language is actively selected and in lang mode */}
                         {isLangMode && currentQuality === q.index && !isDefault && (
                           <button
+                            className="tv-focusable"
+                            tabIndex={0}
                             onClick={() => {
                               try {
                                 const raw = localStorage.getItem('watchmovie_settings_v1');
@@ -1023,6 +1114,79 @@ export const PlayerSettings = React.memo(function PlayerSettings({
             );
           })()}
 
+          {settingsTab === 'audio' && audioLanguages && audioLanguages.length > 0 && (() => {
+            // Lazy-load the stored preference label (sync, no hook needed)
+            let savedLangPref = '';
+            try {
+              const raw = localStorage.getItem('watchmovie_settings_v1');
+              if (raw) savedLangPref = (JSON.parse(raw).preferredAudioLanguage || '');
+            } catch (_) {}
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {savedLangPref && (
+                  <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', letterSpacing: '0.05em', marginBottom: '-4px' }}>
+                    Default: <span style={{ color: '#a78bfa', fontWeight: 700 }}>{savedLangPref}</span> — tap a language then ★ to change
+                  </div>
+                )}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: '8px' }}>
+                  {audioLanguages.map((lang) => {
+                    const isDefault = savedLangPref && lang.label.toLowerCase().includes(savedLangPref.toLowerCase());
+                    return (
+                      <div key={lang.index} style={{ position: 'relative' }}>
+                        <button
+                          className="tv-focusable"
+                          tabIndex={0}
+                          onClick={() => handleAudioLanguageSelect?.(lang.index)}
+                          style={{
+                            width: '100%',
+                            padding: '14px', borderRadius: '12px',
+                            background: currentAudioLanguage === lang.index ? '#ffffff' : 'rgba(255,255,255,0.05)',
+                            border: 'none',
+                            color: currentAudioLanguage === lang.index ? '#000000' : '#ffffff',
+                            textAlign: 'center', cursor: 'pointer', fontWeight: 700,
+                            fontSize: '0.8rem',
+                            transition: 'all 0.2s',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                          }}
+                        >
+                          {lang.label}
+                          {isDefault && (
+                            <span style={{ marginLeft: '4px', fontSize: '0.7rem', color: currentAudioLanguage === lang.index ? '#7c3aed' : '#a78bfa' }}>★</span>
+                          )}
+                        </button>
+                        {currentAudioLanguage === lang.index && !isDefault && (
+                          <button
+                            className="tv-focusable"
+                            tabIndex={0}
+                            onClick={() => {
+                              try {
+                                const raw = localStorage.getItem('watchmovie_settings_v1');
+                                const parsed = raw ? JSON.parse(raw) : {};
+                                parsed.preferredAudioLanguage = lang.label;
+                                localStorage.setItem('watchmovie_settings_v1', JSON.stringify(parsed));
+                              } catch (_) {}
+                            }}
+                            style={{
+                              position: 'absolute', top: '-8px', right: '-6px',
+                              background: '#7c3aed', border: 'none', borderRadius: '20px',
+                              color: '#fff', fontSize: '0.62rem', fontWeight: 800,
+                              padding: '2px 7px', cursor: 'pointer', whiteSpace: 'nowrap',
+                              boxShadow: '0 2px 8px rgba(124,58,237,0.5)',
+                              zIndex: 2
+                            }}
+                            title={`Always start with ${lang.label}`}
+                          >
+                            ★ Set Default
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
 
           {settingsTab === 'subtitles' && !isSearchingOnline && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -1074,6 +1238,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
               const isTrackBackup = (t: { isBackup?: boolean; label?: string }) =>
                 t.isBackup === true || t.isBackup === ('true' as any) || t.isBackup === (1 as any) ||
                 (t.label || '').includes('(Auto YTS)') ||
+                (t.label || '').includes('(Auto)') ||
                 (t.label || '').includes('(YTS)') ||
                 (t.label || '').toLowerCase().includes('opensubtitles') ||
                 (t.label || '').toLowerCase().includes('(os)');
@@ -1085,6 +1250,8 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                     {/* OFF BUTTON */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '8px' }}>
                       <button 
+                        className="tv-focusable"
+                        tabIndex={0}
                         disabled={loadingSubtitleIndex !== null}
                         onClick={() => handleTrackSelect(-1)}
                         style={{ 
@@ -1118,6 +1285,8 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                           return (
                             <button 
                               key={i}
+                              className="tv-focusable"
+                              tabIndex={0}
                               disabled={loadingSubtitleIndex !== null}
                               onClick={() => handleTrackSelect(i)}
                               style={{ 
@@ -1159,6 +1328,8 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                         Backup Subtitles (YTS / opensubtitles)
                       </div>
                       <button
+                        className="tv-focusable"
+                        tabIndex={0}
                         onClick={() => {
                           import('../../../../utils/haptics').then(m => m.triggerHaptic('light'));
                           setIsSearchingOnline(true);
@@ -1197,6 +1368,8 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                           return (
                             <button 
                               key={i}
+                              className="tv-focusable"
+                              tabIndex={0}
                               disabled={loadingSubtitleIndex !== null}
                               onClick={() => handleTrackSelect(i)}
                               style={{ 
@@ -1270,25 +1443,23 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                   <div style={{
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '6px',
-                    background: 'rgba(0, 0, 0, 0.35)',
-                    border: '1px solid rgba(255, 255, 255, 0.06)',
+                    gap: '4px',
+                    background: 'radial-gradient(ellipse at center, rgba(35, 35, 42, 0.6) 0%, rgba(12, 12, 15, 0.8) 100%)',
                     borderRadius: '12px',
-                    padding: '16px 12px',
+                    padding: '18px 12px',
                     position: 'relative',
                     overflow: 'hidden',
                     alignItems: 'center',
                     justifyContent: 'center',
                     minHeight: '74px',
-                    boxShadow: 'inset 0 0 15px rgba(0, 0, 0, 0.7)'
                   }}>
                     <div style={{
                       position: 'absolute',
-                      top: '4px',
-                      left: '8px',
-                      fontSize: '0.58rem',
+                      top: '6px',
+                      left: '10px',
+                      fontSize: '0.56rem',
                       fontWeight: 900,
-                      color: 'rgba(255,255,255,0.25)',
+                      color: 'rgba(255,255,255,0.3)',
                       textTransform: 'uppercase',
                       letterSpacing: '0.08em'
                     }}>
@@ -1316,11 +1487,11 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                   </div>
 
                   {/* Section: Delay & Position */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingTop: '4px' }}>
                     {/* Sync Delay */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(0,0,0,0.15)', padding: '12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.03)' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.76rem', fontWeight: 800 }}>
-                        <span style={{ color: 'rgba(255,255,255,0.65)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ color: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                           Sync Delay
                         </span>
@@ -1328,7 +1499,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                           color: subtitleDelay === 0 ? '#ffffff' : subtitleDelay > 0 ? '#4ade80' : '#f87171', 
                           fontFamily: 'monospace',
                           fontWeight: 900,
-                          background: 'rgba(255,255,255,0.05)',
+                          background: 'rgba(255,255,255,0.06)',
                           padding: '2px 8px',
                           borderRadius: '6px',
                           fontSize: '0.74rem'
@@ -1336,36 +1507,47 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                           {subtitleDelay === 0 ? '0.0s' : subtitleDelay > 0 ? `+${subtitleDelay.toFixed(1)}s` : `${subtitleDelay.toFixed(1)}s`}
                         </span>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <button 
+                          className="tv-focusable"
+                          tabIndex={0}
                           onClick={() => { import('../../../../utils/haptics').then(m => m.triggerHaptic('light')); setSubtitleDelay(prev => Math.max(-30, prev - 0.5)); }}
-                          style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.06)', color: '#fff', borderRadius: '8px', fontSize: '0.68rem', fontWeight: 800, cursor: 'pointer', transition: 'all 0.15s' }}
-                          onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-                          onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
+                          style={{ padding: '8px 14px', background: 'rgba(255,255,255,0.08)', border: 'none', color: '#fff', borderRadius: '8px', fontSize: '0.74rem', fontWeight: 900, cursor: 'pointer', transition: 'all 0.15s' }}
                         >
                           -0.5s
                         </button>
-                        <input 
-                          type="range"
-                          min="-30"
-                          max="30"
-                          step="0.5"
-                          value={subtitleDelay}
-                          onChange={(e) => setSubtitleDelay(parseFloat(e.target.value))}
-                          style={{ flex: 1, accentColor: '#ffffff', height: '3px', cursor: 'pointer' }}
-                        />
+
+                        {/* Visual Progress Bar Indicator */}
+                        <div style={{ flex: 1, height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', position: 'relative', overflow: 'hidden' }}>
+                          <div style={{
+                            position: 'absolute',
+                            left: `${Math.min(100, Math.max(0, ((subtitleDelay + 30) / 60) * 100))}%`,
+                            top: 0,
+                            bottom: 0,
+                            width: '8px',
+                            background: '#ffffff',
+                            borderRadius: '3px',
+                            transform: 'translateX(-50%)'
+                          }} />
+                        </div>
+
                         <button 
+                          className="tv-focusable"
+                          tabIndex={0}
                           onClick={() => { import('../../../../utils/haptics').then(m => m.triggerHaptic('light')); setSubtitleDelay(prev => Math.min(30, prev + 0.5)); }}
-                          style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.06)', color: '#fff', borderRadius: '8px', fontSize: '0.68rem', fontWeight: 800, cursor: 'pointer', transition: 'all 0.15s' }}
-                          onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-                          onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
+                          style={{ padding: '8px 14px', background: 'rgba(255,255,255,0.08)', border: 'none', color: '#fff', borderRadius: '8px', fontSize: '0.74rem', fontWeight: 900, cursor: 'pointer', transition: 'all 0.15s' }}
                         >
                           +0.5s
                         </button>
                         {subtitleDelay !== 0 && (
                           <button 
+                            className="tv-focusable"
+                            tabIndex={0}
                             onClick={() => { import('../../../../utils/haptics').then(m => m.triggerHaptic('light')); setSubtitleDelay(0); }}
-                            style={{ padding: '8px 10px', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#ef4444', borderRadius: '8px', fontSize: '0.68rem', fontWeight: 900, cursor: 'pointer' }}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
+                            style={{ padding: '8px 12px', background: 'rgba(239, 68, 68, 0.18)', border: 'none', color: '#ef4444', borderRadius: '8px', fontSize: '0.74rem', fontWeight: 900, cursor: 'pointer' }}
                           >
                             Reset
                           </button>
@@ -1374,9 +1556,9 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                     </div>
 
                     {/* Position shift */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(0,0,0,0.15)', padding: '12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.03)' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.76rem', fontWeight: 800 }}>
-                        <span style={{ color: 'rgba(255,255,255,0.65)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ color: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="18 15 12 9 6 15"/></svg>
                           Vertical Position
                         </span>
@@ -1384,7 +1566,7 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                           color: '#ffffff', 
                           fontFamily: 'monospace',
                           fontWeight: 900,
-                          background: 'rgba(255,255,255,0.05)',
+                          background: 'rgba(255,255,255,0.06)',
                           padding: '2px 8px',
                           borderRadius: '6px',
                           fontSize: '0.74rem'
@@ -1392,21 +1574,48 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                           {subtitlePosition === 0 ? 'Bottom' : `${Math.abs(subtitlePosition)}px Up`}
                         </span>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.3)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Default</span>
-                        <input 
-                          type="range"
-                          min="-120"
-                          max="20"
-                          value={subtitlePosition}
-                          onChange={(e) => setSubtitlePosition(parseInt(e.target.value))}
-                          style={{ flex: 1, accentColor: '#ffffff', height: '3px', cursor: 'pointer' }}
-                        />
-                        <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.3)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>High</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button 
+                          className="tv-focusable"
+                          tabIndex={0}
+                          onClick={() => { import('../../../../utils/haptics').then(m => m.triggerHaptic('light')); setSubtitlePosition(prev => Math.max(-120, prev - 10)); }}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
+                          style={{ padding: '8px 14px', background: 'rgba(255,255,255,0.08)', border: 'none', color: '#fff', borderRadius: '8px', fontSize: '0.74rem', fontWeight: 900, cursor: 'pointer', transition: 'all 0.15s' }}
+                        >
+                          Down (-10px)
+                        </button>
+
+                        {/* Visual Position Indicator */}
+                        <div style={{ flex: 1, height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', position: 'relative', overflow: 'hidden' }}>
+                          <div style={{
+                            position: 'absolute',
+                            left: `${Math.min(100, Math.max(0, ((subtitlePosition + 120) / 140) * 100))}%`,
+                            top: 0,
+                            bottom: 0,
+                            width: '8px',
+                            background: '#ffffff',
+                            borderRadius: '3px',
+                            transform: 'translateX(-50%)'
+                          }} />
+                        </div>
+
+                        <button 
+                          className="tv-focusable"
+                          tabIndex={0}
+                          onClick={() => { import('../../../../utils/haptics').then(m => m.triggerHaptic('light')); setSubtitlePosition(prev => Math.min(20, prev + 10)); }}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
+                          style={{ padding: '8px 14px', background: 'rgba(255,255,255,0.08)', border: 'none', color: '#fff', borderRadius: '8px', fontSize: '0.74rem', fontWeight: 900, cursor: 'pointer', transition: 'all 0.15s' }}
+                        >
+                          Up (+10px)
+                        </button>
+
                         {subtitlePosition !== -40 && (
                           <button 
+                            className="tv-focusable"
+                            tabIndex={0}
                             onClick={() => { import('../../../../utils/haptics').then(m => m.triggerHaptic('light')); setSubtitlePosition(-40); }}
-                            style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.06)', color: '#fff', borderRadius: '8px', fontSize: '0.68rem', fontWeight: 900, cursor: 'pointer' }}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
+                            style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.08)', border: 'none', color: '#fff', borderRadius: '8px', fontSize: '0.74rem', fontWeight: 900, cursor: 'pointer' }}
                           >
                             Reset
                           </button>
@@ -1433,7 +1642,10 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                           {(['small', 'normal', 'large', 'xlarge'] as const).map(sz => (
                             <button
                               key={sz}
+                              className="tv-focusable"
+                              tabIndex={0}
                               onClick={() => { import('../../../../utils/haptics').then(m => m.triggerHaptic('light')); setSubtitleSize(sz); }}
+                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
                               style={{
                                 flex: 1,
                                 padding: '6px 2px',
@@ -1469,7 +1681,10 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                             return (
                               <button
                                 key={color.value}
+                                className="tv-focusable"
+                                tabIndex={0}
                                 onClick={() => { import('../../../../utils/haptics').then(m => m.triggerHaptic('light')); setSubtitleColor(color.value); }}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
                                 style={{
                                   width: '26px',
                                   height: '26px',
@@ -1517,7 +1732,10 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                         ].map(op => (
                           <button
                             key={op.val}
+                            className="tv-focusable"
+                            tabIndex={0}
                             onClick={() => { import('../../../../utils/haptics').then(m => m.triggerHaptic('light')); setSubtitleBgOpacity(op.val); }}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
                             style={{
                               flex: 1,
                               padding: '8px 4px',
@@ -1610,6 +1828,8 @@ export const PlayerSettings = React.memo(function PlayerSettings({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <button
+                  className="tv-focusable"
+                  tabIndex={0}
                   onClick={() => setIsSearchingOnline(false)}
                   style={{
                     background: 'rgba(255,255,255,0.08)',
@@ -1635,6 +1855,8 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                 <div style={{ display: 'flex', background: 'rgba(255,255,255,0.04)', borderRadius: '10px', padding: '3px', gap: '4px' }}>
                   {!(!!season || !!episode) && (
                     <button
+                      className="tv-focusable"
+                      tabIndex={0}
                       onClick={() => { import('../../../../utils/haptics').then(m => m.triggerHaptic('light')); setOnlineProvider('yify'); }}
                       style={{
                         flex: 1,
@@ -1652,6 +1874,8 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                     </button>
                   )}
                   <button
+                    className="tv-focusable"
+                    tabIndex={0}
                     onClick={() => { import('../../../../utils/haptics').then(m => m.triggerHaptic('light')); setOnlineProvider('opensubtitles'); }}
                     style={{
                       flex: 1,
@@ -1669,12 +1893,12 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                   </button>
                 </div>
 
-
-
                 {onlineProvider === 'opensubtitles' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(255, 255, 255, 0.03)', padding: '12px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
                     <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.74rem', fontWeight: 600 }}>Using built-in free subtitle search. Optionally enter your own OpenSubtitles VIP key below:</div>
                     <input
+                      className="tv-focusable"
+                      tabIndex={0}
                       type="text"
                       value={apiKey}
                       onChange={(e) => setApiKey(e.target.value)}
@@ -1683,6 +1907,8 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                     />
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <input
+                        className="tv-focusable"
+                        tabIndex={0}
                         type="text"
                         value={username}
                         onChange={(e) => setUsername(e.target.value)}
@@ -1690,6 +1916,8 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                         style={{ flex: 1, background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', padding: '6px 10px', color: '#fff', fontSize: '0.75rem' }}
                       />
                       <input
+                        className="tv-focusable"
+                        tabIndex={0}
                         type="password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
@@ -1698,6 +1926,8 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                       />
                     </div>
                     <button
+                      className="tv-focusable"
+                      tabIndex={0}
                       onClick={() => {
                         localStorage.setItem('cinemovie_opensubtitles_apikey', apiKey.trim());
                         localStorage.setItem('cinemovie_opensubtitles_username', username.trim());
@@ -1716,6 +1946,8 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                 {(onlineProvider === 'opensubtitles' || onlineProvider === 'yify') && (
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <select
+                      className="tv-focusable"
+                      tabIndex={0}
                       value={searchLang}
                       onChange={(e) => setSearchLang(e.target.value)}
                       style={{
@@ -1732,10 +1964,12 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                       }}
                     >
                       {LANGUAGES.map(l => (
-                        <option key={l.code} value={l.code} style={{ background: '#111' }}>{l.name}</option>
+                        <option key={l.code} value={l.code} style={{ background: '#1e1e22', color: '#ffffff', padding: '10px' }}>{l.name}</option>
                       ))}
                     </select>
                     <button
+                      className="tv-focusable"
+                      tabIndex={0}
                       onClick={() => handleOnlineSubtitleSearch()}
                       disabled={searchingSubs}
                       style={{
@@ -1772,6 +2006,8 @@ export const PlayerSettings = React.memo(function PlayerSettings({
                 {onlineSubs.map((sub, i) => (
                   <button
                     key={i}
+                    className="tv-focusable"
+                    tabIndex={0}
                     onClick={() => handleOnlineSubtitleDownload(sub)}
                     disabled={searchingSubs}
                     style={{
@@ -1876,6 +2112,8 @@ export const PlayerSettings = React.memo(function PlayerSettings({
               {[0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0].map((speed) => (
                 <button
                   key={speed}
+                  className="tv-focusable"
+                  tabIndex={0}
                   onClick={() => {
                     import('../../../../utils/haptics').then(m => m.triggerHaptic('light'));
                     setPlaybackSpeed(speed);

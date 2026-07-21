@@ -1,5 +1,6 @@
 import { scrapeVidsrcPmStream, scrapeVidSrcTopStream, scrapeVixsrcStream } from './ClientScraperService';
 import { NativeStreamingEngine } from '../native/NativeStreamingEngine';
+import { Capacitor } from '@capacitor/core';
 
 
 /**
@@ -22,6 +23,20 @@ export interface LocalStreamResult {
 }
 
 const STORAGE_KEY = 'cinemovie_consumet_url';
+
+export async function getNativeProxyBaseUrl(): Promise<string> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const result = await NativeStreamingEngine.getProxyPort();
+      const port = result?.port || 8000;
+      return `http://localhost:${port}`;
+    } catch (e) {
+      console.warn('[LocalStreamService] Failed to get native proxy port, falling back to 8000:', e);
+      return 'http://localhost:8000';
+    }
+  }
+  return getLocalServerUrl();
+}
 
 export function getLocalServerUrl(): string {
   // Priority: localStorage override → .env variable → empty (not configured)

@@ -114,6 +114,28 @@ export async function scrapeWtfStream(
     }
 
     if (targetUrl.includes('.wasm')) {
+      try {
+        const nativeFetch = await import('../../../utils/nativeFetch');
+        let wasmUrl = targetUrl;
+        if (!wasmUrl.startsWith('http')) {
+          wasmUrl = `https://${resolvedDomain}${wasmUrl.startsWith('/') ? '' : '/'}${wasmUrl}`;
+        }
+        const decoratedUrl = `${wasmUrl}${wasmUrl.includes('?') ? '&' : '?'}origin_referer=${encodeURIComponent(refererUrl)}`;
+        const res = await nativeFetch.fetchWithCapacitor(decoratedUrl, 'arraybuffer', options?.headers);
+        if (res.ok) {
+          const ab = await res.arrayBuffer();
+          if (ab && ab.byteLength > 500) {
+            nativeFetch.logToNative(`[WTF Resolver] Successfully fetched remote WASM dynamically (${ab.byteLength} bytes)`);
+            return {
+              ok: true,
+              status: 200,
+              arrayBuffer: async () => ab
+            } as any;
+          }
+        }
+      } catch (e: any) {
+        // Fallback
+      }
       return {
         ok: true,
         status: 200,
@@ -122,23 +144,42 @@ export async function scrapeWtfStream(
     }
 
     if (targetUrl.includes('/makima-manifest.json')) {
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({
-          url: "makima.wasm",
-          exports: {
-            alloc: "_BpDg",
-            reset: "_YrcY",
-            writeByte: "_xeBp",
-            readByte: "_e6Un",
-            decryptPepper: "_0S1G",
-            decryptEnvelope: "_7F6j",
-            dropPepper: "_DKz4"
+      try {
+        const nativeFetch = await import('../../../utils/nativeFetch');
+        const decoratedUrl = `${targetUrl}${targetUrl.includes('?') ? '&' : '?'}origin_referer=${encodeURIComponent(refererUrl)}`;
+        const res = await nativeFetch.fetchWithCapacitor(decoratedUrl, 'text', options?.headers);
+        if (res.ok) {
+          const text = await res.text();
+          const data = JSON.parse(text);
+          if (data && data.exports && data.url) {
+            nativeFetch.logToNative(`[WTF Resolver] Successfully fetched remote manifest dynamically`);
+            return {
+              ok: true,
+              status: 200,
+              json: async () => data
+            } as any;
           }
-        })
-      } as any;
-    }
+        }
+      } catch (e: any) {
+        // Fallback
+      }
+       return {
+         ok: true,
+         status: 200,
+         json: async () => ({
+           url: "makima.wasm",
+           exports: {
+             alloc: "_VL7c",
+             reset: "_iS4t",
+             writeByte: "_4MfY",
+             readByte: "_PqfC",
+             decryptPepper: "_57Zd",
+             decryptEnvelope: "_ieYY",
+             dropPepper: "_HeRx"
+           }
+         })
+       } as any;
+     }
 
     return originalFetch(targetUrl, options);
   };

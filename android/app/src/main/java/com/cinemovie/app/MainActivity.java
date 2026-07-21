@@ -17,8 +17,18 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(NativeStreamingEnginePlugin.class);
         super.onCreate(savedInstanceState);
 
-
-
+        // Auto-detect Android TV / Leanback hardware on cold start and lock screen to landscape immediately
+        try {
+            android.app.UiModeManager uiModeManager = (android.app.UiModeManager) getSystemService(UI_MODE_SERVICE);
+            boolean isTelevision = (uiModeManager != null && uiModeManager.getCurrentModeType() == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION)
+                    || getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK)
+                    || getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_TELEVISION);
+            if (isTelevision) {
+                setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+            }
+        } catch (Exception e) {
+            android.util.Log.e("MainActivity", "Failed to set TV landscape orientation: " + e.getMessage());
+        }
 
         // Keep screen on during video playback
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);

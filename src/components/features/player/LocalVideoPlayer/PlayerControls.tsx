@@ -194,7 +194,41 @@ export const PlayerControls = React.memo(function PlayerControls({
             </div>
           </div>
 
-
+          {onNextEpisode && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                import('../../../../utils/haptics').then(m => m.triggerHaptic('medium'));
+                onNextEpisode();
+              }}
+              tabIndex={0}
+              className="tv-focusable"
+              style={{
+                background: 'rgba(255,255,255,0.12)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                color: '#ffffff',
+                padding: '6px 14px',
+                borderRadius: '20px',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em'
+              }}
+              onMouseDown={e => e.currentTarget.style.transform = 'scale(0.95)'}
+              onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+              title="Next Episode"
+            >
+              <span>Next Ep</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+              </svg>
+            </button>
+          )}
 
           <button 
             id="settings-button-trigger"
@@ -598,7 +632,7 @@ export const PlayerControls = React.memo(function PlayerControls({
       </div>
 
       <div 
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto' }}
       >
         <button 
           onClick={(e) => { e.stopPropagation(); togglePlay(e); }} 

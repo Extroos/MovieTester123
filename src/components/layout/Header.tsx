@@ -221,7 +221,7 @@ function Header({
         /* Netflix Horizontal TV Mode Layout */
         <div style={{ display: 'flex', width: '100%', height: '100%', alignItems: 'center', justifyContent: 'space-between' }}>
           
-          {/* Left: Profile Indicator Avatar (Aligned Left matching photo red box) */}
+          {/* Left: Profile Indicator Avatar + Watchlist + Search */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
             {activeProfile && (
               <button
@@ -245,6 +245,28 @@ function Header({
                 />
               </button>
             )}
+
+            {/* Watchlist icon button */}
+            <button
+              onClick={() => { triggerHaptic('light'); onNavClick?.('mylist'); }}
+              aria-label="My List"
+              className="cinemovie-header-search-btn tv-horizontal-focusable tv-focusable"
+              tabIndex={0}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                padding: '6px',
+                color: currentView === 'mylist' ? '#ffffff' : 'rgba(255,255,255,0.75)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer'
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill={currentView === 'mylist' ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+              </svg>
+            </button>
             
             {/* Search (Icon only matching photo search magnifier position) */}
             <button
@@ -268,6 +290,7 @@ function Header({
               </svg>
             </button>
           </div>
+
 
           {/* Center: Netflix Pill Navigation List */}
           <nav style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>

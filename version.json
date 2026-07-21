@@ -1,5 +1,5 @@
 {
-  "version": "0.8.0",
-  "downloadUrl": "https://github.com/Extroos/CineMovie/releases/latest/download/Cinemovie.v0.8.0.apk",
-  "releaseNotes": "In-app updates are currently disabled on your version due to a storage permissions bug.\n\nPlease visit our Telegram channel to download and install the v0.8.0 update manually."
+  "version": "0.8.5",
+  "downloadUrl": "https://github.com/Extroos/CineMovie/releases/latest/download/Cinemovie.v0.8.5.apk",
+  "releaseNotes": "v0.8.5: Profile PIN lock system, Kids Mode, Android TV landscape & D-Pad subtitle controls, updated servers, video player screen rotation on phone, and performance optimizations."
 }

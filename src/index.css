@@ -1770,10 +1770,29 @@ body.tv-mode .tv-focusable:focus-visible {
   z-index: 10 !important;
 }
 
-/* Specific button focus states to keep solid colors intact (prevents white buttons from turning transparent) */
-button.tv-focusable:focus,
-button.tv-focusable:focus-visible {
-  background-color: inherit;
+/* Detail page Play button: white by default on mobile/desktop, black on TV mode, flips to white when remote focuses it */
+.detail-play-btn {
+  background: #ffffff;
+  color: #000000;
+  border: none;
+}
+
+body.tv-mode .detail-play-btn,
+body:has(.tv-mode) .detail-play-btn {
+  background: #000000 !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+}
+
+body.tv-mode .detail-play-btn:focus,
+body.tv-mode .detail-play-btn:focus-visible,
+body.tv-mode .detail-play-btn.focused,
+body.tv-mode button.detail-play-btn:focus,
+body.tv-mode button.detail-play-btn:focus-visible {
+  background-color: #ffffff !important;
+  background: #ffffff !important;
+  color: #000000 !important;
+  border-color: #ffffff !important;
 }
 
 .cinemovie-header-nav-btn {
@@ -1835,7 +1854,19 @@ body.tv-mode input.tv-focusable:not(.login-input-optimized):focus-visible {
   outline: none !important;
 }
 
+body.tv-mode .tv-focusable {
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
 /* Poster and Card Specific Focus States */
+body.tv-mode .movie-card.tv-focusable {
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  will-change: transform;
+  transform: translateZ(0);
+}
+
 body.tv-mode .movie-card.tv-focusable:focus,
 body.tv-mode .movie-card.tv-focusable:focus-visible {
   outline: 3px solid #ffffff !important;

@@ -212,6 +212,7 @@ interface LocalVideoPlayerProps {
   onSubtitleDelayChange?: (delay: number) => void;
   subtitleDelay?: number;
   logoUrl?: string | null;
+  iframeFallback?: boolean;
 }
 
 export default function LocalVideoPlayer({
@@ -562,7 +563,7 @@ export default function LocalVideoPlayer({
     const doFreshResolve = async () => {
       if (handleServerChangeRef.current) {
         console.log('[LocalVideoPlayer] Mount: resolving fresh stream (ignoring potentially-expired src prop)...');
-        await handleServerChangeRef.current(selectedServerRef.current || 'vidsrc-pm', true);
+        await handleServerChangeRef.current(selectedServerRef.current || 'vidsrc-pm');
       } else {
         // Fallback: if ref not yet set, use src
         setCurrentSrc(src);
@@ -1053,8 +1054,41 @@ export default function LocalVideoPlayer({
         [serverId]: initialDefaultIdx !== -1 ? initialDefaultIdx : -1
       }));
 
+      // Restore previously saved online/custom subtitle from localStorage if available
+      try {
+        const mediaId = (item as any)?.imdbId || (item as any)?.imdb_id || item?.id || '';
+        const storageKey = `cinemovie_saved_subtitle_${type === 'tv' ? `tv_${mediaId}_s${season}_e${episode}` : `movie_${mediaId}`}`;
+        const savedRaw = localStorage.getItem(storageKey);
+        if (savedRaw) {
+          const savedData = JSON.parse(savedRaw);
+          if (savedData && savedData.vttContent) {
+            const blob = new Blob([savedData.vttContent], { type: 'text/vtt' });
+            const objectUrl = URL.createObjectURL(blob);
+            const savedTrack = {
+              file: objectUrl,
+              label: savedData.label || 'Saved Subtitle',
+              kind: 'subtitles',
+              default: true,
+              isBackup: true
+            };
+            setServerSubtitleTracks(prev => {
+              const existing = prev[serverId] || [];
+              const combined = [savedTrack, ...existing.filter(t => t.label !== savedTrack.label)];
+              return { ...prev, [serverId]: combined };
+            });
+            setServerActiveTrackIndices(prev => ({
+              ...prev,
+              [serverId]: 0
+            }));
+            console.log('[LocalVideoPlayer] Successfully restored saved subtitle from localStorage:', storageKey);
+          }
+        }
+      } catch (e) {
+        console.warn('[LocalVideoPlayer] Failed to restore saved subtitle:', e);
+      }
+
       // Always pre-fetch backup/online subtitles in the background for all languages
-      const imdbId = (item as any)?.imdbId || (item as any)?.imdb_id;
+      const imdbId = (item as any)?.imdbId || (item as any)?.imdb_id || item?.id;
       if (type === 'movie' && imdbId) {
         (async () => {
           try {
@@ -1068,6 +1102,7 @@ export default function LocalVideoPlayer({
                   file: `${localServer}/movies/yts-subtitles/download?link=${encodeURIComponent(sub.link)}`,
                   label: `${sub.language} (Auto YTS)`,
                   kind: 'subtitles',
+                  isBackup: true,
                   default: sub.language.toLowerCase().includes('english')
                 }));
                 setServerSubtitleTracks(prev => {
@@ -1084,13 +1119,15 @@ export default function LocalVideoPlayer({
             console.warn('[LocalVideoPlayer] Failed to auto-fetch YTS subtitles in background:', e);
           }
         })();
-      } else if (type === 'tv' && (imdbId || item?.id)) {
+      }
+      
+      const targetId = imdbId || String(item?.id);
+      if (targetId && targetId !== 'undefined') {
         (async () => {
           try {
-            console.log('[LocalVideoPlayer] Fetching TV subtitles automatically in background...');
-            const targetId = imdbId || String(item?.id);
+            console.log('[LocalVideoPlayer] Fetching OpenSubtitles automatically in background...');
             const localServer = await getNativeProxyBaseUrl();
-            const osUrl = `${localServer}/movies/opensubtitles/${targetId}?type=tv&season=${season}&episode=${episode}&lang=en,ar,es,pt,ko,hi,de,fr,it,zh,tr,ru`;
+            const osUrl = `${localServer}/movies/opensubtitles/${targetId}?type=${type === 'tv' ? 'tv' : 'movie'}&season=${season || 1}&episode=${episode || 1}&lang=en,ar,es,pt,ko,hi,de,fr,it,zh,tr,ru`;
             const osRes = await fetch(osUrl);
             if (osRes.ok) {
               const osSubs = await osRes.json();
@@ -1392,6 +1429,9 @@ export default function LocalVideoPlayer({
     }
   }, [subtitleDelay, onSubtitleDelayChange]);
 
+  const modeResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initialTrackModeRef = useRef<TextTrackMode>('showing');
+
   const applySubtitleDelay = (delay: number) => {
     const video = videoRef.current;
     if (!video) return;
@@ -1399,7 +1439,7 @@ export default function LocalVideoPlayer({
     const track = trackElement ? trackElement.track : null;
     if (!track || !track.cues) return;
     
-    const totalOffset = delay - hlsPtsOffsetRef.current;
+    const totalOffset = delay - (hlsPtsOffsetRef.current || 0);
     
     for (let i = 0; i < track.cues.length; i++) {
       const cue = track.cues[i] as any;
@@ -1411,12 +1451,21 @@ export default function LocalVideoPlayer({
       cue.endTime = cue._origEnd + totalOffset;
     }
 
+    // Capture mode before resetting, but ONLY if it is currently active ('showing' or 'disabled')
+    if (track.mode === 'showing' || track.mode === 'disabled') {
+      initialTrackModeRef.current = track.mode;
+    }
+
+    if (modeResetTimeoutRef.current) {
+      clearTimeout(modeResetTimeoutRef.current);
+      modeResetTimeoutRef.current = null;
+    }
+
     // Force Android WebView to rebuild the text track index with new times
-    const currentMode = track.mode;
     track.mode = 'hidden';
-    setTimeout(() => {
-      if (trackElement) {
-        track.mode = currentMode;
+    modeResetTimeoutRef.current = setTimeout(() => {
+      if (trackElement && trackElement.track) {
+        trackElement.track.mode = initialTrackModeRef.current;
       }
     }, 20);
   };
@@ -1761,9 +1810,8 @@ export default function LocalVideoPlayer({
       }
       
       if (provider === 'yify') {
-        if (isTV) throw new Error('YIFY Subtitles only supports movies. Please use OpenSubtitles for TV shows.');
-        const imdbId = (item as any)?.imdbId || (item as any)?.imdb_id;
-        if (!imdbId) throw new Error('IMDb ID not found for this movie.');
+        let imdbId = (item as any)?.imdbId || (item as any)?.imdb_id || item?.id;
+        if (!imdbId) throw new Error('IMDb ID or Movie ID not found for this movie.');
         
         const baseUrl = await getNativeProxyBaseUrl();
         const searchUrl = `${baseUrl}/movies/yts-subtitles/${imdbId}`;
@@ -1779,7 +1827,14 @@ export default function LocalVideoPlayer({
         // Native Android returns objects with { link, language } - handle both formats
         const filtered = data.filter((s: any) => {
           const sLang = (s.language || s.lang || '').toLowerCase();
-          return sLang.includes(langName.toLowerCase()) || sLang === lang.toLowerCase();
+          const targetLang = langName.toLowerCase();
+          const targetCode = lang.toLowerCase();
+          return sLang.includes(targetLang) || 
+                 sLang.includes(targetCode) ||
+                 (targetCode === 'en' && (sLang.includes('eng') || sLang.includes('english'))) ||
+                 (targetCode === 'es' && (sLang.includes('span') || sLang.includes('spanish'))) ||
+                 (targetCode === 'ar' && (sLang.includes('arab') || sLang.includes('arabic'))) ||
+                 (targetCode === 'fr' && (sLang.includes('fren') || sLang.includes('french')));
         });
         
         // Normalize to expected shape { link, language, name }
@@ -1825,12 +1880,54 @@ export default function LocalVideoPlayer({
       } else {
         const localServer = await getNativeProxyBaseUrl();
         if (!apiKey.trim()) {
-          const targetId = tmdbId || '';
+          const targetId = (item as any)?.imdbId || (item as any)?.imdb_id || String(item?.id || '');
           const osUrl = `${localServer}/movies/opensubtitles/${targetId}?type=${isTV ? 'tv' : 'movie'}&season=${season || 1}&episode=${episode || 1}&lang=${lang}`;
           console.log('[LocalVideoPlayer] Searching free proxy OpenSubtitles:', osUrl);
           const res = await fetch(osUrl);
           if (!res.ok) throw new Error(`Free subtitle search failed: ${res.statusText}`);
-          const data = await res.json();
+          let data = await res.json();
+          
+          const langObj = LANGUAGES.find(l => l.code === lang);
+          const langName = langObj ? langObj.name.toLowerCase() : 'english';
+          const langCode = lang.toLowerCase();
+
+          if (Array.isArray(data) && data.length > 0) {
+            data = data.filter((s: any) => {
+              const sLang = (s.language || s.lang || s.name || '').toLowerCase();
+              return sLang.includes(langName) || sLang.includes(langCode) ||
+                (langCode === 'ar' && (sLang.includes('arab') || sLang.includes('arabic'))) ||
+                (langCode === 'en' && (sLang.includes('eng') || sLang.includes('english'))) ||
+                (langCode === 'es' && (sLang.includes('span') || sLang.includes('spanish'))) ||
+                (langCode === 'fr' && (sLang.includes('fren') || sLang.includes('french')));
+            });
+          }
+          
+          if ((!Array.isArray(data) || data.length === 0) && !isTV) {
+            try {
+              const ytsUrl = `${localServer}/movies/yts-subtitles/${targetId}`;
+              const ytsRes = await fetch(ytsUrl);
+              if (ytsRes.ok) {
+                const ytsData = await ytsRes.json();
+                if (Array.isArray(ytsData) && ytsData.length > 0) {
+                  const filteredYts = ytsData.filter((s: any) => {
+                    const sLang = (s.language || s.lang || '').toLowerCase();
+                    return sLang.includes(langName) || sLang.includes(langCode) ||
+                      (langCode === 'ar' && (sLang.includes('arab') || sLang.includes('arabic'))) ||
+                      (langCode === 'en' && (sLang.includes('eng') || sLang.includes('english'))) ||
+                      (langCode === 'es' && (sLang.includes('span') || sLang.includes('spanish'))) ||
+                      (langCode === 'fr' && (sLang.includes('fren') || sLang.includes('french')));
+                  });
+
+                  data = filteredYts.map((s: any) => ({
+                    link: `${localServer}/movies/yts-subtitles/download?link=${encodeURIComponent(s.link)}`,
+                    language: (s.language || langObj?.name || 'EN').toUpperCase(),
+                    name: s.name || `${s.language} (YTS Subtitle)`
+                  }));
+                }
+              }
+            } catch (e) {}
+          }
+          
           setOnlineSubs(data);
           if (data.length === 0) {
             setOnlineSearchError(`No subtitles found on OpenSubtitles.`);
@@ -1854,8 +1951,9 @@ export default function LocalVideoPlayer({
           }
         }
         
+        const targetId = (item as any)?.imdbId || (item as any)?.imdb_id || String(item?.id || '');
         const queryParams = new URLSearchParams({
-          tmdbId: String(tmdbId),
+          tmdbId: targetId,
           type: isTV ? 'tv' : 'movie',
           languages: lang
         });
@@ -1990,32 +2088,43 @@ export default function LocalVideoPlayer({
         kind: 'subtitles',
         default: true
       };
+
+      // Persist downloaded subtitle for this media item permanently in localStorage
+      try {
+        const mediaId = (item as any)?.imdbId || (item as any)?.imdb_id || item?.id || '';
+        const isTvItem = season || (item as any)?.name ? 'tv' : 'movie';
+        const storageKey = `cinemovie_saved_subtitle_${isTvItem === 'tv' ? `tv_${mediaId}_s${season}_e${episode}` : `movie_${mediaId}`}`;
+        localStorage.setItem(storageKey, JSON.stringify({
+          vttContent,
+          label,
+          savedAt: Date.now()
+        }));
+        console.log('[LocalVideoPlayer] Persisted downloaded subtitle to localStorage:', storageKey);
+      } catch (e) {}
       
-      let newTracksList: any[] = [];
-      setServerSubtitleTracks(prev => {
-        const list = [...(prev[selectedServer] || []), newTrack];
-        newTracksList = list;
-        return {
-          ...prev,
-          [selectedServer]: list
-        };
-      });
-      const nextIndex = newTracksList.length - 1;
+      const currentTracks = serverSubtitleTracks[selectedServer] || [];
+      const updatedTracks = [...currentTracks, newTrack];
+      const nextIndex = updatedTracks.length - 1;
+
+      setServerSubtitleTracks(prev => ({
+        ...prev,
+        [selectedServer]: updatedTracks
+      }));
+
       setServerActiveTrackIndices(prev => ({
         ...prev,
         [selectedServer]: nextIndex
       }));
-      
+
       if (onTracksChange) {
-        const tracksForCast = newTracksList.map((t, idx) => ({
+        const tracksForCast = updatedTracks.map((t, idx) => ({
           ...t,
           default: idx === nextIndex
         }));
         onTracksChange(tracksForCast);
       }
-      
+
       setIsSearchingOnline(false);
-      setShowSettings(false);
       resetControlsTimeout();
     } catch (e: any) {
       console.error('[LocalVideoPlayer] Subtitle download error:', e);
@@ -2477,31 +2586,37 @@ export default function LocalVideoPlayer({
             }));
 
             // Always pre-fetch backup/online subtitles in the background for all languages
-            const imdbId = (item as any)?.imdbId || (item as any)?.imdb_id;
+            const imdbId = (item as any)?.imdbId || (item as any)?.imdb_id || item?.id;
             if (type === 'movie' && imdbId) {
-              const localServer = getLocalServerUrl();
-              const ytsUrl = `${localServer}/movies/yts-subtitles/${imdbId}`;
-              fetch(ytsUrl)
-                .then(res => res.ok ? res.json() : null)
-                .then(ytsSubs => {
-                  if (Array.isArray(ytsSubs) && ytsSubs.length > 0) {
-                    const newTracks = ytsSubs.map((sub: any) => ({
-                      file: `${localServer}/movies/yts-subtitles/download?link=${encodeURIComponent(sub.link)}`,
-                      label: `${sub.language} (Auto YTS)`,
-                      kind: 'subtitles',
-                      default: sub.language.toLowerCase().includes('english')
-                    }));
-                    setServerSubtitleTracks(prev => {
-                      const existing = prev[selectedServer] || [];
-                      const combined = [...existing];
-                      newTracks.forEach(t => {
-                        if (!combined.some(c => c.file === t.file)) combined.push(t);
+              (async () => {
+                try {
+                  const localServer = await getNativeProxyBaseUrl();
+                  const ytsUrl = `${localServer}/movies/yts-subtitles/${imdbId}`;
+                  const res = await fetch(ytsUrl);
+                  if (res.ok) {
+                    const ytsSubs = await res.json();
+                    if (Array.isArray(ytsSubs) && ytsSubs.length > 0) {
+                      const newTracks = ytsSubs.map((sub: any) => ({
+                        file: `${localServer}/movies/yts-subtitles/download?link=${encodeURIComponent(sub.link)}`,
+                        label: `${sub.language} (Auto YTS)`,
+                        kind: 'subtitles',
+                        isBackup: true,
+                        default: sub.language.toLowerCase().includes('english')
+                      }));
+                      setServerSubtitleTracks(prev => {
+                        const existing = prev[selectedServer] || [];
+                        const combined = [...existing];
+                        newTracks.forEach(t => {
+                          if (!combined.some(c => c.file === t.file)) combined.push(t);
+                        });
+                        return { ...prev, [selectedServer]: combined };
                       });
-                      return { ...prev, [selectedServer]: combined };
-                    });
+                    }
                   }
-                })
-                .catch(e => console.warn('[LocalVideoPlayer] Failed to pre-fetch YTS subtitles:', e));
+                } catch (e) {
+                  console.warn('[LocalVideoPlayer] Failed to pre-fetch YTS subtitles:', e);
+                }
+              })();
             } else if (type === 'tv' && (imdbId || item?.id)) {
               (async () => {
                 try {
@@ -2592,8 +2707,18 @@ export default function LocalVideoPlayer({
           .catch(e => console.warn('[LocalVideoPlayer] Failed to pre-fetch qualities:', e));
       }
     }
-  }, [src, item?.id, selectedServer]);
+  }, [src, item?.id, selectedServer, season, episode]);
 
+
+
+
+  // Re-resolve active stream automatically when season/episode changes (next episode clicked)
+  useEffect(() => {
+    if (!isOfflineMode && freshResolveMountedRef.current && (season || episode)) {
+      console.log('[LocalVideoPlayer] Season/Episode changed. Re-resolving stream for next episode...');
+      handleServerChange(selectedServer, false);
+    }
+  }, [season, episode]);
 
   // Handle HLS Playback Setup
   useEffect(() => {
@@ -2801,8 +2926,8 @@ export default function LocalVideoPlayer({
               
               hls.on(Hls.Events.FRAG_CHANGED, (event, data) => {
                   const frag = data.frag;
-                  if (frag && typeof frag.start === 'number' && typeof frag.startPosition === 'number') {
-                      const ptsDiff = frag.start - frag.startPosition;
+                  if (frag && typeof frag.start === 'number' && typeof (frag as any).startPosition === 'number') {
+                      const ptsDiff = frag.start - (frag as any).startPosition;
                       if (hlsPtsOffsetRef.current === 0 && Math.abs(ptsDiff) > 0.3) {
                           console.log('[LocalVideoPlayer] HLS PTS timeline offset locked:', ptsDiff);
                           hlsPtsOffsetRef.current = ptsDiff;
@@ -3438,7 +3563,7 @@ export default function LocalVideoPlayer({
               path: fileAtPath,
               encoding: Encoding.UTF8
             });
-            text = fileData.data;
+            text = typeof fileData.data === 'string' ? fileData.data : '';
           } catch (readErr: any) {
             console.warn('[LocalVideoPlayer] Filesystem.readFile failed, falling back to fetch:', readErr);
             const res = await fetch(track.file);

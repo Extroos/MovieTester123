@@ -537,18 +537,7 @@ function MovieDetails({ movie, onClose, onListUpdate, onActorClick }: MovieDetai
   }, [movie.id, appLanguage]);
 
   useEffect(() => {
-    const isTV = window.screen.availWidth > window.screen.availHeight && !('ontouchstart' in window);
-    if (isTV && !loading) {
-      const timer = setTimeout(() => {
-        if (playBtnRef.current) {
-          playBtnRef.current.focus();
-        } else {
-          const backBtn = document.querySelector('[aria-label="Back"]') as HTMLElement | null;
-          if (backBtn) backBtn.focus();
-        }
-      }, 500);
-      return () => clearTimeout(timer);
-    }
+    // Keep focus neutral when details modal loads so buttons start in their default black state
   }, [loading]);
 
   const handleToggleList = useCallback(() => {
@@ -604,6 +593,7 @@ function MovieDetails({ movie, onClose, onListUpdate, onActorClick }: MovieDetai
           if (resume && savedProgress && savedProgress > 10) {
             streamUrl += streamUrl.includes('?') ? `&startTime=${Math.floor(savedProgress)}` : `?startTime=${Math.floor(savedProgress)}`;
           }
+          (window as any)._lastDownloadResult = item;
           setStreamUrl(streamUrl);
           setResolvedTracks(item.subtitles || []);
           setShowPlayer(true);
@@ -1045,6 +1035,7 @@ function MovieDetails({ movie, onClose, onListUpdate, onActorClick }: MovieDetai
             </>
           );
         })()}
+
         {year && <span>{year.includes('-') ? year.split('-')[0] : year}</span>}
         <span style={{ 
           border: `1px solid ${inTheaters ? 'rgba(234, 179, 8, 0.4)' : 'rgba(255,255,255,0.2)'}`, 
@@ -1132,15 +1123,12 @@ function MovieDetails({ movie, onClose, onListUpdate, onActorClick }: MovieDetai
                 handleLocalServerPlay(playbackMode === 'resume');
               }}
               disabled={localStreamLoading}
-              className="tv-focusable"
+              className="tv-focusable detail-play-btn"
               tabIndex={0}
               style={{
                 flex: 1,
                 height: '48px',
                 borderRadius: '8px',
-                border: 'none',
-                background: '#fff',
-                color: '#000',
                 fontWeight: 800,
                 fontSize: '0.95rem',
                 cursor: localStreamLoading ? 'default' : 'pointer',
@@ -1798,6 +1786,31 @@ function MovieDetails({ movie, onClose, onListUpdate, onActorClick }: MovieDetai
 
           {/* Metadata Row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: 'clamp(0.72rem, 1.6vh, 0.85rem)', color: 'rgba(255,255,255,0.5)', fontWeight: 700 }}>
+            {score !== null && (
+              <>
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  color: '#ffffff',
+                  background: 'rgba(255, 255, 255, 0.12)',
+                  border: '1px solid rgba(255, 255, 255, 0.25)',
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  fontSize: '0.75rem',
+                  fontWeight: 900,
+                  lineHeight: 1
+                }}>
+                  <img
+                    src="/streaming icons/imdb.png"
+                    alt="IMDb"
+                    style={{ height: '14px', width: 'auto', display: 'block' }}
+                  />
+                  <span>{(score / 10).toFixed(1)}</span>
+                </span>
+                <span style={{ height: '8px', width: '1px', background: 'rgba(255,255,255,0.25)' }} />
+              </>
+            )}
             {year && <span>{year.split('-')[0]}</span>}
             {fullMovie.certification && (
               <>
@@ -1914,9 +1927,9 @@ function MovieDetails({ movie, onClose, onListUpdate, onActorClick }: MovieDetai
               <button
                 onClick={() => { triggerHaptic('medium'); handleLocalServerPlay(playbackMode === 'resume'); }}
                 disabled={localStreamLoading}
-                className="tv-focusable"
+                className="tv-focusable detail-play-btn"
                 style={{
-                  height: '36px', padding: '0 20px', borderRadius: '4px', border: 'none', background: '#ffffff', color: '#000000',
+                  height: '36px', padding: '0 20px', borderRadius: '4px',
                   fontWeight: 900, fontSize: '0.78rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', outline: 'none'
                 }}
               >
@@ -2814,9 +2827,9 @@ function MovieDetails({ movie, onClose, onListUpdate, onActorClick }: MovieDetai
             style={{
               position: 'fixed',
               inset: 0,
-              background: isMobile ? '#000000' : 'rgba(0,0,0,0.85)',
-              backdropFilter: isMobile ? 'none' : 'blur(12px)',
-              WebkitBackdropFilter: isMobile ? 'none' : 'blur(12px)',
+              background: typeof window !== 'undefined' && window.innerWidth <= 768 ? '#000000' : 'rgba(0,0,0,0.85)',
+              backdropFilter: typeof window !== 'undefined' && window.innerWidth <= 768 ? 'none' : 'blur(12px)',
+              WebkitBackdropFilter: typeof window !== 'undefined' && window.innerWidth <= 768 ? 'none' : 'blur(12px)',
               zIndex: 100000,
               display: 'flex',
               alignItems: 'center',
@@ -2862,9 +2875,9 @@ function MovieDetails({ movie, onClose, onListUpdate, onActorClick }: MovieDetai
             position: 'fixed',
             inset: 0,
             zIndex: 4500,
-            background: isMobile ? '#0a0a0a' : 'rgba(0, 0, 0, 0.75)',
-            backdropFilter: isMobile ? 'none' : 'blur(20px)',
-            WebkitBackdropFilter: isMobile ? 'none' : 'blur(20px)',
+            background: typeof window !== 'undefined' && window.innerWidth <= 768 ? '#0a0a0a' : 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: typeof window !== 'undefined' && window.innerWidth <= 768 ? 'none' : 'blur(20px)',
+            WebkitBackdropFilter: typeof window !== 'undefined' && window.innerWidth <= 768 ? 'none' : 'blur(20px)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
