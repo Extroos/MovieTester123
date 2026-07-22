@@ -1,0 +1,105 @@
+{
+  "last_updated": "07/15/2026",
+  "servers": [
+    {
+      "id": "vidsrc-pm",
+      "name": "VidSrc PM",
+      "description": "Adaptive HLS via VidSrc PM — multi-CDN mirrors",
+      "badge": "Recommended",
+      "isAdFree": true
+    },
+    {
+      "id": "vidsrc-wtf-2",
+      "name": "VidSrc Multi-Lang",
+      "description": "Multi-language HLS via native decryption engine",
+      "badge": "Multi",
+      "isAdFree": true
+    },
+    {
+      "id": "vidsrc-top-new",
+      "name": "VidSrc Top",
+      "description": "Direct HLS via vid-src.top — multi-CDN mirrors",
+      "badge": "Multi",
+      "isAdFree": true
+    },
+    {
+      "id": "vixsrc",
+      "name": "VixSrc",
+      "description": "Multi-language embed via vixsrc.to — dark theme",
+      "badge": "MULTI",
+      "isAdFree": true
+    },
+    {
+      "id": "vidsrc-sbs",
+      "name": "VidSrc SBS",
+      "description": "Third-party mirror — alternative content hosting",
+      "badge": "",
+      "isAdFree": false
+    },
+    {
+      "id": "universal",
+      "name": "Vidsrc.to (Universal)",
+      "description": "Third-party embed — supports multi-language subtitles",
+      "badge": "ADS",
+      "isAdFree": false
+    },
+    {
+      "id": "vidsrc-fyi",
+      "name": "Vidsrc FYI",
+      "description": "Alternative third-party gateway",
+      "badge": "ADS",
+      "isAdFree": false
+    },
+    {
+      "id": "vidsrc-top",
+      "name": "VidSrc Top (Legacy)",
+      "description": "Third-party mirror — supports IMDB/TMDB inputs",
+      "badge": "ADS",
+      "isAdFree": false
+    }
+  ],
+  "gateways": {
+    "cloudnestra": "https://cloudnestra.com",
+    "vidsrc_pm": "https://streamdata.vaplayer.ru",
+    "vidsrc_pm_embed": "https://vaplayer.ru",
+    "vidsrc_wtf": "https://viduki.net",
+    "vidsrc_sbs": "https://vidsrc.sbs",
+    "vidsrc_pk": "https://embed.vidsrc.pk",
+    "vidsrc_fyi": "https://vidsrc.fyi",
+    "vixsrc": "https://vixsrc.to",
+    "enc_dec": "https://enc-dec.app",
+    "vidsrc_top_new": "https://vid-src.top",
+    "vidsrc_top": "https://vid-src.top",
+    "vidsrc_pm_mirrors": ["https://streamdata.vaplayer.ru", "https://stream.vaplayer.ru"],
+    "vixsrc_mirrors": ["https://vixsrc.to", "https://vixsrc.cc", "https://vixsrc.xyz"],
+    "enc_dec_mirrors": ["https://enc-dec.app", "https://enc-dec.app/api"]
+  },
+  "embed_urls": {
+    "vidsrc_pm_gateways": [
+      "https://streamdata.vaplayer.ru"
+    ]
+  },
+  "headers": {
+    "cloudnestra_referer": "https://cloudnestra.com/",
+    "cloudnestra_origin": "https://cloudnestra.com",
+    "vidsrc_wtf_referer": "https://vidsrc.wtf/",
+    "vidsrc_wtf_origin": "https://vidsrc.wtf",
+    "vidsrc_sbs_referer": "https://vidsrc.sbs/",
+    "vidsrc_sbs_origin": "https://vidsrc.sbs",
+    "vidsrc_pk_referer": "https://embed.vidsrc.pk/",
+    "vidsrc_me_referer": "https://vidsrc.me/",
+    "vidsrc_me_origin": "https://vidsrc.me"
+  },
+  "subtitles": {
+    "opensubtitles_api_key": "JkKADcTEWRQzVl95qI2UtAXbMgJhH44R",
+    "stremio_opensubtitles_base": "https://opensubtitles-v3.strem.io/subtitles",
+    "yts_subtitles_url": "https://yifysubtitles.ch/movie-imdb/",
+    "yts_subtitles_ch": "https://yifysubtitles.ch",
+    "yts_domains": [
+      "https://yifysubtitles.ch",
+      "https://yifysubtitles.org",
+      "https://yts-subs.com"
+    ],
+    "tmdb_api_key": "15d20e45d54a7e10f054f90d2006d805"
+  }
+}
