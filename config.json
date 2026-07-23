@@ -1,5 +1,5 @@
 {
-  "last_updated": "07/15/2026",
+  "last_updated": "07/23/2026",
   "servers": [
     {
       "id": "vidsrc-pm",
@@ -63,6 +63,7 @@
     "vidsrc_pm": "https://streamdata.vaplayer.ru",
     "vidsrc_pm_embed": "https://vaplayer.ru",
     "vidsrc_wtf": "https://viduki.net",
+    "vidsrc_wtf_multilang": "https://multilang-api.viduki.net",
     "vidsrc_sbs": "https://vidsrc.sbs",
     "vidsrc_pk": "https://embed.vidsrc.pk",
     "vidsrc_fyi": "https://vidsrc.fyi",
@@ -82,8 +83,10 @@
   "headers": {
     "cloudnestra_referer": "https://cloudnestra.com/",
     "cloudnestra_origin": "https://cloudnestra.com",
-    "vidsrc_wtf_referer": "https://vidsrc.wtf/",
-    "vidsrc_wtf_origin": "https://vidsrc.wtf",
+    "vidsrc_wtf_referer": "https://viduki.net/",
+    "vidsrc_wtf_origin": "https://viduki.net",
+    "vidsrc_wtf_multilang_referer": "",
+    "vidsrc_wtf_multilang_origin": "",
     "vidsrc_sbs_referer": "https://vidsrc.sbs/",
     "vidsrc_sbs_origin": "https://vidsrc.sbs",
     "vidsrc_pk_referer": "https://embed.vidsrc.pk/",
@@ -97,9 +100,8 @@
     "yts_subtitles_ch": "https://yifysubtitles.ch",
     "yts_domains": [
       "https://yifysubtitles.ch",
-      "https://yifysubtitles.org",
-      "https://yts-subs.com"
+      "https://yifysubtitles.org"
     ],
-    "tmdb_api_key": "15d20e45d54a7e10f054f90d2006d805"
+    "tmdb_api_key": "8265bd1679663a7ea12ac168da84d2e8"
   }
 }
