@@ -1,5 +1,5 @@
 {
-  "version": "0.8.6",
-  "downloadUrl": "https://github.com/Extroos/MovieTester123/releases/download/v0.8.6/Cinemovie.v0.8.6.apk",
-  "releaseNotes": "v0.8.6: Fix vidsrc-wtf-2 multi-language server connection timeout & Android TV unknown package installation permissions."
+  "version": "0.8.5",
+  "downloadUrl": "https://github.com/Extroos/MovieTester123/releases/download/v0.8.5/Cinemovie.v0.8.5.apk",
+  "releaseNotes": "v0.8.5: Profile PIN lock system, Kids Mode, Android TV landscape & D-Pad subtitle controls, updated servers, video player screen rotation on phone, and performance optimizations."
 }
