@@ -43,7 +43,6 @@ It must return:
 | `plugins/vidsrc-wtf-2.js` | VidSrc Multi-Lang |
 | `plugins/vidsrc-top-new.js` | VidSrc Top |
 | `plugins/vixsrc.js` | VixSrc |
-| `plugins/universal.js` | Vidsrc.to (Universal) |
 
 ---
 

@@ -1,6 +1,6 @@
 {
   "last_updated": "2026-07-25",
-  "enabled_servers": ["vidsrc-pm", "vidsrc-wtf-2", "vidsrc-top-new", "vixsrc", "vidsrc-sbs", "universal", "vidsrc-fyi"],
+  "enabled_servers": ["vidsrc-pm", "vidsrc-wtf-2", "vidsrc-top-new", "vixsrc", "vidsrc-sbs", "vidsrc-fyi"],
   "servers": [
     {
       "id": "vidsrc-pm",
@@ -35,13 +35,6 @@
       "name": "VidSrc SBS",
       "description": "Third-party mirror — alternative content hosting",
       "badge": "",
-      "isAdFree": false
-    },
-    {
-      "id": "universal",
-      "name": "Vidsrc.to (Universal)",
-      "description": "Third-party embed — supports multi-language subtitles",
-      "badge": "ADS",
       "isAdFree": false
     },
     {
