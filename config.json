@@ -1,5 +1,6 @@
 {
-  "last_updated": "07/23/2026",
+  "last_updated": "2026-07-25",
+  "enabled_servers": ["vidsrc-pm", "vidsrc-wtf-2", "vidsrc-top-new", "vixsrc", "vidsrc-sbs", "universal", "vidsrc-fyi"],
   "servers": [
     {
       "id": "vidsrc-pm",
@@ -49,13 +50,6 @@
       "description": "Alternative third-party gateway",
       "badge": "ADS",
       "isAdFree": false
-    },
-    {
-      "id": "vidsrc-top",
-      "name": "VidSrc Top (Legacy)",
-      "description": "Third-party mirror — supports IMDB/TMDB inputs",
-      "badge": "ADS",
-      "isAdFree": false
     }
   ],
   "gateways": {
@@ -100,7 +94,8 @@
     "yts_subtitles_ch": "https://yifysubtitles.ch",
     "yts_domains": [
       "https://yifysubtitles.ch",
-      "https://yifysubtitles.org"
+      "https://yifysubtitles.org",
+      "https://yts-subs.com"
     ],
     "tmdb_api_key": "8265bd1679663a7ea12ac168da84d2e8"
   }

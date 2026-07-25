@@ -1,59 +1,74 @@
-﻿# 🎬 CineMovie — Premium Local-First Streaming & Media Platform
+# CineMovie OTA Update Repository
 
-![CineMovie Banner](https://raw.githubusercontent.com/Extroos/MovieTester123/main/assets/banner.png)
+This repository powers **over-the-air (OTA) updates** for the CineMovie Android TV app.
 
-> **CineMovie** is a state-of-the-art, local-first streaming and media aggregator engineered for high-performance playback on **Android Mobile**, **Android TV**, and **Web**.
-
----
-
-## ✨ Key Features & Capabilities
-
-### ⚡ Hybrid Native & JS Streaming Engine
-- **Serverless Extraction:** Dynamic Over-The-Air (OTA) decryption plugins for high-speed HLS adaptive streaming.
-- **WAF & CORS Proxying:** Local port 8000 HLS proxy engine with dynamic origin/referer header injection for Cloudflare bypass.
-- **Zero Buffering:** Auto-fallback server mirrors ensuring 99.9% playback reliability.
-
-### 📺 Android TV & Mobile Optimization
-- **Dual Display Modes:** Native Leanback / AOSP TV box hardware detection with dynamic landscape orientation locking.
-- **100% D-Pad Remote Support:** Smooth remote focus glows, custom keymaps, and full TV controller navigation.
-- **120Hz Refresh Rate Unlock:** Dynamic display rate unlocking (90Hz / 120Hz) bypassing vendor battery caps.
-
-### 📥 Offline Downloads & Device Gallery Export
-- **Dual Storage Engine:** Store content internally inside private app storage or export directly to **Device Gallery / Documents** (`CineMovie_[Title].mp4`).
-- **Scoped Storage Compliant:** Fully compatible with Android 13+, 14, and 15 storage policies (`READ_MEDIA_VIDEO`, `POST_NOTIFICATIONS`).
-- **Background Downloads:** Powered by native Android foreground services for uninterrupted background downloads.
-
-### 🔒 Profiles, Kids Mode & PIN Protection
-- **Multi-Profile System:** Create and customize up to 5 profiles with custom avatars and colors.
-- **4-Digit PIN Security:** Lock individual profiles with encrypted PIN credentials.
-- **Automatic Kids Mode:** Intelligent parental filters restricting titles by certification rating (R/TV-MA) and genre metadata.
-
-### 💬 Watch Together & Social Sync
-- **Real-Time Watch Parties:** Synchronize playback with friends powered by low-latency Supabase realtime channels.
-- **Live Reactions:** Send real-time emoji reactions, host controls, and room notifications.
-
-### 🌐 Multi-Language Subtitles & Customization
-- **Multi-Source Subtitles:** Integrated OpenSubtitles, Stremio, and YIFY subtitle providers.
-- **Player Customization:** Live subtitle font sizing, background opacity, vertical position offsets, and encoding detection.
+> ⚠️ **This repo contains NO source code.** Source code is private.
 
 ---
 
-## 📡 Remote Manifests & OTA Configs
+## What this repo controls (no APK rebuild needed)
 
-This repository hosts the official distribution manifests for CineMovie:
-
-- [`version.json`](https://raw.githubusercontent.com/Extroos/MovieTester123/main/version.json) — Latest app version manifest & update download links.
-- [`config.json`](https://raw.githubusercontent.com/Extroos/MovieTester123/main/config.json) — Dynamic OTA server gateways, headers, and extractor configs.
-
----
-
-## 📱 Installation & Distribution
-
-Download the latest release APK directly:
-- **Latest Release:** [Cinemovie.v0.8.5.apk](https://github.com/Extroos/CineMovie/releases/latest/download/Cinemovie.v0.8.5.apk)
+| File | Purpose |
+|---|---|
+| `config.json` | Server list, gateway URLs, headers, enabled/disabled servers |
+| `version.json` | Latest app version + APK download URL for update notification |
+| `plugins/{server-id}.js` | Override scraping logic for any server when it breaks |
 
 ---
 
-<p align="center">
-  <i>CineMovie — Built for Cinema Enthusiasts</i>
-</p>
+## How to update a server when it breaks
+
+1. Edit `plugins/{server-id}.js` with the new scraping logic
+2. Update the gateway domain in `config.json → gateways` if needed
+3. Commit & push to `main`
+4. **The app picks up changes within ~2 minutes — no new APK**
+
+### Plugin contract
+
+Each plugin file receives:
+- `params` — `{ tmdbId, type, season, episode }`
+- `config` — the full `config.json` object
+
+It must return:
+- `{ sources: [...], subtitles: [...] }` — to override the native scraper
+- `null` — to let the native scraper run as fallback
+
+---
+
+## Available plugin files
+
+| Plugin file | Server |
+|---|---|
+| `plugins/vidsrc-pm.js` | VidSrc PM |
+| `plugins/vidsrc-wtf-2.js` | VidSrc Multi-Lang |
+| `plugins/vidsrc-top-new.js` | VidSrc Top |
+| `plugins/vixsrc.js` | VixSrc |
+| `plugins/universal.js` | Vidsrc.to (Universal) |
+
+---
+
+## How to enable/disable a server without APK
+
+In `config.json`, edit `enabled_servers`:
+
+```json
+"enabled_servers": ["vidsrc-pm", "vidsrc-wtf-2", "vidsrc-top-new"]
+```
+
+Only the servers listed here will appear in the player UI. Remove an ID to hide it instantly.
+
+---
+
+## How to push an update notification
+
+In `version.json`, bump the version and add the APK URL:
+
+```json
+{
+  "version": "0.9.0",
+  "downloadUrl": "https://github.com/Extroos/MovieTester123/releases/latest/download/Cinemovie.v0.9.0.apk",
+  "releaseNotes": "v0.9.0: What changed..."
+}
+```
+
+Users will see an update notification badge in the app automatically.
