@@ -58,16 +58,3 @@ Only the servers listed here will appear in the player UI. Remove an ID to hide 
 
 ---
 
-## How to push an update notification
-
-In `version.json`, bump the version and add the APK URL:
-
-```json
-{
-  "version": "0.9.0",
-  "downloadUrl": "https://github.com/Extroos/MovieTester123/releases/latest/download/Cinemovie.v0.9.0.apk",
-  "releaseNotes": "v0.9.0: What changed..."
-}
-```
-
-Users will see an update notification badge in the app automatically.
