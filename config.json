@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-07-25",
+  "last_updated": "2026-07-28",
   "enabled_servers": ["vidsrc-pm", "vidsrc-wtf-2", "vidsrc-top-new", "vixsrc", "vidsrc-sbs", "vidsrc-fyi"],
   "servers": [
     {
@@ -12,7 +12,7 @@
     {
       "id": "vidsrc-wtf-2",
       "name": "VidSrc Multi-Lang",
-      "description": "Multi-language HLS via native decryption engine",
+      "description": "Multi-language streams — self-healing provider chain",
       "badge": "Multi",
       "isAdFree": true
     },
@@ -49,19 +49,85 @@
     "cloudnestra": "https://cloudnestra.com",
     "vidsrc_pm": "https://streamdata.vaplayer.ru",
     "vidsrc_pm_embed": "https://vaplayer.ru",
-    "vidsrc_wtf": "https://viduki.net",
-    "vidsrc_wtf_multilang": "https://multilang-api.viduki.net",
+    "vidsrc_pm_mirrors": [
+      "https://streamdata.vaplayer.ru",
+      "https://stream.vaplayer.ru"
+    ],
+    "vidsrc_pm_referers": [
+      "https://nextgencloudfabric.com/",
+      "https://brightpathsignals.com/",
+      "https://player.autoembed.co/"
+    ],
+    "vidsrc_top_new": "https://vid-src.top",
+    "vidsrc_top": "https://vid-src.top",
+    "vidsrc_top_referers": [
+      "https://nextgencloudfabric.com/",
+      "https://brightpathsignals.com/",
+      "https://player.autoembed.co/"
+    ],
+    "vixsrc": "https://vixsrc.to",
+    "vixsrc_mirrors": [
+      "https://vixsrc.to",
+      "https://vixsrc.cc",
+      "https://vixsrc.xyz"
+    ],
     "vidsrc_sbs": "https://vidsrc.sbs",
     "vidsrc_pk": "https://embed.vidsrc.pk",
     "vidsrc_fyi": "https://vidsrc.fyi",
-    "vixsrc": "https://vixsrc.to",
+    "vidsrc_wtf": "https://viduki.net",
     "enc_dec": "https://enc-dec.app",
-    "vidsrc_top_new": "https://vid-src.top",
-    "vidsrc_top": "https://vid-src.top",
-    "vidsrc_pm_mirrors": ["https://streamdata.vaplayer.ru", "https://stream.vaplayer.ru"],
-    "vixsrc_mirrors": ["https://vixsrc.to", "https://vixsrc.cc", "https://vixsrc.xyz"],
     "enc_dec_mirrors": ["https://enc-dec.app", "https://enc-dec.app/api"]
   },
+  "multilang_providers": [
+    {
+      "id": "vidsrc-me",
+      "name": "VidSrc.me",
+      "movieUrl": "https://vidsrc.me/embed/movie?tmdb={tmdb}",
+      "tvUrl": "https://vidsrc.me/embed/tv?tmdb={tmdb}&season={season}&episode={episode}",
+      "healthUrl": "https://vidsrc.me/embed/movie?tmdb=550",
+      "priority": 1
+    },
+    {
+      "id": "vidsrc-cc",
+      "name": "VidSrc.cc",
+      "movieUrl": "https://vidsrc.cc/v2/embed/movie/{tmdb}",
+      "tvUrl": "https://vidsrc.cc/v2/embed/tv/{tmdb}/{season}/{episode}",
+      "healthUrl": "https://vidsrc.cc/v2/embed/movie/550",
+      "priority": 2
+    },
+    {
+      "id": "vidsrc-to",
+      "name": "VidSrc.to",
+      "movieUrl": "https://vidsrc.to/embed/movie/{tmdb}",
+      "tvUrl": "https://vidsrc.to/embed/tv/{tmdb}/{season}/{episode}",
+      "healthUrl": "https://vidsrc.to/embed/movie/550",
+      "priority": 3
+    },
+    {
+      "id": "vidsrc-in",
+      "name": "VidSrc.in",
+      "movieUrl": "https://vidsrc.in/embed/movie?tmdb={tmdb}",
+      "tvUrl": "https://vidsrc.in/embed/tv?tmdb={tmdb}&season={season}&episode={episode}",
+      "healthUrl": "https://vidsrc.in/embed/movie?tmdb=550",
+      "priority": 4
+    },
+    {
+      "id": "embed-su",
+      "name": "Embed.su",
+      "movieUrl": "https://embed.su/embed/movie/{tmdb}",
+      "tvUrl": "https://embed.su/embed/tv/{tmdb}/{season}/{episode}",
+      "healthUrl": "https://embed.su/embed/movie/550",
+      "priority": 5
+    },
+    {
+      "id": "autoembed",
+      "name": "AutoEmbed",
+      "movieUrl": "https://player.autoembed.co/embed/movie/{tmdb}",
+      "tvUrl": "https://player.autoembed.co/embed/tv/{tmdb}/{season}/{episode}",
+      "healthUrl": "https://player.autoembed.co/embed/movie/550",
+      "priority": 6
+    }
+  ],
   "embed_urls": {
     "vidsrc_pm_gateways": [
       "https://streamdata.vaplayer.ru"
@@ -72,8 +138,6 @@
     "cloudnestra_origin": "https://cloudnestra.com",
     "vidsrc_wtf_referer": "https://viduki.net/",
     "vidsrc_wtf_origin": "https://viduki.net",
-    "vidsrc_wtf_multilang_referer": "",
-    "vidsrc_wtf_multilang_origin": "",
     "vidsrc_sbs_referer": "https://vidsrc.sbs/",
     "vidsrc_sbs_origin": "https://vidsrc.sbs",
     "vidsrc_pk_referer": "https://embed.vidsrc.pk/",

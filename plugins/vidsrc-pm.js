@@ -1,28 +1,76 @@
 /**
  * OTA Plugin: vidsrc-pm
- * CineMovie — https://github.com/Extroos/MovieTester123
+ * Repository: https://github.com/Extroos/MovieTester123
  *
- * Called by the app BEFORE native VidSrc PM scraper.
- * Receives: params = { tmdbId, type, season, episode }
- *           config  = full config.json object
+ * HOW TO FIX when VidSrc PM breaks:
+ *   1. Update config.json → gateways.vidsrc_pm to new API URL
+ *   2. Update config.json → gateways.vidsrc_pm_referers[] with working referers
+ *   3. Or update the API logic directly in this file
+ *   4. git push → all users auto-fix within 2 minutes. No APK rebuild needed.
  *
- * Return { sources: [...], subtitles: [...] } to override native code.
- * Return null to fall back to native scraper (default behaviour).
- *
- * HOW TO UPDATE: edit this file + push to main — no APK rebuild needed.
+ * params: { tmdbId, type, season, episode }
+ * config: full OTA config.json object
+ * Return { sources, subtitles } to override native scraper, or null to use native.
  */
+return (async function() {
+  var baseApi = (config.gateways && config.gateways.vidsrc_pm) || 'https://streamdata.vaplayer.ru';
+  var referers = (config.gateways && config.gateways.vidsrc_pm_referers) || [
+    'https://nextgencloudfabric.com/',
+    'https://brightpathsignals.com/',
+    'https://player.autoembed.co/'
+  ];
 
-// Uncomment and fill in if the API domain or endpoint changes:
-// const baseApi = (config.gateways && config.gateways.vidsrc_pm) || 'https://streamdata.vaplayer.ru';
-// const { tmdbId, type, season, episode } = params;
-// const param = tmdbId.startsWith('tt') ? 'imdb' : 'tmdb';
-// let url = `${baseApi}/api.php?${param}=${tmdbId}&type=${type}`;
-// if (type === 'tv') url += `&season=${season}&episode=${episode}`;
-// try {
-//   const res = await fetch(url);
-//   if (!res.ok) return null;
-//   const data = await res.json();
-//   if (data && data.sources) return data;
-// } catch (e) {}
+  var param = (params.tmdbId + '').startsWith('tt') ? 'imdb' : 'tmdb';
+  var apiUrl = baseApi.replace(/\/$/, '') + '/api.php?' + param + '=' + params.tmdbId + '&type=' + params.type;
+  if (params.type === 'tv') {
+    apiUrl += '&season=' + (params.season || 1) + '&episode=' + (params.episode || 1);
+  }
 
-return null; // use native scraper
+  // Uses the on-device local proxy server to bypass CORS
+  var localProxy = 'http://localhost:3001';
+
+  for (var i = 0; i < referers.length; i++) {
+    var referer = referers[i];
+    try {
+      var origin;
+      try { origin = new URL(referer).origin; } catch(e) { origin = referer.replace(/\/$/, ''); }
+      var proxyUrl = localProxy + '/local-proxy?url=' + encodeURIComponent(apiUrl)
+        + '&referer=' + encodeURIComponent(referer)
+        + '&origin=' + encodeURIComponent(origin);
+
+      var res = await fetch(proxyUrl, { cache: 'no-store' });
+      if (!res.ok) continue;
+
+      var data = await res.json();
+      var code = data.status_code == 200 || data.status_code === '200';
+      var streamUrls = data.data && data.data.stream_urls;
+
+      if (code && streamUrls && streamUrls.length > 0) {
+        var sources = streamUrls.map(function(url, idx) {
+          var sep = url.indexOf('?') >= 0 ? '&' : '?';
+          return {
+            url: url + sep + 'origin_referer=' + encodeURIComponent(referer),
+            quality: idx === 0 ? 'Auto (1080p)' : 'Backup ' + idx,
+            isM3U8: true,
+            provider: 'vidsrc-pm'
+          };
+        });
+        var rawSubs = data.default_subs || (data.data && data.data.default_subs) || [];
+        var subtitles = rawSubs.map(function(s) {
+          var fileUrl = s.url || s.file || '';
+          var sep = fileUrl.indexOf('?') >= 0 ? '&' : '?';
+          return {
+            url: fileUrl + sep + 'origin_referer=' + encodeURIComponent(referer),
+            lang: s.lang || s.label || 'English',
+            label: s.lang || s.label || 'English'
+          };
+        });
+        return { sources: sources, subtitles: subtitles };
+      }
+    } catch(e) {
+      // try next referer
+    }
+  }
+
+  return null; // fall back to native scraper
+})();

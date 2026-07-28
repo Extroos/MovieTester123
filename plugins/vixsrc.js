@@ -1,21 +1,31 @@
 /**
  * OTA Plugin: vixsrc
- * CineMovie — https://github.com/Extroos/MovieTester123
+ * Repository: https://github.com/Extroos/MovieTester123
  *
- * Called BEFORE the native VixSrc scraper (vixsrc.to).
- * Receives: params = { tmdbId, type, season, episode }
- *           config  = full config.json object
+ * HOW TO FIX when VixSrc breaks or moves domain:
+ *   1. Update config.json → gateways.vixsrc to the new domain
+ *   2. Update config.json → gateways.vixsrc_mirrors[] with mirror list
+ *   3. git push → all users auto-fix within 2 minutes. No APK rebuild needed.
  *
- * Return { sources: [...], subtitles: [...] } to override native code.
- * Return null to fall back to native scraper (default behaviour).
- *
- * HOW TO UPDATE: edit this file + push to main — no APK rebuild needed.
+ * Returns { embedUrl } to load in WebView iframe player.
+ * Return null to attempt native scraping (fallback).
  */
+return (async function() {
+  // Use mirror list if available, otherwise fall back to single gateway
+  var mirrors = (config.gateways && config.gateways.vixsrc_mirrors) || [];
+  var base = (mirrors.length > 0 ? mirrors[0] : null)
+    || (config.gateways && config.gateways.vixsrc)
+    || 'https://vixsrc.to';
+  base = base.replace(/\/$/, '');
 
-// Uncomment and update if vixsrc.to domain rotates:
-// const mirrors = (config.gateways && config.gateways.vixsrc_mirrors) || ['https://vixsrc.to'];
-// const base = mirrors[0];
-// const { tmdbId, type, season, episode } = params;
-// ... custom scrape logic ...
+  var tmdb = params.tmdbId;
+  var isTV = params.type === 'tv';
+  var season = params.season || 1;
+  var episode = params.episode || 1;
 
-return null; // use native scraper
+  var embedUrl = isTV
+    ? base + '/tv/' + tmdb + '/' + season + '/' + episode
+    : base + '/movie/' + tmdb;
+
+  return { embedUrl: embedUrl };
+})();

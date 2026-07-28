@@ -1,20 +1,50 @@
 /**
- * OTA Plugin: vidsrc-wtf-2 (Multi-Lang)
- * CineMovie — https://github.com/Extroos/MovieTester123
+ * OTA Plugin: vidsrc-wtf-2 (VidSrc Multi-Lang)
+ * Repository: https://github.com/Extroos/MovieTester123
  *
- * Called BEFORE the native VidSrc Multi-Lang scraper (viduki.net).
- * Receives: params = { tmdbId, type, season, episode }
- *           config  = full config.json object
+ * HOW TO FIX when Multi-Lang embed provider breaks:
+ *   OPTION A (instant): Edit this file, hardcode the new embed URL, push.
+ *   OPTION B (OTA rotation): Edit config.json → change multilang_providers[0]
+ *     to the new working provider → push → all users auto-fix in 2 min.
  *
- * Return { sources: [...], subtitles: [...] } to override native code.
- * Return null to fall back to native scraper (default behaviour).
+ * Provider list is read from config.json → multilang_providers[].
+ * Each provider has: { id, movieUrl, tvUrl, priority }
+ * URLs use {tmdb}, {season}, {episode} as placeholders.
  *
- * HOW TO UPDATE: edit this file + push to main — no APK rebuild needed.
+ * Return { embedUrl } to load in WebView iframe player.
+ * Return null to attempt native scraping (not recommended for this server).
  */
+return (async function() {
+  var providers = (config.multilang_providers || []).slice();
 
-// Uncomment and update if the gateway domain or API endpoint changes:
-// const domain = (config.gateways && config.gateways.vidsrc_wtf) || 'viduki.net';
-// const { tmdbId, type, season, episode } = params;
-// ... custom scrape logic ...
+  if (providers.length === 0) {
+    // Hard fallback if OTA config is not loaded yet
+    var tmdb = params.tmdbId;
+    var isTV = params.type === 'tv';
+    return {
+      embedUrl: isTV
+        ? 'https://vidsrc.me/embed/tv?tmdb=' + tmdb + '&season=' + (params.season || 1) + '&episode=' + (params.episode || 1)
+        : 'https://vidsrc.me/embed/movie?tmdb=' + tmdb
+    };
+  }
 
-return null; // use native scraper
+  // Sort by priority (lowest number = highest priority)
+  providers.sort(function(a, b) {
+    return ((a.priority === undefined ? 99 : a.priority)) - ((b.priority === undefined ? 99 : b.priority));
+  });
+
+  var provider = providers[0];
+  var tmdb = params.tmdbId;
+  var isTV = params.type === 'tv';
+  var season = params.season || 1;
+  var episode = params.episode || 1;
+
+  var template = isTV ? provider.tvUrl : provider.movieUrl;
+  var embedUrl = template
+    .replace(/\{tmdb\}/g, tmdb)
+    .replace(/\{imdb\}/g, params.imdbId || tmdb)
+    .replace(/\{season\}/g, String(season))
+    .replace(/\{episode\}/g, String(episode));
+
+  return { embedUrl: embedUrl, providerId: provider.id };
+})();
