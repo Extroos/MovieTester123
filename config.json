@@ -1,6 +1,6 @@
 {
   "last_updated": "2026-07-28",
-  "enabled_servers": ["vidsrc-pm", "vidsrc-wtf-2", "vidsrc-top-new", "vixsrc", "vidsrc-sbs", "vidsrc-fyi"],
+  "enabled_servers": ["vidsrc-pm", "vidsrc-wtf-2", "vidsrc-top-new", "vixsrc", "vidsrc-sbs", "universal", "vidsrc-fyi", "vidsrc-top"],
   "servers": [
     {
       "id": "vidsrc-pm",
@@ -38,9 +38,23 @@
       "isAdFree": false
     },
     {
+      "id": "universal",
+      "name": "Vidsrc.to (Universal)",
+      "description": "Third-party embed — supports multi-language subtitles",
+      "badge": "ADS",
+      "isAdFree": false
+    },
+    {
       "id": "vidsrc-fyi",
       "name": "Vidsrc FYI",
       "description": "Alternative third-party gateway",
+      "badge": "ADS",
+      "isAdFree": false
+    },
+    {
+      "id": "vidsrc-top",
+      "name": "VidSrc Top (Legacy)",
+      "description": "Third-party mirror — supports IMDB/TMDB inputs",
       "badge": "ADS",
       "isAdFree": false
     }
