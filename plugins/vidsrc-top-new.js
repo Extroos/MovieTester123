@@ -26,6 +26,7 @@ return (async function() {
   }
 
   var isNative = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform();
+  var capHttp = (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorHttp) || (typeof window !== 'undefined' && window.CapacitorHttp);
 
   for (var i = 0; i < referers.length; i++) {
     var referer = referers[i];
@@ -34,9 +35,8 @@ return (async function() {
       try { origin = new URL(referer).origin; } catch(e) { origin = referer.replace(/\/$/, ''); }
 
       var resText = '';
-      if (isNative) {
-        var httpRes = await window.Capacitor.Http.request({
-          method: 'GET',
+      if (isNative && capHttp && capHttp.get) {
+        var httpRes = await capHttp.get({
           url: apiUrl,
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
@@ -44,9 +44,11 @@ return (async function() {
             'Origin': origin
           }
         });
-        if (httpRes && httpRes.status === 200) {
+        if (httpRes && (httpRes.status === 200 || httpRes.status === '200')) {
           resText = typeof httpRes.data === 'object' ? JSON.stringify(httpRes.data) : httpRes.data;
         }
+      } else if (isNative) {
+        return null;
       } else {
         var localProxy = 'http://localhost:3001';
         var proxyUrl = localProxy + '/local-proxy?url=' + encodeURIComponent(apiUrl)
