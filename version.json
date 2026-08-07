@@ -1,5 +1,5 @@
 {
-  "version": "0.8.5",
-  "downloadUrl": "https://github.com/Extroos/MovieTester123/releases/download/v0.8.5/Cinemovie.v0.8.5.apk",
-  "releaseNotes": "v0.8.5: Profile PIN lock system, Kids Mode, Android TV landscape & D-Pad subtitle controls, updated servers, video player screen rotation on phone, and performance optimizations."
+  "version": "0.8.7",
+  "downloadUrl": "https://github.com/Extroos/MovieTester123/releases/latest/download/Cinemovie.v0.8.7.apk",
+  "releaseNotes": "v0.8.7: QR code sign-in for Android TV, CineMovie APK website, TV UI & performance overhaul, Social & Ratings updates, Watch Together & profile selector fixes."
 }
