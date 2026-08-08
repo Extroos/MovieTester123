@@ -1,5 +1,5 @@
 {
-  "version": "0.8.7",
-  "downloadUrl": "https://github.com/Extroos/MovieTester123/releases/latest/download/Cinemovie.v0.8.7.apk",
-  "releaseNotes": "v0.8.7: QR code sign-in for Android TV, CineMovie APK website, TV UI & performance overhaul, Social & Ratings updates, Watch Together & profile selector fixes."
+  "version": "0.8.8",
+  "downloadUrl": "https://github.com/Extroos/MovieTester123/releases/latest/download/Cinemovie.v0.8.8.apk",
+  "releaseNotes": "CineMovie v0.8.8 (Stable Release)\n\n• Official stable build of v0.8.7 with critical bug fixes.\n• Fixed the update button not working for Android TV users.\n• Resolved gallery saving issues for downloaded media.\n• Fixed subtitle synchronization on Chromecast.\n• Fixed profile switching stability in Who's Watching.\n• Overall performance improvements and bug fixes.\n\nWebsite:\nhttps://cinemovie-tv.vercel.app/\n\nAndroid TV Downloader Code:\n3574371"
 }
