@@ -32,16 +32,23 @@
       "supportsQuality": true
     },
     {
-      "id": "videasy",
-      "name": "Videasy Pro",
-      "description": "Direct player via player.videasy.net",
-      "badge": "HD",
-      "isAdFree": false
-    },
-    {
       "id": "vidsrc-sbs",
       "name": "VidSrc SBS",
       "description": "Direct stream via vidsrc.sbs",
+      "badge": "HD",
+      "isAdFree": true
+    },
+    {
+      "id": "vidsrc-sbs-embed",
+      "name": "VidSrc SBS (Embed)",
+      "description": "Third-party embed via vidsrc.sbs",
+      "badge": "Embed",
+      "isAdFree": false
+    },
+    {
+      "id": "videasy",
+      "name": "Videasy Pro",
+      "description": "Direct player via player.videasy.net",
       "badge": "HD",
       "isAdFree": false
     },
@@ -79,8 +86,9 @@
     "vidsrc-wtf-2",
     "vidsrc-top-new",
     "vixsrc",
-    "videasy",
     "vidsrc-sbs",
+    "vidsrc-sbs-embed",
+    "videasy",
     "cloudnestra",
     "smashystream",
     "autoembed",
