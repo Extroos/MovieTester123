@@ -244,7 +244,17 @@ return (async function() {
     var sourcesToUse = validRaw.filter(function(s) {
       var rawQ = (s.quality || '').toLowerCase().trim();
       var h = s.height;
-      if (!h) {
+      if (rawQ.indexOf('4k') !== -1 || rawQ.indexOf('2160') !== -1 || rawQ.indexOf('uhd') !== -1) {
+        h = 2160;
+      } else if (rawQ.indexOf('2k') !== -1 || rawQ.indexOf('1440') !== -1 || rawQ.indexOf('qhd') !== -1) {
+        h = 1440;
+      } else if (rawQ.indexOf('1080') !== -1 || rawQ.indexOf('fhd') !== -1) {
+        h = 1080;
+      } else if (rawQ.indexOf('720') !== -1 || rawQ.indexOf('hd') !== -1) {
+        h = 720;
+      } else if (rawQ.indexOf('480') !== -1 || rawQ.indexOf('sd') !== -1) {
+        h = 480;
+      } else if (!h) {
         var match = rawQ.match(/(\d{3,4})p?/i);
         if (match) h = parseInt(match[1], 10);
       }
@@ -253,8 +263,19 @@ return (async function() {
 
     var sources = sourcesToUse.map(function(s) {
       var rawQ = (s.quality || '').trim();
+      var low = rawQ.toLowerCase();
       var h = s.height;
-      if (!h) {
+      if (low.indexOf('4k') !== -1 || low.indexOf('2160') !== -1 || low.indexOf('uhd') !== -1) {
+        h = 2160;
+      } else if (low.indexOf('2k') !== -1 || low.indexOf('1440') !== -1 || low.indexOf('qhd') !== -1) {
+        h = 1440;
+      } else if (low.indexOf('1080') !== -1 || low.indexOf('fhd') !== -1) {
+        h = 1080;
+      } else if (low.indexOf('720') !== -1 || low.indexOf('hd') !== -1) {
+        h = 720;
+      } else if (low.indexOf('480') !== -1 || low.indexOf('sd') !== -1) {
+        h = 480;
+      } else if (!h) {
         var match = rawQ.match(/(\d{3,4})p?/i);
         if (match) h = parseInt(match[1], 10);
       }
@@ -262,9 +283,9 @@ return (async function() {
 
       var qLabel = rawQ;
       if (h >= 2000) {
-        qLabel = '4K UHD (' + h + 'p)';
+        qLabel = '4K UHD';
       } else if (h >= 1400) {
-        qLabel = '2K QHD (' + h + 'p)';
+        qLabel = '2K QHD';
       } else if (h >= 1000) {
         qLabel = '1080p FHD';
       } else if (h >= 700) {
