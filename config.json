@@ -2,10 +2,17 @@
   "last_updated": "08/22/2026",
   "servers": [
     {
+      "id": "videasy",
+      "name": "Videasy Pro",
+      "description": "Ultra-fast direct 4K/HD stream via player.videasy.net",
+      "badge": "Recommended",
+      "isAdFree": true
+    },
+    {
       "id": "vidsrc-pm",
       "name": "VidSrc PM",
       "description": "Adaptive HLS via VidSrc PM — multi-CDN mirrors",
-      "badge": "Recommended",
+      "badge": "HD",
       "isAdFree": true
     },
     {
@@ -46,13 +53,6 @@
       "isAdFree": false
     },
     {
-      "id": "videasy",
-      "name": "Videasy Pro",
-      "description": "Ultra-fast direct stream via player.videasy.net",
-      "badge": "HD",
-      "isAdFree": true
-    },
-    {
       "id": "cloudnestra",
       "name": "CloudNestra",
       "description": "Direct stream via cloudnestra.com",
@@ -82,13 +82,13 @@
     }
   ],
   "enabled_servers": [
+    "videasy",
     "vidsrc-pm",
     "vidsrc-wtf-2",
     "vidsrc-top-new",
     "vixsrc",
     "vidsrc-sbs",
     "vidsrc-sbs-embed",
-    "videasy",
     "cloudnestra",
     "smashystream",
     "autoembed",
