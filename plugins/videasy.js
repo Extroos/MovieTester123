@@ -213,7 +213,8 @@ return (async function() {
         } else {
           var mSegs = mContent.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l && l[0] !== '#'; });
           if (mSegs.length > 0) {
-            var segCheckUrl = mSegs[0];
+            var checkIdx = Math.min(10, Math.floor(mSegs.length / 2));
+            var segCheckUrl = mSegs[checkIdx];
             var segCheckResp = await fetch(segCheckUrl, { headers: { 'Range': 'bytes=0-100' } });
             if (segCheckResp.status === 403 || segCheckResp.status === 404 || segCheckResp.status === 500) {
               isHealthy = false;
