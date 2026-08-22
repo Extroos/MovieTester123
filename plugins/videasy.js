@@ -199,9 +199,19 @@ return (async function() {
   }
 
   if (rawSources.length > 0) {
+    var source720 = null;
+    for (var fIdx = 0; fIdx < rawSources.length; fIdx++) {
+      if ((rawSources[fIdx].quality || '').indexOf('720') !== -1 || (rawSources[fIdx].quality || '').indexOf('1080') !== -1) {
+        source720 = rawSources[fIdx];
+        break;
+      }
+    }
+    if (!source720) source720 = rawSources[0];
+
     var validRaw = [];
     for (var vIdx = 0; vIdx < rawSources.length; vIdx++) {
       var sItem = rawSources[vIdx];
+      var isHealthy = true;
       try {
         var mResp = await fetch(sItem.url);
         if (mResp.ok) {
@@ -212,15 +222,26 @@ return (async function() {
             var segCheckUrl = mSegs[checkIdx];
             var segCheckResp = await fetch(segCheckUrl, { method: 'HEAD' });
             if (segCheckResp.status === 403 || segCheckResp.status === 404 || segCheckResp.status === 500) {
-              continue; // Drop incomplete quality
+              isHealthy = false;
             }
           }
         }
       } catch(e) {}
-      validRaw.push(sItem);
+
+      if (isHealthy) {
+        validRaw.push(sItem);
+      } else if (source720) {
+        validRaw.push({
+          url: source720.url,
+          quality: sItem.quality,
+          height: sItem.height
+        });
+      } else {
+        validRaw.push(sItem);
+      }
     }
 
-    var sourcesToUse = validRaw.length > 0 ? validRaw : rawSources;
+    var sourcesToUse = validRaw;
 
     var sources = sourcesToUse.map(function(s) {
       var rawQ = (s.quality || '').trim();
