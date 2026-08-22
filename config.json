@@ -4,81 +4,81 @@
     {
       "id": "vidsrc-pm",
       "name": "VidSrc PM",
-      "description": "Ultra-fast 1080p direct stream — highest speed & stability",
+      "description": "Adaptive HLS via VidSrc PM — multi-CDN mirrors",
       "badge": "Recommended",
       "isAdFree": true
     },
     {
+      "id": "vidsrc-wtf-2",
+      "name": "VidSrc Multi-Lang",
+      "description": "Multi-language HLS via native decryption engine",
+      "badge": "Multi",
+      "isAdFree": true,
+      "isMultiLang": true
+    },
+    {
       "id": "vidsrc-top-new",
       "name": "VidSrc Top",
-      "description": "High quality direct embed server with broad catalog coverage",
-      "badge": "1080p HD",
+      "description": "Direct HLS via vid-src.top — multi-CDN mirrors",
+      "badge": "Multi",
       "isAdFree": true
     },
     {
       "id": "vixsrc",
       "name": "VixSrc",
-      "description": "Multi-resolution HLS stream with 1080p / 720p / 480p / 360p selection",
-      "badge": "Multi-Res",
+      "description": "Multi-language embed via vixsrc.to — dark theme",
+      "badge": "Multi",
       "isAdFree": true,
       "supportsQuality": true
     },
     {
-      "id": "vidsrc-wtf-2",
-      "name": "VidSrc Multi-Lang",
-      "description": "Multi-language audio & subtitles streams via independent CDN",
-      "badge": "Multi-Lang",
-      "isAdFree": true,
-      "isMultiLang": true
-    },
-    {
       "id": "videasy",
       "name": "Videasy Pro",
-      "description": "Direct high-speed multi-server streaming provider with rapid buffering",
-      "badge": "1080p Fast",
+      "description": "Direct player via player.videasy.net",
+      "badge": "HD",
       "isAdFree": false
     },
     {
       "id": "vidsrc-sbs",
       "name": "VidSrc SBS",
-      "description": "Direct CDN stream via Side-by-Side servers",
-      "badge": "Stable",
+      "description": "Direct stream via vidsrc.sbs",
+      "badge": "HD",
       "isAdFree": true
     },
     {
       "id": "cloudnestra",
       "name": "CloudNestra",
-      "description": "High-speed cloud scraper server with fallback mirrors",
+      "description": "Direct stream via cloudnestra.com",
       "badge": "Cloud",
       "isAdFree": true
     },
     {
       "id": "smashystream",
       "name": "SmashyStream",
-      "description": "High speed multi-server direct embed player",
-      "badge": "HD Embed",
+      "description": "Embed player via embed.smashystream.com",
+      "badge": "Embed",
       "isAdFree": false
     },
     {
       "id": "autoembed",
       "name": "AutoEmbed Pro",
-      "description": "High-compatibility multi-source failover embed player",
-      "badge": "Auto Embed",
+      "description": "Embed player via player.autoembed.co",
+      "badge": "Embed",
       "isAdFree": false
     },
     {
       "id": "universal",
       "name": "Universal Embed",
-      "description": "Global fallback player for older or rare titles",
+      "description": "Third-party embed via vidsrc.to",
       "badge": "Universal",
       "isAdFree": false
     }
   ],
   "enabled_servers": [
     "vidsrc-pm",
+    "vidsrc-wtf-2",
     "vidsrc-top-new",
     "vixsrc",
-    "vidsrc-wtf-2",
     "videasy",
     "vidsrc-sbs",
     "cloudnestra",
