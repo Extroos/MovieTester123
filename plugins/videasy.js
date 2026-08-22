@@ -232,7 +232,9 @@ return (async function() {
       };
     }).sort(function(a, b) { return (b.height || 0) - (a.height || 0); });
 
-    var subtitles = rawSubtitles.map(function(s) {
+    var subtitles = (rawSubtitles || []).filter(function(s) {
+      return s && s.url && s.url.indexOf('peakstorm.top') === -1 && s.url.indexOf('finalkite.top') === -1;
+    }).map(function(s) {
       return {
         url: s.url,
         label: s.lang || s.language || 'English',
