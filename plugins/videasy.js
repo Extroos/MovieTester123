@@ -199,7 +199,30 @@ return (async function() {
   }
 
   if (rawSources.length > 0) {
-    var sources = rawSources.map(function(s) {
+    var validRaw = [];
+    for (var vIdx = 0; vIdx < rawSources.length; vIdx++) {
+      var sItem = rawSources[vIdx];
+      try {
+        var mResp = await fetch(sItem.url);
+        if (mResp.ok) {
+          var mBody = await mResp.text();
+          var mSegs = mBody.split('\n').filter(function(l) { return l.trim() && l.trim().indexOf('#') !== 0; });
+          if (mSegs.length > 0) {
+            var checkIdx = Math.min(100, Math.floor(mSegs.length / 2));
+            var segCheckUrl = mSegs[checkIdx];
+            var segCheckResp = await fetch(segCheckUrl, { method: 'HEAD' });
+            if (segCheckResp.status === 403 || segCheckResp.status === 404 || segCheckResp.status === 500) {
+              continue; // Drop incomplete quality
+            }
+          }
+        }
+      } catch(e) {}
+      validRaw.push(sItem);
+    }
+
+    var sourcesToUse = validRaw.length > 0 ? validRaw : rawSources;
+
+    var sources = sourcesToUse.map(function(s) {
       var rawQ = (s.quality || '').trim();
       var h = s.height;
       if (!h) {
