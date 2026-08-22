@@ -48,9 +48,9 @@
     {
       "id": "videasy",
       "name": "Videasy Pro",
-      "description": "Direct player via player.videasy.net",
+      "description": "Ultra-fast direct stream via player.videasy.net",
       "badge": "HD",
-      "isAdFree": false
+      "isAdFree": true
     },
     {
       "id": "cloudnestra",
