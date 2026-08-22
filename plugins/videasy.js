@@ -225,15 +225,11 @@ return (async function() {
 
       if (isHealthy) {
         validRaw.push(sItem);
-      } else if (source1080) {
-        validRaw.push({
-          url: source1080.url,
-          quality: sItem.quality,
-          height: sItem.height
-        });
-      } else {
-        validRaw.push(sItem);
       }
+    }
+
+    if (validRaw.length === 0 && rawSources.length > 0) {
+      validRaw.push(source1080);
     }
 
     var sourcesToUse = validRaw.filter(function(s) {
