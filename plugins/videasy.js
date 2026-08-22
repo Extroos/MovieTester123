@@ -99,44 +99,76 @@ return (async function() {
   var isNative = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform();
   var capHttp = (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorHttp) || (typeof window !== 'undefined' && window.CapacitorHttp);
 
-  // 1. Primary: Speedracelight Yoru (2K / 4K / 1080p Authentic CDN)
-  try {
-    var seedUrl = 'https://api.speedracelight.com/seed?mediaId=' + tmdbId;
-    var seed = null;
+  // 1. Dynamic API Gateway Selection
+  var apiBases = [
+    config && config.gateways && config.gateways.videasy_api,
+    'https://api.speedracelight.com',
+    'https://player.videasy.net'
+  ].filter(Boolean);
 
-    if (isNative && capHttp && capHttp.get) {
-      var seedRes = await capHttp.get({
-        url: seedUrl,
-        headers: { 'Referer': 'https://player.videasy.net/', 'Origin': 'https://player.videasy.net' }
-      });
-      if (seedRes && seedRes.data) {
-        seed = typeof seedRes.data === 'object' ? seedRes.data.seed : JSON.parse(seedRes.data).seed;
+  if (config && config.gateways && Array.isArray(config.gateways.videasy_api_mirrors)) {
+    apiBases = config.gateways.videasy_api_mirrors.concat(apiBases);
+  }
+
+  var seed = null;
+  var activeApiBase = null;
+
+  for (var b = 0; b < apiBases.length; b++) {
+    var base = apiBases[b].replace(/\/$/, '');
+    var seedUrl = base + '/seed?mediaId=' + tmdbId;
+    try {
+      if (isNative && capHttp && capHttp.get) {
+        var seedRes = await capHttp.get({
+          url: seedUrl,
+          headers: { 'Referer': 'https://player.videasy.net/', 'Origin': 'https://player.videasy.net' }
+        });
+        if (seedRes && seedRes.data) {
+          seed = typeof seedRes.data === 'object' ? seedRes.data.seed : JSON.parse(seedRes.data).seed;
+        }
+      } else {
+        var seedResp = await fetch(seedUrl, {
+          headers: { 'Referer': 'https://player.videasy.net/', 'Origin': 'https://player.videasy.net' }
+        });
+        if (seedResp.ok) {
+          var sData = await seedResp.json();
+          seed = sData && sData.seed;
+        }
       }
-    } else {
-      var seedResp = await fetch(seedUrl, {
-        headers: { 'Referer': 'https://player.videasy.net/', 'Origin': 'https://player.videasy.net' }
-      });
-      if (seedResp.ok) {
-        var sData = await seedResp.json();
-        seed = sData.seed;
+      if (seed) {
+        activeApiBase = base;
+        break;
       }
-    }
+    } catch(e) {}
+  }
 
-    if (seed) {
-      var titleToUse = params.title || 'Movie';
-      var year = params.year || '2026';
-      var qParams = 'title=' + encodeURIComponent(titleToUse)
-        + '&mediaType=' + (isTv ? 'tv' : 'movie')
-        + '&year=' + year
-        + '&tmdbId=' + tmdbId
-        + '&enc=2&seed=' + encodeURIComponent(seed);
-      if (isTv) {
-        qParams += '&seasonId=' + (params.season || 1) + '&episodeId=' + (params.episode || 1);
-      }
+  if (!seed || !activeApiBase) return null;
 
-      var cdnUrl = 'https://api.speedracelight.com/cdn/sources-with-title?' + qParams;
-      var cdnText = '';
+  var titleToUse = params.title || 'Movie';
+  var year = params.year || '2026';
+  var qParams = 'title=' + encodeURIComponent(titleToUse)
+    + '&mediaType=' + (isTv ? 'tv' : 'movie')
+    + '&year=' + year
+    + '&tmdbId=' + tmdbId
+    + '&enc=2&seed=' + encodeURIComponent(seed);
+  if (isTv) {
+    qParams += '&seasonId=' + (params.season || 1) + '&episodeId=' + (params.episode || 1);
+  }
 
+  var endpoints = (config && config.gateways && config.gateways.videasy_cdn_endpoints) || [
+    '/cdn/sources-with-title',
+    '/cdn/breach-sources',
+    '/cdn/sources-vyse'
+  ];
+
+  var rawSources = [];
+  var rawSubtitles = [];
+
+  for (var epIdx = 0; epIdx < endpoints.length; epIdx++) {
+    var ep = endpoints[epIdx];
+    var cdnUrl = activeApiBase + ep + '?' + qParams;
+    var cdnText = '';
+
+    try {
       if (isNative && capHttp && capHttp.get) {
         var cdnRes = await capHttp.get({
           url: cdnUrl,
@@ -157,48 +189,59 @@ return (async function() {
       if (cdnText) {
         var decJson = decryptVideasy(cdnText.trim(), seed, tmdbId);
         var parsed = JSON.parse(decJson);
-        if (parsed && parsed.sources && parsed.sources.length > 0) {
-          var sources = parsed.sources.map(function(s) {
-            var qLabel = s.quality || '1080p';
-            var h = 1080;
-            if (qLabel.indexOf('2160') >= 0 || qLabel.toLowerCase().indexOf('4k') >= 0) {
-              qLabel = '4K UHD (2160p)';
-              h = 2160;
-            } else if (qLabel.indexOf('1440') >= 0 || qLabel.toLowerCase().indexOf('2k') >= 0) {
-              qLabel = '2K QHD (1440p)';
-              h = 1440;
-            } else if (qLabel.indexOf('1080') >= 0) {
-              qLabel = '1080p FHD';
-              h = 1080;
-            } else if (qLabel.indexOf('720') >= 0) {
-              qLabel = '720p HD';
-              h = 720;
-            } else if (qLabel.indexOf('480') >= 0) {
-              qLabel = '480p SD';
-              h = 480;
-            }
-            return {
-              url: s.url,
-              quality: qLabel,
-              height: h,
-              isM3U8: true,
-              provider: 'videasy'
-            };
-          }).sort(function(a, b) { return b.height - a.height; });
-
-          var subtitles = (parsed.subtitles || []).map(function(s) {
-            return {
-              url: s.url,
-              label: s.lang || s.language || 'English',
-              lang: s.lang || s.language || 'English'
-            };
-          });
-
-          return { sources: sources, subtitles: subtitles };
+        if (parsed && Array.isArray(parsed.sources) && parsed.sources.length > 0) {
+          rawSources = parsed.sources;
+          rawSubtitles = parsed.subtitles || [];
+          break;
         }
       }
-    }
-  } catch (err) {}
+    } catch(e) {}
+  }
+
+  if (rawSources.length > 0) {
+    var sources = rawSources.map(function(s) {
+      var rawQ = (s.quality || '').trim();
+      var h = s.height;
+      if (!h) {
+        var match = rawQ.match(/(\d{3,4})p?/i);
+        if (match) h = parseInt(match[1], 10);
+      }
+      if (!h) h = 1080;
+
+      var qLabel = rawQ;
+      if (h >= 2000) {
+        qLabel = '4K UHD (' + h + 'p)';
+      } else if (h >= 1400) {
+        qLabel = '2K QHD (' + h + 'p)';
+      } else if (h >= 1000) {
+        qLabel = '1080p FHD';
+      } else if (h >= 700) {
+        qLabel = '720p HD';
+      } else if (h >= 400) {
+        qLabel = '480p SD';
+      } else if (h > 0) {
+        qLabel = h + 'p';
+      }
+
+      return {
+        url: s.url,
+        quality: qLabel,
+        height: h,
+        isM3U8: true,
+        provider: 'videasy'
+      };
+    }).sort(function(a, b) { return (b.height || 0) - (a.height || 0); });
+
+    var subtitles = rawSubtitles.map(function(s) {
+      return {
+        url: s.url,
+        label: s.lang || s.language || 'English',
+        lang: s.lang || s.language || 'English'
+      };
+    });
+
+    return { sources: sources, subtitles: subtitles };
+  }
 
   return null;
 })();

@@ -104,6 +104,16 @@
     "vidsrc_fyi": "https://vidsrc.fyi",
     "vixsrc": "https://vixsrc.to",
     "videasy": "https://player.videasy.net",
+    "videasy_api": "https://api.speedracelight.com",
+    "videasy_api_mirrors": [
+      "https://api.speedracelight.com",
+      "https://player.videasy.net"
+    ],
+    "videasy_cdn_endpoints": [
+      "/cdn/sources-with-title",
+      "/cdn/breach-sources",
+      "/cdn/sources-vyse"
+    ],
     "smashystream": "https://embed.smashystream.com",
     "autoembed": "https://player.autoembed.co",
     "enc_dec": "https://enc-dec.app",
