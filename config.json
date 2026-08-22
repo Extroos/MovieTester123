@@ -4,15 +4,15 @@
     {
       "id": "videasy",
       "name": "Videasy Pro",
-      "description": "Ultra-fast direct 4K/HD stream via player.videasy.net",
-      "badge": "Recommended",
+      "description": "Ultra-fast direct 4K/HDR stream via player.videasy.net",
+      "badge": "4K/HDR",
       "isAdFree": true
     },
     {
       "id": "vidsrc-pm",
       "name": "VidSrc PM",
       "description": "Adaptive HLS via VidSrc PM — multi-CDN mirrors",
-      "badge": "HD",
+      "badge": "Recommended",
       "isAdFree": true
     },
     {
