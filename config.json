@@ -57,7 +57,7 @@
       "name": "CloudNestra",
       "description": "Direct stream via cloudnestra.com",
       "badge": "Cloud",
-      "isAdFree": false
+      "isAdFree": true
     },
     {
       "id": "smashystream",
