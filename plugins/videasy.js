@@ -204,20 +204,18 @@ return (async function() {
     var validRaw = [];
     for (var vIdx = 0; vIdx < rawSources.length; vIdx++) {
       var sItem = rawSources[vIdx];
-      var isHealthy = true;
+      var isHealthy = false;
       try {
         var mResp = await fetch(sItem.url);
         var mContent = await mResp.text();
-        if (!mContent || mContent.indexOf('#EXTM3U') === -1) {
-          isHealthy = false;
-        } else {
+        if (mContent && mContent.indexOf('#EXTM3U') !== -1) {
           var mSegs = mContent.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l && l[0] !== '#'; });
           if (mSegs.length > 0) {
             var checkIdx = Math.min(10, Math.floor(mSegs.length / 2));
             var segCheckUrl = mSegs[checkIdx];
             var segCheckResp = await fetch(segCheckUrl, { headers: { 'Range': 'bytes=0-100' } });
-            if (segCheckResp.status === 403 || segCheckResp.status === 404 || segCheckResp.status === 500) {
-              isHealthy = false;
+            if (segCheckResp.status === 200 || segCheckResp.status === 206) {
+              isHealthy = true;
             }
           }
         }
