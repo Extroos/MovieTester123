@@ -16,25 +16,6 @@ This repository powers **over-the-air (OTA) updates** for the CineMovie Android 
 
 ---
 
-## How to update a server when it breaks
-
-1. Edit `plugins/{server-id}.js` with the new scraping logic
-2. Update the gateway domain in `config.json → gateways` if needed
-3. Commit & push to `main`
-4. **The app picks up changes within ~2 minutes — no new APK**
-
-### Plugin contract
-
-Each plugin file receives:
-- `params` — `{ tmdbId, type, season, episode }`
-- `config` — the full `config.json` object
-
-It must return:
-- `{ sources: [...], subtitles: [...] }` — to override the native scraper
-- `null` — to let the native scraper run as fallback
-
----
-
 ## Available plugin files
 
 | Plugin file | Server |
@@ -43,7 +24,7 @@ It must return:
 | `plugins/vidsrc-wtf-2.js` | VidSrc Multi-Lang |
 | `plugins/vidsrc-top-new.js` | VidSrc Top |
 | `plugins/vixsrc.js` | VixSrc |
-| `plugins/autoembed.js` | AutoEmbed |
+| `plugins/castle.js` | Castle (Direct HLS) |
 
 ---
 
@@ -52,7 +33,7 @@ It must return:
 In `config.json`, edit `enabled_servers`:
 
 ```json
-"enabled_servers": ["vidsrc-pm", "vidsrc-wtf-2", "vidsrc-top-new", "vixsrc", "autoembed"]
+"enabled_servers": ["vidsrc-pm", "vidsrc-wtf-2", "vidsrc-top-new", "vixsrc", "castle"]
 ```
 
 Only the servers listed here will appear in the player UI. Remove an ID to hide it instantly.

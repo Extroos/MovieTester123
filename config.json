@@ -30,10 +30,10 @@
       "isAdFree": true
     },
     {
-      "id": "autoembed",
-      "name": "AutoEmbed",
-      "description": "High-speed multi-source stream via player.autoembed.co",
-      "badge": "MULTI",
+      "id": "castle",
+      "name": "Castle (Direct HLS)",
+      "description": "Direct multi-quality HLS streams with multi-language subtitles",
+      "badge": "HD",
       "isAdFree": true
     },
     {
@@ -70,7 +70,7 @@
     "vidsrc-wtf-2",
     "vidsrc-top-new",
     "vixsrc",
-    "autoembed",
+    "castle",
     "vidsrc-sbs",
     "universal",
     "vidsrc-fyi",
@@ -85,7 +85,7 @@
     "vidsrc_pk": "https://embed.vidsrc.pk",
     "vidsrc_fyi": "https://vidsrc.fyi",
     "vixsrc": "https://vixsrc.to",
-    "autoembed": "https://player.autoembed.co",
+    "castle": "https://api.hlowb.com",
     "enc_dec": "https://enc-dec.app",
     "vidsrc_top_new": "https://vid-src.top",
     "vidsrc_top": "https://vid-src.top",
