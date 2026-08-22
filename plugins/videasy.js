@@ -241,7 +241,15 @@ return (async function() {
       }
     }
 
-    var sourcesToUse = validRaw;
+    var sourcesToUse = validRaw.filter(function(s) {
+      var rawQ = (s.quality || '').toLowerCase().trim();
+      var h = s.height;
+      if (!h) {
+        var match = rawQ.match(/(\d{3,4})p?/i);
+        if (match) h = parseInt(match[1], 10);
+      }
+      return rawQ.indexOf('480') === -1 && rawQ.indexOf('360') === -1 && (!h || h >= 700);
+    });
 
     var sources = sourcesToUse.map(function(s) {
       var rawQ = (s.quality || '').trim();
@@ -261,8 +269,6 @@ return (async function() {
         qLabel = '1080p FHD';
       } else if (h >= 700) {
         qLabel = '720p HD';
-      } else if (h >= 400) {
-        qLabel = '480p SD';
       } else if (h > 0) {
         qLabel = h + 'p';
       }
