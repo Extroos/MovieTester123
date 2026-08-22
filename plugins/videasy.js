@@ -230,27 +230,7 @@ return (async function() {
       validRaw.push(source1080);
     }
 
-    var sourcesToUse = validRaw.filter(function(s) {
-      var rawQ = (s.quality || '').toLowerCase().trim();
-      var h = s.height;
-      if (rawQ.indexOf('4k') !== -1 || rawQ.indexOf('2160') !== -1 || rawQ.indexOf('uhd') !== -1) {
-        h = 2160;
-      } else if (rawQ.indexOf('2k') !== -1 || rawQ.indexOf('1440') !== -1 || rawQ.indexOf('qhd') !== -1) {
-        h = 1440;
-      } else if (rawQ.indexOf('1080') !== -1 || rawQ.indexOf('fhd') !== -1) {
-        h = 1080;
-      } else if (rawQ.indexOf('720') !== -1 || rawQ.indexOf('hd') !== -1) {
-        h = 720;
-      } else if (rawQ.indexOf('480') !== -1 || rawQ.indexOf('sd') !== -1) {
-        h = 480;
-      } else if (!h) {
-        var match = rawQ.match(/(\d{3,4})p?/i);
-        if (match) h = parseInt(match[1], 10);
-      }
-      return rawQ.indexOf('480') === -1 && rawQ.indexOf('360') === -1 && (!h || h >= 700);
-    });
-
-    var sources = sourcesToUse.map(function(s) {
+    var sources = validRaw.map(function(s) {
       var rawQ = (s.quality || '').trim();
       var low = rawQ.toLowerCase();
       var h = s.height;
@@ -279,6 +259,8 @@ return (async function() {
         qLabel = '1080p FHD';
       } else if (h >= 700) {
         qLabel = '720p HD';
+      } else if (h >= 400) {
+        qLabel = '480p SD';
       } else if (h > 0) {
         qLabel = h + 'p';
       }
