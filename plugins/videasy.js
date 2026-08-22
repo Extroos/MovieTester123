@@ -199,14 +199,7 @@ return (async function() {
   }
 
   if (rawSources.length > 0) {
-    var source720 = null;
-    for (var fIdx = 0; fIdx < rawSources.length; fIdx++) {
-      if ((rawSources[fIdx].quality || '').indexOf('720') !== -1 || (rawSources[fIdx].quality || '').indexOf('1080') !== -1) {
-        source720 = rawSources[fIdx];
-        break;
-      }
-    }
-    if (!source720) source720 = rawSources[0];
+    var source1080 = rawSources.find(function(s) { return (s.quality || '').indexOf('1080') !== -1; }) || rawSources.find(function(s) { return (s.quality || '').indexOf('720') !== -1; }) || rawSources[0];
 
     var validRaw = [];
     for (var vIdx = 0; vIdx < rawSources.length; vIdx++) {
@@ -214,13 +207,14 @@ return (async function() {
       var isHealthy = true;
       try {
         var mResp = await fetch(sItem.url);
-        if (mResp.ok) {
-          var mBody = await mResp.text();
-          var mSegs = mBody.split('\n').filter(function(l) { return l.trim() && l.trim().indexOf('#') !== 0; });
+        var mContent = await mResp.text();
+        if (!mContent || mContent.indexOf('#EXTM3U') === -1) {
+          isHealthy = false;
+        } else {
+          var mSegs = mContent.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l && l[0] !== '#'; });
           if (mSegs.length > 0) {
-            var checkIdx = Math.min(100, Math.floor(mSegs.length / 2));
-            var segCheckUrl = mSegs[checkIdx];
-            var segCheckResp = await fetch(segCheckUrl, { method: 'HEAD' });
+            var segCheckUrl = mSegs[0];
+            var segCheckResp = await fetch(segCheckUrl, { headers: { 'Range': 'bytes=0-100' } });
             if (segCheckResp.status === 403 || segCheckResp.status === 404 || segCheckResp.status === 500) {
               isHealthy = false;
             }
@@ -230,9 +224,9 @@ return (async function() {
 
       if (isHealthy) {
         validRaw.push(sItem);
-      } else if (source720) {
+      } else if (source1080) {
         validRaw.push({
-          url: source720.url,
+          url: source1080.url,
           quality: sItem.quality,
           height: sItem.height
         });
