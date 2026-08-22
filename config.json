@@ -1,80 +1,90 @@
 {
-  "last_updated": "07/15/2026",
+  "last_updated": "08/22/2026",
   "servers": [
     {
       "id": "vidsrc-pm",
       "name": "VidSrc PM",
-      "description": "Adaptive HLS via VidSrc PM — multi-CDN mirrors",
+      "description": "Ultra-fast 1080p direct stream — highest speed & stability",
       "badge": "Recommended",
-      "isAdFree": true
-    },
-    {
-      "id": "vidsrc-wtf-2",
-      "name": "VidSrc Multi-Lang",
-      "description": "Multi-language HLS via native decryption engine",
-      "badge": "Multi",
       "isAdFree": true
     },
     {
       "id": "vidsrc-top-new",
       "name": "VidSrc Top",
-      "description": "Direct HLS via vid-src.top — multi-CDN mirrors",
-      "badge": "Multi",
+      "description": "High quality direct embed server with broad catalog coverage",
+      "badge": "1080p HD",
       "isAdFree": true
     },
     {
       "id": "vixsrc",
       "name": "VixSrc",
-      "description": "Multi-language embed via vixsrc.to — dark theme",
-      "badge": "MULTI",
-      "isAdFree": true
+      "description": "Multi-resolution HLS stream with 1080p / 720p / 480p / 360p selection",
+      "badge": "Multi-Res",
+      "isAdFree": true,
+      "supportsQuality": true
     },
     {
-      "id": "castle",
-      "name": "Castle (Direct HLS)",
-      "description": "Direct multi-quality HLS streams with multi-language subtitles",
-      "badge": "HD",
-      "isAdFree": true
+      "id": "vidsrc-wtf-2",
+      "name": "VidSrc Multi-Lang",
+      "description": "Multi-language audio & subtitles streams via independent CDN",
+      "badge": "Multi-Lang",
+      "isAdFree": true,
+      "isMultiLang": true
+    },
+    {
+      "id": "videasy",
+      "name": "Videasy Pro",
+      "description": "Direct high-speed multi-server streaming provider with rapid buffering",
+      "badge": "1080p Fast",
+      "isAdFree": false
     },
     {
       "id": "vidsrc-sbs",
       "name": "VidSrc SBS",
-      "description": "Third-party mirror — alternative content hosting",
-      "badge": "",
+      "description": "Direct CDN stream via Side-by-Side servers",
+      "badge": "Stable",
+      "isAdFree": true
+    },
+    {
+      "id": "cloudnestra",
+      "name": "CloudNestra",
+      "description": "High-speed cloud scraper server with fallback mirrors",
+      "badge": "Cloud",
+      "isAdFree": true
+    },
+    {
+      "id": "smashystream",
+      "name": "SmashyStream",
+      "description": "High speed multi-server direct embed player",
+      "badge": "HD Embed",
+      "isAdFree": false
+    },
+    {
+      "id": "autoembed",
+      "name": "AutoEmbed Pro",
+      "description": "High-compatibility multi-source failover embed player",
+      "badge": "Auto Embed",
       "isAdFree": false
     },
     {
       "id": "universal",
-      "name": "Vidsrc.to (Universal)",
-      "description": "Third-party embed — supports multi-language subtitles",
-      "badge": "ADS",
-      "isAdFree": false
-    },
-    {
-      "id": "vidsrc-fyi",
-      "name": "Vidsrc FYI",
-      "description": "Alternative third-party gateway",
-      "badge": "ADS",
-      "isAdFree": false
-    },
-    {
-      "id": "vidsrc-top",
-      "name": "VidSrc Top (Legacy)",
-      "description": "Third-party mirror — supports IMDB/TMDB inputs",
-      "badge": "ADS",
+      "name": "Universal Embed",
+      "description": "Global fallback player for older or rare titles",
+      "badge": "Universal",
       "isAdFree": false
     }
   ],
   "enabled_servers": [
     "vidsrc-pm",
-    "vidsrc-wtf-2",
     "vidsrc-top-new",
     "vixsrc",
-    "castle",
+    "vidsrc-wtf-2",
+    "videasy",
     "vidsrc-sbs",
-    "universal",
-    "vidsrc-fyi",
-    "vidsrc-top"
+    "cloudnestra",
+    "smashystream",
+    "autoembed",
+    "universal"
   ],
   "gateways": {
     "cloudnestra": "https://cloudnestra.com",
@@ -85,7 +95,9 @@
     "vidsrc_pk": "https://embed.vidsrc.pk",
     "vidsrc_fyi": "https://vidsrc.fyi",
     "vixsrc": "https://vixsrc.to",
-    "castle": "https://api.hlowb.com",
+    "videasy": "https://player.videasy.net",
+    "smashystream": "https://embed.smashystream.com",
+    "autoembed": "https://player.autoembed.co",
     "enc_dec": "https://enc-dec.app",
     "vidsrc_top_new": "https://vid-src.top",
     "vidsrc_top": "https://vid-src.top",
