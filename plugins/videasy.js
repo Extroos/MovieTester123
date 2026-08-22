@@ -283,12 +283,28 @@ return (async function() {
     }).sort(function(a, b) { return (b.height || 0) - (a.height || 0); });
 
     var subtitles = (rawSubtitles || []).filter(function(s) {
-      return s && s.url && s.url.indexOf('peakstorm.top') === -1 && s.url.indexOf('finalkite.top') === -1;
+      return s && s.url;
     }).map(function(s) {
+      var langName = s.lang || s.language || 'English';
+      var lLow = langName.toLowerCase();
+      if (lLow === 'eng' || lLow === 'en') langName = 'English';
+      else if (lLow === 'spa' || lLow === 'es') langName = 'Spanish';
+      else if (lLow === 'fre' || lLow === 'fra' || lLow === 'fr') langName = 'French';
+      else if (lLow === 'ara' || lLow === 'ar') langName = 'Arabic';
+      else if (lLow === 'ger' || lLow === 'deu' || lLow === 'de') langName = 'German';
+      else if (lLow === 'ita' || lLow === 'it') langName = 'Italian';
+      else if (lLow === 'por' || lLow === 'pt') langName = 'Portuguese';
+      else if (lLow === 'rus' || lLow === 'ru') langName = 'Russian';
+      else langName = langName.charAt(0).toUpperCase() + langName.slice(1);
+
       return {
         url: s.url,
-        label: s.lang || s.language || 'English',
-        lang: s.lang || s.language || 'English'
+        file: s.url,
+        label: 'VE ' + langName,
+        lang: langName,
+        language: langName,
+        isOfficial: true,
+        provider: 'videasy'
       };
     });
 
