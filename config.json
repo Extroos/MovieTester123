@@ -43,7 +43,7 @@
       "name": "VidSrc SBS",
       "description": "Direct stream via vidsrc.sbs",
       "badge": "HD",
-      "isAdFree": true
+      "isAdFree": false
     },
     {
       "id": "cloudnestra",
