@@ -43,6 +43,7 @@ It must return:
 | `plugins/vidsrc-wtf-2.js` | VidSrc Multi-Lang |
 | `plugins/vidsrc-top-new.js` | VidSrc Top |
 | `plugins/vixsrc.js` | VixSrc |
+| `plugins/autoembed.js` | AutoEmbed |
 
 ---
 
@@ -51,10 +52,9 @@ It must return:
 In `config.json`, edit `enabled_servers`:
 
 ```json
-"enabled_servers": ["vidsrc-pm", "vidsrc-wtf-2", "vidsrc-top-new"]
+"enabled_servers": ["vidsrc-pm", "vidsrc-wtf-2", "vidsrc-top-new", "vixsrc", "autoembed"]
 ```
 
 Only the servers listed here will appear in the player UI. Remove an ID to hide it instantly.
 
 ---
-

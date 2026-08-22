@@ -30,6 +30,13 @@
       "isAdFree": true
     },
     {
+      "id": "autoembed",
+      "name": "AutoEmbed",
+      "description": "High-speed multi-source stream via player.autoembed.co",
+      "badge": "MULTI",
+      "isAdFree": true
+    },
+    {
       "id": "vidsrc-sbs",
       "name": "VidSrc SBS",
       "description": "Third-party mirror — alternative content hosting",
@@ -58,6 +65,17 @@
       "isAdFree": false
     }
   ],
+  "enabled_servers": [
+    "vidsrc-pm",
+    "vidsrc-wtf-2",
+    "vidsrc-top-new",
+    "vixsrc",
+    "autoembed",
+    "vidsrc-sbs",
+    "universal",
+    "vidsrc-fyi",
+    "vidsrc-top"
+  ],
   "gateways": {
     "cloudnestra": "https://cloudnestra.com",
     "vidsrc_pm": "https://streamdata.vaplayer.ru",
@@ -67,6 +85,7 @@
     "vidsrc_pk": "https://embed.vidsrc.pk",
     "vidsrc_fyi": "https://vidsrc.fyi",
     "vixsrc": "https://vixsrc.to",
+    "autoembed": "https://player.autoembed.co",
     "enc_dec": "https://enc-dec.app",
     "vidsrc_top_new": "https://vid-src.top",
     "vidsrc_top": "https://vid-src.top",
