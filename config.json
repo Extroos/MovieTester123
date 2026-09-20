@@ -2,13 +2,6 @@
   "last_updated": "08/22/2026",
   "servers": [
     {
-      "id": "videasy",
-      "name": "Videasy Pro",
-      "description": "Ultra-fast direct 4K/HDR stream via player.videasy.net",
-      "badge": "4K/HDR",
-      "isAdFree": true
-    },
-    {
       "id": "vidsrc-pm",
       "name": "VidSrc PM",
       "description": "Adaptive HLS via VidSrc PM — multi-CDN mirrors",
@@ -82,7 +75,6 @@
     }
   ],
   "enabled_servers": [
-    "videasy",
     "vidsrc-pm",
     "vidsrc-wtf-2",
     "vidsrc-top-new",
