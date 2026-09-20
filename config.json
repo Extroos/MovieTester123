@@ -1,6 +1,20 @@
 {
-  "last_updated": "08/22/2026",
+  "last_updated": "09/20/2026",
   "servers": [
+    {
+      "id": "videasy",
+      "name": "Videasy Pro",
+      "description": "Ultra-fast direct stream via player.videasy.net",
+      "badge": "HD",
+      "isAdFree": true
+    },
+    {
+      "id": "pass",
+      "name": "Pass",
+      "description": "High-speed multi-cluster stream via VidCore (Supreme & Prime)",
+      "badge": "HD",
+      "isAdFree": true
+    },
     {
       "id": "vidsrc-pm",
       "name": "VidSrc PM",
@@ -75,11 +89,12 @@
     }
   ],
   "enabled_servers": [
+    "videasy",
+    "pass",
     "vidsrc-pm",
     "vidsrc-wtf-2",
     "vidsrc-top-new",
     "vixsrc",
-    "vidsrc-sbs",
     "vidsrc-sbs-embed",
     "cloudnestra",
     "smashystream",
