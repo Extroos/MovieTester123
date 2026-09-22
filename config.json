@@ -1,56 +1,64 @@
 {
-  "last_updated": "09/20/2026",
+  "last_updated": "09/21/2026",
   "servers": [
+    {
+      "id": "showbox",
+      "name": "Febbox / Showbox",
+      "description": "Direct stream via Showbox & Febbox",
+      "badge": "FHD",
+      "isAdFree": true,
+      "supportsQuality": true
+    },
     {
       "id": "videasy",
       "name": "Videasy Pro",
-      "description": "Ultra-fast direct stream via player.videasy.net",
-      "badge": "HD",
+      "description": "Backup direct stream",
+      "badge": "BACKUP",
       "isAdFree": true
     },
     {
       "id": "pass",
       "name": "Pass",
-      "description": "High-speed multi-cluster stream via VidCore (Supreme & Prime)",
+      "description": "Direct stream via VidCore",
+      "badge": "FHD",
+      "isAdFree": true
+    },
+    {
+      "id": "cloudnestra",
+      "name": "CloudNestra",
+      "description": "Direct stream via cloudnestra.com",
       "badge": "HD",
       "isAdFree": true
     },
     {
       "id": "vidsrc-pm",
       "name": "VidSrc PM",
-      "description": "Adaptive HLS via VidSrc PM — multi-CDN mirrors",
-      "badge": "Recommended",
+      "description": "Adaptive stream via VidSrc PM",
+      "badge": "HLS",
       "isAdFree": true
     },
     {
       "id": "vidsrc-wtf-2",
       "name": "VidSrc Multi-Lang",
-      "description": "Multi-language HLS via native decryption engine",
-      "badge": "Multi",
+      "description": "Multi-language stream",
+      "badge": "MULTI",
       "isAdFree": true,
       "isMultiLang": true
     },
     {
       "id": "vidsrc-top-new",
       "name": "VidSrc Top",
-      "description": "Direct HLS via vid-src.top — multi-CDN mirrors",
-      "badge": "Multi",
+      "description": "Direct stream via vid-src.top",
+      "badge": "MULTI",
       "isAdFree": true
     },
     {
       "id": "vixsrc",
       "name": "VixSrc",
-      "description": "Multi-language embed via vixsrc.to — dark theme",
-      "badge": "Multi",
+      "description": "Direct stream with multi-audio & subtitles",
+      "badge": "FHD",
       "isAdFree": true,
       "supportsQuality": true
-    },
-    {
-      "id": "vidsrc-sbs",
-      "name": "VidSrc SBS",
-      "description": "Direct stream via vidsrc.sbs",
-      "badge": "HD",
-      "isAdFree": true
     },
     {
       "id": "vidsrc-sbs-embed",
@@ -58,13 +66,6 @@
       "description": "Third-party embed via vidsrc.sbs",
       "badge": "Embed",
       "isAdFree": false
-    },
-    {
-      "id": "cloudnestra",
-      "name": "CloudNestra",
-      "description": "Direct stream via cloudnestra.com",
-      "badge": "Cloud",
-      "isAdFree": true
     },
     {
       "id": "smashystream",
@@ -89,14 +90,15 @@
     }
   ],
   "enabled_servers": [
-    "videasy",
+    "showbox",
+    "vixsrc",
     "pass",
+    "videasy",
+    "cloudnestra",
     "vidsrc-pm",
     "vidsrc-wtf-2",
     "vidsrc-top-new",
-    "vixsrc",
     "vidsrc-sbs-embed",
-    "cloudnestra",
     "smashystream",
     "autoembed",
     "universal"
@@ -110,6 +112,7 @@
     "vidsrc_pk": "https://embed.vidsrc.pk",
     "vidsrc_fyi": "https://vidsrc.fyi",
     "vixsrc": "https://vixsrc.to",
+    "pass": "https://vidcore.net",
     "videasy": "https://player.videasy.net",
     "videasy_api": "https://api.speedracelight.com",
     "videasy_api_mirrors": [
