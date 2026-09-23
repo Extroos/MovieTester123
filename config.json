@@ -1,6 +1,25 @@
 {
-  "last_updated": "09/21/2026",
+  "last_updated": "09/23/2026",
+  "default_server": "vixsrc",
+  "priority_order": [
+    "vixsrc",
+    "showbox",
+    "pass",
+    "videasy",
+    "cloudnestra",
+    "vidsrc-pm",
+    "vidsrc-wtf-2",
+    "vidsrc-top-new"
+  ],
   "servers": [
+    {
+      "id": "vixsrc",
+      "name": "VixSrc",
+      "description": "Direct stream with multi-audio & subtitles",
+      "badge": "FHD",
+      "isAdFree": true,
+      "supportsQuality": true
+    },
     {
       "id": "showbox",
       "name": "Febbox / Showbox",
@@ -53,14 +72,6 @@
       "isAdFree": true
     },
     {
-      "id": "vixsrc",
-      "name": "VixSrc",
-      "description": "Direct stream with multi-audio & subtitles",
-      "badge": "FHD",
-      "isAdFree": true,
-      "supportsQuality": true
-    },
-    {
       "id": "vidsrc-sbs-embed",
       "name": "VidSrc SBS (Embed)",
       "description": "Third-party embed via vidsrc.sbs",
@@ -90,8 +101,8 @@
     }
   ],
   "enabled_servers": [
-    "showbox",
     "vixsrc",
+    "showbox",
     "pass",
     "videasy",
     "cloudnestra",
