@@ -1,31 +1,152 @@
 {
-  "last_updated": "09/23/2026",
+  "last_updated": "11/14/2026",
   "default_server": "vixsrc",
-  "priority_order": [
-    "vixsrc",
-    "pass",
-    "videasy",
-    "cloudnestra",
-    "vidsrc-pm",
-    "vidsrc-wtf-2",
-    "vidsrc-top-new"
-  ],
-  "disabled_servers": [
-    "showbox"
-  ],
   "servers": [
     {
       "id": "vixsrc",
       "name": "VixSrc",
-      "description": "Direct stream with multi-audio & subtitles",
+      "description": "Direct 720p HD stream with multi-audio & subtitles",
+      "badge": "HD",
+      "isAdFree": true,
+      "supportsQuality": true,
+      "isMultiLang": true,
+      "enabled": true
+    },
+    {
+      "id": "pass",
+      "name": "Pass",
+      "description": "Direct 1080p FHD stream via VidCore & FastStream",
       "badge": "FHD",
       "isAdFree": true,
-      "supportsQuality": true
+      "supportsQuality": true,
+      "enabled": true
+    },
+    {
+      "id": "videasy",
+      "name": "Videasy Pro",
+      "description": "Backup direct 1080p FHD stream",
+      "badge": "FHD",
+      "isAdFree": true,
+      "supportsQuality": true,
+      "enabled": true
+    },
+    {
+      "id": "stellar",
+      "name": "Stellar",
+      "description": "Fast CDN stream via CineJoy secret",
+      "badge": "Fast CDN",
+      "isAdFree": true,
+      "supportsQuality": true,
+      "enabled": true
+    },
+    {
+      "id": "cloudnestra",
+      "name": "CloudNestra",
+      "description": "Direct 1080p FHD stream via CineJoy Nebula",
+      "badge": "FHD",
+      "isAdFree": true,
+      "enabled": true
+    },
+    {
+      "id": "mapple",
+      "name": "Mapple",
+      "description": "Direct HD/HDR stream via mapple.rip",
+      "badge": "HD/HDR",
+      "isAdFree": true,
+      "supportsQuality": true,
+      "enabled": true
+    },
+    {
+      "id": "vidsrc-pm",
+      "name": "VidSrc PM",
+      "description": "Direct 1080p FHD adaptive stream via VidSrc PM",
+      "badge": "FHD",
+      "isAdFree": true,
+      "supportsQuality": true,
+      "enabled": true
+    },
+    {
+      "id": "vidsrc-top-new",
+      "name": "VidSrc Top",
+      "description": "Direct 1080p FHD stream via vid-src.top",
+      "badge": "FHD",
+      "isAdFree": true,
+      "supportsQuality": true,
+      "enabled": true
+    },
+    {
+      "id": "frembed",
+      "name": "Frembed",
+      "description": "Direct HD French & Multi-lang stream via frembed.click",
+      "badge": "HD",
+      "isAdFree": true,
+      "isMultiLang": true,
+      "enabled": true
+    },
+    {
+      "id": "anikoto",
+      "name": "Anikoto",
+      "description": "Direct HD Anime stream via anikototv.to",
+      "badge": "Anime",
+      "isAdFree": true,
+      "enabled": true
+    },
+    {
+      "id": "allanime",
+      "name": "AllAnime",
+      "description": "Direct HD Anime stream via allanime.day",
+      "badge": "Anime",
+      "isAdFree": true,
+      "enabled": true
+    },
+    {
+      "id": "kisskh",
+      "name": "KissKH",
+      "description": "Direct HD Asian Drama & Anime stream via kisskh.co",
+      "badge": "HD",
+      "isAdFree": true,
+      "enabled": true
     },
     {
       "id": "showbox",
       "name": "Febbox / Showbox",
-      "description": "Direct stream via Showbox & Febbox",
+      "description": "Direct stream via Showbox & Febbox (Inactive)",
+      "badge": "Fast CDN",
+      "isAdFree": true,
+      "supportsQuality": true,
+      "enabled": false,
+      "disabled": true,
+      "active": false,
+      "status": "offline"
+    },
+    {
+      "id": "vidsrc-wtf-2",
+      "name": "VidSrc Multi-Lang",
+      "description": "Direct 1080p FHD stream with multi-language audio (Inactive)",
+      "badge": "FHD",
+      "isAdFree": true,
+      "isMultiLang": true,
+      "enabled": false,
+      "disabled": true,
+      "active": false,
+      "status": "offline"
+    },
+    {
+      "id": "vidlink",
+      "name": "VidLink",
+      "description": "Adaptive stream via vidlink.pro (Inactive)",
+      "badge": "Adaptive",
+      "isAdFree": true,
+      "supportsQuality": true,
+      "enabled": false,
+      "disabled": true,
+      "active": false,
+      "status": "offline"
+    },
+    {
+      "id": "cinesrc",
+      "name": "CineSrc",
+      "description": "Direct 1080p FHD stream via cinesrc.st (Inactive)",
       "badge": "FHD",
       "isAdFree": true,
       "supportsQuality": true,
@@ -35,119 +156,214 @@
       "status": "offline"
     },
     {
-      "id": "videasy",
-      "name": "Videasy Pro",
-      "description": "Backup direct stream",
-      "badge": "BACKUP",
-      "isAdFree": true
-    },
-    {
-      "id": "pass",
-      "name": "Pass",
-      "description": "Direct stream via VidCore",
+      "id": "vidzee",
+      "name": "Vidzee",
+      "description": "Direct 1080p FHD multi-stream via vidzee.wtf (Inactive)",
       "badge": "FHD",
-      "isAdFree": true
-    },
-    {
-      "id": "cloudnestra",
-      "name": "CloudNestra",
-      "description": "Direct stream via cloudnestra.com",
-      "badge": "HD",
-      "isAdFree": true
-    },
-    {
-      "id": "vidsrc-pm",
-      "name": "VidSrc PM",
-      "description": "Adaptive stream via VidSrc PM",
-      "badge": "HLS",
-      "isAdFree": true
-    },
-    {
-      "id": "vidsrc-wtf-2",
-      "name": "VidSrc Multi-Lang",
-      "description": "Multi-language stream",
-      "badge": "MULTI",
       "isAdFree": true,
-      "isMultiLang": true
+      "isMultiLang": true,
+      "enabled": false,
+      "disabled": true,
+      "active": false,
+      "status": "offline"
     },
     {
-      "id": "vidsrc-top-new",
-      "name": "VidSrc Top",
-      "description": "Direct stream via vid-src.top",
-      "badge": "MULTI",
-      "isAdFree": true
+      "id": "vidflix",
+      "name": "Vidflix",
+      "description": "Direct 1080p FHD stream via vidflix.club (Inactive)",
+      "badge": "FHD",
+      "isAdFree": true,
+      "enabled": false,
+      "disabled": true,
+      "active": false,
+      "status": "offline"
+    },
+    {
+      "id": "cuevana",
+      "name": "Cuevana",
+      "description": "Direct HD stream with Spanish & Multi-audio via cuevana3.gs (Inactive)",
+      "badge": "HD",
+      "isAdFree": true,
+      "isMultiLang": true,
+      "enabled": false,
+      "disabled": true,
+      "active": false,
+      "status": "offline"
+    },
+    {
+      "id": "vavoo",
+      "name": "Vavoo IPTV",
+      "description": "Direct live IPTV & stream via vavoo.to (Inactive)",
+      "badge": "IPTV",
+      "isAdFree": true,
+      "enabled": false,
+      "disabled": true,
+      "active": false,
+      "status": "offline"
+    },
+    {
+      "id": "ridomovies",
+      "name": "RidoMovies",
+      "description": "Direct HD stream via ridomovies.su (Inactive)",
+      "badge": "HD",
+      "isAdFree": true,
+      "enabled": false,
+      "disabled": true,
+      "active": false,
+      "status": "offline"
     },
     {
       "id": "vidsrc-sbs-embed",
       "name": "VidSrc SBS (Embed)",
       "description": "Third-party embed via vidsrc.sbs",
       "badge": "Embed",
-      "isAdFree": false
+      "isAdFree": false,
+      "enabled": false,
+      "disabled": true,
+      "active": false,
+      "status": "offline"
     },
     {
       "id": "smashystream",
       "name": "SmashyStream",
       "description": "Embed player via embed.smashystream.com",
       "badge": "Embed",
-      "isAdFree": false
+      "isAdFree": false,
+      "enabled": false,
+      "disabled": true,
+      "active": false,
+      "status": "offline"
     },
     {
       "id": "autoembed",
       "name": "AutoEmbed Pro",
       "description": "Embed player via player.autoembed.co",
       "badge": "Embed",
-      "isAdFree": false
+      "isAdFree": false,
+      "enabled": false,
+      "disabled": true,
+      "active": false,
+      "status": "offline"
     },
     {
       "id": "universal",
       "name": "Universal Embed",
       "description": "Third-party embed via vidsrc.to",
       "badge": "Universal",
-      "isAdFree": false
+      "isAdFree": false,
+      "enabled": false,
+      "disabled": true,
+      "active": false,
+      "status": "offline"
     }
+  ],
+  "priority_order": [
+    "vixsrc",
+    "pass",
+    "videasy",
+    "stellar",
+    "cloudnestra",
+    "mapple",
+    "vidsrc-pm",
+    "vidsrc-top-new",
+    "frembed",
+    "anikoto",
+    "allanime",
+    "kisskh"
   ],
   "enabled_servers": [
     "vixsrc",
     "pass",
     "videasy",
+    "stellar",
     "cloudnestra",
+    "mapple",
     "vidsrc-pm",
-    "vidsrc-wtf-2",
     "vidsrc-top-new",
+    "frembed",
+    "anikoto",
+    "allanime",
+    "kisskh"
+  ],
+  "disabled_servers": [
+    "cuevana",
+    "ridomovies",
+    "vidzee",
+    "vavoo",
+    "cinesrc",
+    "vidsrc-wtf-2",
+    "vidlink",
+    "vidsrc-sbs",
     "vidsrc-sbs-embed",
     "smashystream",
     "autoembed",
-    "universal"
+    "universal",
+    "vidflix",
+    "showbox",
+    "vidsrc-xyz"
   ],
   "gateways": {
+    "vixsrc": "https://vixsrc.to",
+    "vixsrc_mirrors": [
+      "https://vixsrc.to",
+      "https://vixsrc.cc",
+      "https://vixsrc.xyz"
+    ],
+    "pass": "https://vidcore.net",
+    "pass_xpass": "https://play.xpass.top",
+    "videasy": "https://vidy.st",
+    "videasy_api": "https://api.wecollege.net",
+    "videasy_api_mirrors": [
+      "https://api.wecollege.net"
+    ],
+    "videasy_cdn_endpoints": [
+      "/miami/sources",
+      "/boise/sources",
+      "/atlanta/sources",
+      "/phoenix/sources"
+    ],
+    "stellar": "https://stellar.rip",
     "cloudnestra": "https://cloudnestra.com",
+    "cinejoy_api": "https://api.wing.st",
+    "mapple": "https://mapple.rip",
     "vidsrc_pm": "https://streamdata.vaplayer.ru",
+    "vidsrc_pm_mirrors": [
+      "https://streamdata.vaplayer.ru",
+      "https://stream.vaplayer.ru"
+    ],
     "vidsrc_pm_embed": "https://vidsrc.pm",
+    "vidsrc_pm_referers": [
+      "https://nextgencloudfabric.com/",
+      "https://brightpathsignals.com/",
+      "https://player.autoembed.co/"
+    ],
+    "vidsrc_top_new": "https://vid-src.top",
+    "vidsrc_top": "https://vid-src.top",
+    "nexa": "https://nexa.mov",
+    "frembed": "https://frembed.click",
+    "anikoto": "https://anikototv.to",
+    "allanime": "https://allanime.day",
+    "kisskh": "https://kisskh.co",
+    "enc_dec": "https://enc-dec.app",
+    "enc_dec_mirrors": [
+      "https://enc-dec.app",
+      "https://enc-dec.app/api"
+    ],
+    "cloud_proxy": "https://cinemovie-proxy.abderrahmanchakkouri.workers.dev",
+    "vidlink": "https://vidlink.pro",
+    "cinesrc": "https://cinesrc.st",
+    "vidzee": "https://player.vidzee.wtf",
+    "vidzee_core": "https://core.vidzee.wtf",
+    "vidflix": "https://vidflix.club",
+    "cuevana": "https://cuevana3.gs",
+    "vavoo": "https://vavoo.to",
+    "ridomovies": "https://ridomovies.su",
     "vidsrc_wtf": "https://viduki.net",
     "vidsrc_sbs": "https://vidsrc.sbs",
     "vidsrc_pk": "https://embed.vidsrc.pk",
     "vidsrc_fyi": "https://vidsrc.fyi",
-    "vixsrc": "https://vixsrc.to",
-    "pass": "https://vidcore.net",
-    "videasy": "https://player.videasy.net",
-    "videasy_api": "https://api.speedracelight.com",
-    "videasy_api_mirrors": [
-      "https://api.speedracelight.com",
-      "https://player.videasy.net"
-    ],
-    "videasy_cdn_endpoints": [
-      "/cdn/sources-with-title",
-      "/cdn/breach-sources",
-      "/cdn/sources-vyse"
-    ],
     "smashystream": "https://embed.smashystream.com",
-    "autoembed": "https://player.autoembed.co",
-    "enc_dec": "https://enc-dec.app",
-    "vidsrc_top_new": "https://vid-src.top",
-    "vidsrc_top": "https://vid-src.top",
-    "vidsrc_pm_mirrors": ["https://streamdata.vaplayer.ru", "https://stream.vaplayer.ru"],
-    "vixsrc_mirrors": ["https://vixsrc.to", "https://vixsrc.cc", "https://vixsrc.xyz"],
-    "enc_dec_mirrors": ["https://enc-dec.app", "https://enc-dec.app/api"]
+    "autoembed": "https://player.autoembed.co"
   },
   "embed_urls": {
     "vidsrc_pm_gateways": [
@@ -155,6 +371,8 @@
     ]
   },
   "headers": {
+    "vidsrc_pm_referer": "https://nextgencloudfabric.com/",
+    "vidsrc_pm_origin": "https://nextgencloudfabric.com",
     "cloudnestra_referer": "https://cloudnestra.com/",
     "cloudnestra_origin": "https://cloudnestra.com",
     "vidsrc_wtf_referer": "https://vidsrc.wtf/",

@@ -26,23 +26,42 @@ return (async function() {
     apiUrl += '&season=' + (params.season || 1) + '&episode=' + (params.episode || 1);
   }
 
-  // Uses the on-device local proxy server to bypass CORS
-  var localProxy = 'http://localhost:3001';
+  var isNative = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform();
+  var capHttp = (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorHttp) || (typeof window !== 'undefined' && window.CapacitorHttp);
 
   for (var i = 0; i < referers.length; i++) {
     var referer = referers[i];
     try {
       var origin;
       try { origin = new URL(referer).origin; } catch(e) { origin = referer.replace(/\/$/, ''); }
-      var proxyUrl = localProxy + '/local-proxy?url=' + encodeURIComponent(apiUrl)
-        + '&referer=' + encodeURIComponent(referer)
-        + '&origin=' + encodeURIComponent(origin);
 
-      var res = await fetch(proxyUrl, { cache: 'no-store' });
-      if (!res.ok) continue;
+      var resText = '';
+      if (isNative && capHttp && capHttp.get) {
+        var httpRes = await capHttp.get({
+          url: apiUrl,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+            'Referer': referer,
+            'Origin': origin
+          }
+        });
+        if (httpRes && (httpRes.status === 200 || httpRes.status === '200')) {
+          resText = typeof httpRes.data === 'object' ? JSON.stringify(httpRes.data) : httpRes.data;
+        }
+      } else {
+        var localProxy = isNative ? 'http://127.0.0.1:8000' : 'http://localhost:3001';
+        var proxyUrl = localProxy + '/local-proxy?url=' + encodeURIComponent(apiUrl)
+          + '&referer=' + encodeURIComponent(referer)
+          + '&origin=' + encodeURIComponent(origin);
 
-      var data = await res.json();
-      var code = data.status_code == 200 || data.status_code === '200';
+        var res = await fetch(proxyUrl, { cache: 'no-store' });
+        if (res.ok) resText = await res.text();
+      }
+
+      if (!resText) continue;
+      var data = null;
+      try { data = typeof resText === 'string' ? JSON.parse(resText) : resText; } catch(_) {}
+      var code = data && (data.status_code == 200 || data.status_code === '200');
       var streamUrls = data.data && data.data.stream_urls;
 
       if (code && streamUrls && streamUrls.length > 0) {
