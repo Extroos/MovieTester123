@@ -1,5 +1,5 @@
 {
-  "last_updated": "11/14/2026",
+  "last_updated": "11/25/2026",
   "default_server": "vixsrc",
   "servers": [
     {
@@ -77,7 +77,7 @@
     {
       "id": "frembed",
       "name": "Frembed",
-      "description": "Direct HD French & Multi-lang stream via frembed.click",
+      "description": "Direct HD French & Multi-lang stream via frembed.pics",
       "badge": "HD",
       "isAdFree": true,
       "isMultiLang": true,
